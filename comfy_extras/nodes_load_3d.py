@@ -98,8 +98,8 @@ class Preview3D(IO.ComfyNode):
                     ],
                     tooltip="3D model file or path string",
                 ),
-                IO.Load3DCamera.Input("camera_info", optional=True),
-                IO.Image.Input("bg_image", optional=True),
+                IO.Load3DCamera.Input("camera_info", optional=True, advanced=True),
+                IO.Image.Input("bg_image", optional=True, advanced=True),
             ],
             outputs=[],
         )

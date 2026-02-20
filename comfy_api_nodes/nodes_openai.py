@@ -588,6 +588,7 @@ class OpenAIChatNode(IO.ComfyNode):
                     "persist_context",
                     default=False,
                     tooltip="This parameter is deprecated and has no effect.",
+                    advanced=True,
                 ),
                 IO.Combo.Input(
                     "model",
@@ -857,6 +858,7 @@ class OpenAIChatConfig(IO.ComfyNode):
                     options=["auto", "disabled"],
                     default="auto",
                     tooltip="The truncation strategy to use for the model response. auto: If the context of this response and previous ones exceeds the model's context window size, the model will truncate the response to fit the context window by dropping input items in the middle of the conversation.disabled: If a model response will exceed the context window size for a model, the request will fail with a 400 error",
+                    advanced=True,
                 ),
                 IO.Int.Input(
                     "max_output_tokens",
@@ -865,6 +867,7 @@ class OpenAIChatConfig(IO.ComfyNode):
                     max=16384,
                     tooltip="An upper bound for the number of tokens that can be generated for a response, including visible output tokens",
                     optional=True,
+                    advanced=True,
                 ),
                 IO.String.Input(
                     "instructions",
