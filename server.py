@@ -350,7 +350,9 @@ class PromptServer():
             body = metrics_middleware.render_metrics()
             return web.Response(
                 text=body,
-                content_type="text/plain; version=0.0.4; charset=utf-8",
+                content_type="text/plain",
+                charset="utf-8",
+                headers={"X-Content-Type-Options": "nosniff"},
             )
 
         @routes.get("/")
