@@ -1,5 +1,5 @@
 """
-    This file is part of ComfyUI.
+    This file is part of Hanzo Studio.
     Copyright (C) 2024 Comfy
 
     This program is free software: you can redistribute it and/or modify

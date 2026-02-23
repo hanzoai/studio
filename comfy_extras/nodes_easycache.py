@@ -495,7 +495,7 @@ class LazyCacheNode(io.ComfyNode):
         return io.Schema(
             node_id="LazyCache",
             display_name="LazyCache",
-            description="A homebrew version of EasyCache - even 'easier' version of EasyCache to implement. Overall works worse than EasyCache, but better in some rare cases AND universal compatibility with everything in ComfyUI.",
+            description="A homebrew version of EasyCache - even 'easier' version of EasyCache to implement. Overall works worse than EasyCache, but better in some rare cases AND universal compatibility with everything in Hanzo Studio.",
             category="advanced/debug/model",
             is_experimental=True,
             inputs=[

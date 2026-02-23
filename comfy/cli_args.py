@@ -42,12 +42,12 @@ parser.add_argument("--tls-certfile", type=str, help="Path to TLS (SSL) certific
 parser.add_argument("--enable-cors-header", type=str, default=None, metavar="ORIGIN", nargs="?", const="*", help="Enable CORS (Cross-Origin Resource Sharing) with optional origin or allow all with default '*'.")
 parser.add_argument("--max-upload-size", type=float, default=100, help="Set the maximum upload size in MB.")
 
-parser.add_argument("--base-directory", type=str, default=None, help="Set the ComfyUI base directory for models, custom_nodes, input, output, temp, and user directories.")
+parser.add_argument("--base-directory", type=str, default=None, help="Set the Hanzo Studio base directory for models, custom_nodes, input, output, temp, and user directories.")
 parser.add_argument("--extra-model-paths-config", type=str, default=None, metavar="PATH", nargs='+', action='append', help="Load one or more extra_model_paths.yaml files.")
-parser.add_argument("--output-directory", type=str, default=None, help="Set the ComfyUI output directory. Overrides --base-directory.")
-parser.add_argument("--temp-directory", type=str, default=None, help="Set the ComfyUI temp directory (default is in the ComfyUI directory). Overrides --base-directory.")
-parser.add_argument("--input-directory", type=str, default=None, help="Set the ComfyUI input directory. Overrides --base-directory.")
-parser.add_argument("--auto-launch", action="store_true", help="Automatically launch ComfyUI in the default browser.")
+parser.add_argument("--output-directory", type=str, default=None, help="Set the Hanzo Studio output directory. Overrides --base-directory.")
+parser.add_argument("--temp-directory", type=str, default=None, help="Set the Hanzo Studio temp directory (default is in the Hanzo Studio directory). Overrides --base-directory.")
+parser.add_argument("--input-directory", type=str, default=None, help="Set the Hanzo Studio input directory. Overrides --base-directory.")
+parser.add_argument("--auto-launch", action="store_true", help="Automatically launch Hanzo Studio in the default browser.")
 parser.add_argument("--disable-auto-launch", action="store_true", help="Disable auto launching the browser.")
 parser.add_argument("--cuda-device", type=int, default=None, metavar="DEVICE_ID", help="Set the id of the cuda device this instance will use. All other devices will not be visible.")
 parser.add_argument("--default-device", type=int, default=None, metavar="DEFAULT_DEVICE_ID", help="Set the id of the default device, all other devices will stay visible.")
@@ -89,7 +89,7 @@ parser.add_argument("--directml", type=int, nargs="?", metavar="DIRECTML_DEVICE"
 
 parser.add_argument("--oneapi-device-selector", type=str, default=None, metavar="SELECTOR_STRING", help="Sets the oneAPI device(s) this instance will use.")
 parser.add_argument("--disable-ipex-optimize", action="store_true", help="Disables ipex.optimize default when loading models with Intel's Extension for Pytorch.")
-parser.add_argument("--supports-fp8-compute", action="store_true", help="ComfyUI will act like if the device supports fp8 compute.")
+parser.add_argument("--supports-fp8-compute", action="store_true", help="Hanzo Studio will act like if the device supports fp8 compute.")
 
 class LatentPreviewMethod(enum.Enum):
     NoPreviews = "none"
@@ -128,10 +128,10 @@ upcast.add_argument("--force-upcast-attention", action="store_true", help="Force
 upcast.add_argument("--dont-upcast-attention", action="store_true", help="Disable all upcasting of attention. Should be unnecessary except for debugging.")
 
 
-parser.add_argument("--enable-manager", action="store_true", help="Enable the ComfyUI-Manager feature.")
+parser.add_argument("--enable-manager", action="store_true", help="Enable the Hanzo Studio Manager feature.")
 manager_group = parser.add_mutually_exclusive_group()
-manager_group.add_argument("--disable-manager-ui", action="store_true", help="Disables only the ComfyUI-Manager UI and endpoints. Scheduled installations and similar background tasks will still operate.")
-manager_group.add_argument("--enable-manager-legacy-ui", action="store_true", help="Enables the legacy UI of ComfyUI-Manager")
+manager_group.add_argument("--disable-manager-ui", action="store_true", help="Disables only the Hanzo Studio Manager UI and endpoints. Scheduled installations and similar background tasks will still operate.")
+manager_group.add_argument("--enable-manager-legacy-ui", action="store_true", help="Enables the legacy UI of Hanzo Studio Manager")
 
 
 vram_group = parser.add_mutually_exclusive_group()
@@ -147,11 +147,11 @@ parser.add_argument("--reserve-vram", type=float, default=None, help="Set the am
 parser.add_argument("--async-offload", nargs='?', const=2, type=int, default=None, metavar="NUM_STREAMS", help="Use async weight offloading. An optional argument controls the amount of offload streams. Default is 2. Enabled by default on Nvidia.")
 parser.add_argument("--disable-async-offload", action="store_true", help="Disable async weight offloading.")
 
-parser.add_argument("--force-non-blocking", action="store_true", help="Force ComfyUI to use non-blocking operations for all applicable tensors. This may improve performance on some non-Nvidia systems but can cause issues with some workflows.")
+parser.add_argument("--force-non-blocking", action="store_true", help="Force Hanzo Studio to use non-blocking operations for all applicable tensors. This may improve performance on some non-Nvidia systems but can cause issues with some workflows.")
 
 parser.add_argument("--default-hashing-function", type=str, choices=['md5', 'sha1', 'sha256', 'sha512'], default='sha256', help="Allows you to choose the hash function to use for duplicate filename / contents comparison. Default is sha256.")
 
-parser.add_argument("--disable-smart-memory", action="store_true", help="Force ComfyUI to agressively offload to regular ram instead of keeping models in vram when it can.")
+parser.add_argument("--disable-smart-memory", action="store_true", help="Force Hanzo Studio to agressively offload to regular ram instead of keeping models in vram when it can.")
 parser.add_argument("--deterministic", action="store_true", help="Make pytorch use slower deterministic algorithms when it can. Note that this might not make images deterministic in all cases.")
 
 class PerformanceFeature(enum.Enum):
@@ -161,7 +161,7 @@ class PerformanceFeature(enum.Enum):
     AutoTune = "autotune"
     DynamicVRAM = "dynamic_vram"
 
-parser.add_argument("--fast", nargs="*", type=PerformanceFeature, help="Enable some untested and potentially quality deteriorating optimizations. This is used to test new features so using it might crash your comfyui. --fast with no arguments enables everything. You can pass a list specific optimizations if you only want to enable specific ones. Current valid optimizations: {}".format(" ".join(map(lambda c: c.value, PerformanceFeature))))
+parser.add_argument("--fast", nargs="*", type=PerformanceFeature, help="Enable some untested and potentially quality deteriorating optimizations. This is used to test new features so using it might crash Hanzo Studio. --fast with no arguments enables everything. You can pass a list specific optimizations if you only want to enable specific ones. Current valid optimizations: {}".format(" ".join(map(lambda c: c.value, PerformanceFeature))))
 
 parser.add_argument("--disable-pinned-memory", action="store_true", help="Disable pinned memory use.")
 
@@ -184,7 +184,7 @@ parser.add_argument("--log-stdout", action="store_true", help="Send normal proce
 
 
 # The default built-in provider hosted under web/
-DEFAULT_VERSION_STRING = "comfyanonymous/ComfyUI@latest"
+DEFAULT_VERSION_STRING = "hanzoai/studio@latest"
 
 parser.add_argument(
     "--front-end-version",
@@ -217,15 +217,15 @@ parser.add_argument(
     help="The local filesystem path to the directory where the frontend is located. Overrides --front-end-version.",
 )
 
-parser.add_argument("--user-directory", type=is_valid_directory, default=None, help="Set the ComfyUI user directory with an absolute path. Overrides --base-directory.")
+parser.add_argument("--user-directory", type=is_valid_directory, default=None, help="Set the Hanzo Studio user directory with an absolute path. Overrides --base-directory.")
 
 parser.add_argument("--enable-compress-response-body", action="store_true", help="Enable compressing response body.")
 
 parser.add_argument(
     "--comfy-api-base",
     type=str,
-    default="https://api.comfy.org",
-    help="Set the base URL for the Hanzo Studio API.  (default: https://api.comfy.org)",
+    default="https://api.hanzo.ai",
+    help="Set the base URL for the Hanzo Studio API.  (default: https://api.hanzo.ai)",
 )
 
 database_default_path = os.path.abspath(

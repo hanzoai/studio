@@ -42,7 +42,7 @@ class ComfyAPI_latest(ComfyAPIBase):
             ignore_size_limit: bool = False,
         ) -> None:
             """
-            Update the progress bar displayed in the ComfyUI interface.
+            Update the progress bar displayed in the Hanzo Studio interface.
 
             This function allows custom nodes and API calls to report their progress
             back to the user interface, providing visual feedback during long operations.

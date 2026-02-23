@@ -1,5 +1,5 @@
 """
-Feature flags module for ComfyUI WebSocket protocol negotiation.
+Feature flags module for Hanzo Studio WebSocket protocol negotiation.
 
 This module handles capability negotiation between frontend and backend,
 allowing graceful protocol evolution while maintaining backward compatibility.

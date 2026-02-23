@@ -126,7 +126,7 @@ jobs:
             --arg release_tag "$RELEASE_TAG" \
             --arg release_url "$RELEASE_URL" \
             '{
-              event_type: "comfyui_release_published",
+              event_type: "studio_release_published",
               client_payload: {
                 release_tag: $release_tag,
                 release_url: $release_url
@@ -138,7 +138,7 @@ jobs:
             -H "Accept: application/vnd.github+json" \
             -H "Content-Type: application/json" \
             -H "Authorization: Bearer ${DISPATCH_TOKEN}" \
-            https://api.github.com/repos/Comfy-Org/desktop/dispatches \
+            https://api.github.com/repos/hanzoai/studio-desktop/dispatches \
             -d "$PAYLOAD"
 
-          echo "✅ Dispatched ComfyUI release ${RELEASE_TAG} to Comfy-Org/desktop"
+          echo "✅ Dispatched Hanzo Studio release ${RELEASE_TAG} to hanzoai/studio-desktop"

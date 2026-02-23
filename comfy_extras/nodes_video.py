@@ -21,7 +21,7 @@ class SaveWEBM(io.ComfyNode):
             is_experimental=True,
             inputs=[
                 io.Image.Input("images"),
-                io.String.Input("filename_prefix", default="ComfyUI"),
+                io.String.Input("filename_prefix", default="HanzoStudio"),
                 io.Combo.Input("codec", options=["vp9", "av1"]),
                 io.Float.Input("fps", default=24.0, min=0.01, max=1000.0, step=0.01),
                 io.Float.Input("crf", default=32.0, min=0, max=63.0, step=1, tooltip="Higher crf means lower quality with a smaller file size, lower crf means higher quality higher filesize."),
@@ -74,10 +74,10 @@ class SaveVideo(io.ComfyNode):
             display_name="Save Video",
             category="image/video",
             essentials_category="Basics",
-            description="Saves the input images to your ComfyUI output directory.",
+            description="Saves the input images to your Hanzo Studio output directory.",
             inputs=[
                 io.Video.Input("video", tooltip="The video to save."),
-                io.String.Input("filename_prefix", default="video/ComfyUI", tooltip="The prefix for the file to save. This may include formatting information such as %date:yyyy-MM-dd% or %Empty Latent Image.width% to include values from nodes."),
+                io.String.Input("filename_prefix", default="video/HanzoStudio", tooltip="The prefix for the file to save. This may include formatting information such as %date:yyyy-MM-dd% or %Empty Latent Image.width% to include values from nodes."),
                 io.Combo.Input("format", options=Types.VideoContainer.as_input(), default="auto", tooltip="The format to save the video as."),
                 io.Combo.Input("codec", options=Types.VideoCodec.as_input(), default="auto", tooltip="The codec to use for the video."),
             ],

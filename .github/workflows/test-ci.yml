@@ -1,5 +1,5 @@
-# This is the GitHub Workflow that drives automatic full-GPU-enabled tests of all new commits to the master branch of ComfyUI
-# Results are reported as checkmarks on the commits, as well as onto https://ci.comfy.org/
+# This is the GitHub Workflow that drives automatic full-GPU-enabled tests of all new commits to the main branch of Hanzo Studio
+# Results are reported as checkmarks on the commits, as well as onto https://ci.hanzo.ai/
 name: Full Comfy CI Workflow Runs
 on:
   push:

@@ -85,7 +85,7 @@ class TestProgressIsolation:
 
     @pytest.fixture(scope="class", autouse=True)
     def _server(self, args_pytest):
-        """Start the ComfyUI server for testing."""
+        """Start the Hanzo Studio server for testing."""
         import subprocess
         pargs = [
             'python', 'main.py',

@@ -1,5 +1,5 @@
 #!/bin/bash
-# Apply Hanzo Studio branding to ComfyUI frontend package
+# Apply Hanzo Studio branding to frontend package
 # This runs during Docker build after pip install to patch the pre-built frontend
 set -e
 

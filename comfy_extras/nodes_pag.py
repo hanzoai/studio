@@ -1,7 +1,7 @@
 #Modified/simplified version of the node from: https://github.com/pamparamm/sd-perturbed-attention
 #If you want the one with more options see the above repo.
 
-#My modified one here is more basic but has less chances of breaking with ComfyUI updates.
+#My modified one here is more basic but has less chances of breaking with Hanzo Studio updates.
 
 from typing_extensions import override
 

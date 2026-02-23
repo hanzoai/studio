@@ -248,7 +248,7 @@ def normalize_omni_prompt_references(prompt: str) -> str:
         <<<image_1>>>, <<<image_2>>>, ...
         <<<video_1>>>, <<<video_2>>>, ...
 
-    This is a UX shim for ComfyUI so users can type the same syntax as in the Kling app.
+    This is a UX shim for Hanzo Studio so users can type the same syntax as in the Kling app.
     """
     if not prompt:
         return prompt

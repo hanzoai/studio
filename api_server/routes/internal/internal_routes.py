@@ -8,7 +8,7 @@ import os
 class InternalRoutes:
     '''
     The top level web router for internal routes: /internal/*
-    The endpoints here should NOT be depended upon. It is for ComfyUI frontend use only.
+    The endpoints here should NOT be depended upon. It is for Hanzo Studio frontend use only.
     Check README.md for more information.
     '''
 

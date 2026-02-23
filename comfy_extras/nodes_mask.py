@@ -408,7 +408,7 @@ class MaskPreview(IO.ComfyNode):
             search_aliases=["show mask", "view mask", "inspect mask", "debug mask"],
             display_name="Preview Mask",
             category="mask",
-            description="Saves the input images to your ComfyUI output directory.",
+            description="Saves the input images to your Hanzo Studio output directory.",
             inputs=[
                 IO.Mask.Input("mask"),
             ],
@@ -417,7 +417,7 @@ class MaskPreview(IO.ComfyNode):
         )
 
     @classmethod
-    def execute(cls, mask, filename_prefix="ComfyUI") -> IO.NodeOutput:
+    def execute(cls, mask, filename_prefix="HanzoStudio") -> IO.NodeOutput:
         return IO.NodeOutput(ui=UI.PreviewMask(mask))
 
 

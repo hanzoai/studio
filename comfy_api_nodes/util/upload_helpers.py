@@ -52,7 +52,7 @@ async def upload_images_to_comfyapi(
     total_pixels: int | None = 2048 * 2048,
 ) -> list[str]:
     """
-    Uploads images to ComfyUI API and returns download URLs.
+    Uploads images to Hanzo Studio API and returns download URLs.
     To upload multiple images, stack them in the batch dimension first.
     """
     tensors: list[torch.Tensor] = []
@@ -96,7 +96,7 @@ async def upload_image_to_comfyapi(
     wait_label: str | None = "Uploading",
     total_pixels: int | None = 2048 * 2048,
 ) -> str:
-    """Uploads a single image to ComfyUI API and returns its download URL."""
+    """Uploads a single image to Hanzo Studio API and returns its download URL."""
     return (
         await upload_images_to_comfyapi(
             cls,
@@ -119,7 +119,7 @@ async def upload_audio_to_comfyapi(
     mime_type: str = "audio/mp4",
 ) -> str:
     """
-    Uploads a single audio input to ComfyUI API and returns its download URL.
+    Uploads a single audio input to Hanzo Studio API and returns its download URL.
     Encodes the raw waveform into the specified format before uploading.
     """
     sample_rate: int = audio["sample_rate"]
@@ -139,7 +139,7 @@ async def upload_video_to_comfyapi(
     wait_label: str | None = "Uploading",
 ) -> str:
     """
-    Uploads a single video to ComfyUI API and returns its download URL.
+    Uploads a single video to Hanzo Studio API and returns its download URL.
     Uses the specified container and codec for saving the video before upload.
     """
     if max_duration is not None:
@@ -176,7 +176,7 @@ async def upload_3d_model_to_comfyapi(
     model_3d: Types.File3D,
     file_format: str,
 ) -> str:
-    """Uploads a 3D model file to ComfyUI API and returns its download URL."""
+    """Uploads a 3D model file to Hanzo Studio API and returns its download URL."""
     return await upload_file_to_comfyapi(
         cls,
         model_3d.get_data(),
@@ -193,7 +193,7 @@ async def upload_file_to_comfyapi(
     wait_label: str | None = "Uploading",
     progress_origin_ts: float | None = None,
 ) -> str:
-    """Uploads a single file to ComfyUI API and returns its download URL."""
+    """Uploads a single file to Hanzo Studio API and returns its download URL."""
     if upload_mime_type is None:
         request_object = UploadRequest(file_name=filename)
     else:

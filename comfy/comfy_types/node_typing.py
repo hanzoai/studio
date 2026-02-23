@@ -99,7 +99,7 @@ class InputTypeOptions(TypedDict):
 
     Due to IDE limitations with unions, for now all options are available for all types (e.g. `label_on` is hinted even when the type is not `IO.BOOLEAN`).
 
-    Comfy Docs: https://docs.comfy.org/custom-nodes/backend/datatypes
+    Hanzo Studio Docs: https://docs.hanzo.ai/custom-nodes/backend/datatypes
     """
 
     default: NotRequired[bool | str | float | int | list | tuple]
@@ -161,7 +161,7 @@ class InputTypeOptions(TypedDict):
     """
     remote: NotRequired[RemoteInputOptions]
     """Specifies the configuration for a remote input.
-    Available after ComfyUI frontend v1.9.7
+    Available after Hanzo Studio frontend v1.9.7
     https://github.com/Comfy-Org/ComfyUI_frontend/pull/2422"""
     control_after_generate: NotRequired[bool]
     """Specifies whether a control widget should be added to the input, adding options to automatically change the value after each prompt is queued. Currently only used for INT and COMBO types."""
@@ -174,7 +174,7 @@ class InputTypeOptions(TypedDict):
     """
     multi_select: NotRequired[MultiSelectOptions]
     """COMBO type only. Specifies the configuration for a multi-select widget.
-    Available after ComfyUI frontend v1.13.4
+    Available after Hanzo Studio frontend v1.13.4
     https://github.com/Comfy-Org/ComfyUI_frontend/pull/2987"""
     gradient_stops: NotRequired[list[list[float]]]
     """Gradient color stops for gradientslider display mode. Each stop is [offset, r, g, b] (``FLOAT``)."""
@@ -198,7 +198,7 @@ class HiddenInputTypeDict(TypedDict):
 class InputTypeDict(TypedDict):
     """Provides type hinting for node INPUT_TYPES.
 
-    Comfy Docs: https://docs.comfy.org/custom-nodes/backend/more_on_inputs
+    Hanzo Studio Docs: https://docs.hanzo.ai/custom-nodes/backend/more_on_inputs
     """
 
     required: NotRequired[dict[str, tuple[IO, InputTypeOptions]]]
@@ -208,14 +208,14 @@ class InputTypeDict(TypedDict):
     hidden: NotRequired[HiddenInputTypeDict]
     """Offers advanced functionality and server-client communication.
 
-    Comfy Docs: https://docs.comfy.org/custom-nodes/backend/more_on_inputs#hidden-inputs
+    Hanzo Studio Docs: https://docs.hanzo.ai/custom-nodes/backend/more_on_inputs#hidden-inputs
     """
 
 
 class ComfyNodeABC(ABC):
     """Abstract base class for Comfy nodes.  Includes the names and expected types of attributes.
 
-    Comfy Docs: https://docs.comfy.org/custom-nodes/backend/server_overview
+    Hanzo Studio Docs: https://docs.hanzo.ai/custom-nodes/backend/server_overview
     """
 
     DESCRIPTION: str
@@ -232,7 +232,7 @@ class ComfyNodeABC(ABC):
     CATEGORY: str
     """The category of the node, as per the "Add Node" menu.
 
-    Comfy Docs: https://docs.comfy.org/custom-nodes/backend/server_overview#category
+    Hanzo Studio Docs: https://docs.hanzo.ai/custom-nodes/backend/server_overview#category
     """
     EXPERIMENTAL: bool
     """Flags a node as experimental, informing users that it may change or not work as expected."""
@@ -241,7 +241,7 @@ class ComfyNodeABC(ABC):
     DEV_ONLY: bool
     """Flags a node as dev-only, hiding it from search/menus unless dev mode is enabled."""
     API_NODE: Optional[bool]
-    """Flags a node as an API node. See: https://docs.comfy.org/tutorials/api-nodes/overview."""
+    """Flags a node as an API node. See: https://docs.hanzo.ai/tutorials/api-nodes/overview."""
 
     @classmethod
     @abstractmethod
@@ -250,9 +250,9 @@ class ComfyNodeABC(ABC):
 
         * Must include the ``required`` key, which describes all inputs that must be connected for the node to execute.
         * The ``optional`` key can be added to describe inputs which do not need to be connected.
-        * The ``hidden`` key offers some advanced functionality.  More info at: https://docs.comfy.org/custom-nodes/backend/more_on_inputs#hidden-inputs
+        * The ``hidden`` key offers some advanced functionality.  More info at: https://docs.hanzo.ai/custom-nodes/backend/more_on_inputs#hidden-inputs
 
-        Comfy Docs: https://docs.comfy.org/custom-nodes/backend/server_overview#input-types
+        Hanzo Studio Docs: https://docs.hanzo.ai/custom-nodes/backend/server_overview#input-types
         """
         return {"required": {}}
 
@@ -267,7 +267,7 @@ class ComfyNodeABC(ABC):
 
     By default, a node is not considered an output. Set ``OUTPUT_NODE = True`` to specify that it is.
 
-    Comfy Docs: https://docs.comfy.org/custom-nodes/backend/server_overview#output-node
+    Hanzo Studio Docs: https://docs.hanzo.ai/custom-nodes/backend/server_overview#output-node
     """
     INPUT_IS_LIST: bool
     """A flag indicating if this node implements the additional code necessary to deal with OUTPUT_IS_LIST nodes.
@@ -278,7 +278,7 @@ class ComfyNodeABC(ABC):
 
     A node can also override the default input behaviour and receive the whole list in a single call. This is done by setting a class attribute `INPUT_IS_LIST` to ``True``.
 
-    Comfy Docs: https://docs.comfy.org/custom-nodes/backend/lists#list-processing
+    Hanzo Studio Docs: https://docs.hanzo.ai/custom-nodes/backend/lists#list-processing
     """
     OUTPUT_IS_LIST: tuple[bool, ...]
     """A tuple indicating which node outputs are lists, but will be connected to nodes that expect individual items.
@@ -296,7 +296,7 @@ class ComfyNodeABC(ABC):
     the node should provide a class attribute `OUTPUT_IS_LIST`, which is a ``tuple[bool]``, of the same length as `RETURN_TYPES`,
     specifying which outputs which should be so treated.
 
-    Comfy Docs: https://docs.comfy.org/custom-nodes/backend/lists#list-processing
+    Hanzo Studio Docs: https://docs.hanzo.ai/custom-nodes/backend/lists#list-processing
     """
 
     RETURN_TYPES: tuple[IO, ...]
@@ -306,19 +306,19 @@ class ComfyNodeABC(ABC):
 
         RETURN_TYPES = (IO.INT, "INT", "CUSTOM_TYPE")
 
-    Comfy Docs: https://docs.comfy.org/custom-nodes/backend/server_overview#return-types
+    Hanzo Studio Docs: https://docs.hanzo.ai/custom-nodes/backend/server_overview#return-types
     """
     RETURN_NAMES: tuple[str, ...]
     """The output slot names for each item in `RETURN_TYPES`, e.g. ``RETURN_NAMES = ("count", "filter_string")``
 
-    Comfy Docs: https://docs.comfy.org/custom-nodes/backend/server_overview#return-names
+    Hanzo Studio Docs: https://docs.hanzo.ai/custom-nodes/backend/server_overview#return-names
     """
     OUTPUT_TOOLTIPS: tuple[str, ...]
     """A tuple of strings to use as tooltips for node outputs, one for each item in `RETURN_TYPES`."""
     FUNCTION: str
     """The name of the function to execute as a literal string, e.g. `FUNCTION = "execute"`
 
-    Comfy Docs: https://docs.comfy.org/custom-nodes/backend/server_overview#function
+    Hanzo Studio Docs: https://docs.hanzo.ai/custom-nodes/backend/server_overview#function
     """
 
 
@@ -336,7 +336,7 @@ class CheckLazyMixin:
         Params should match the nodes execution ``FUNCTION`` (self, and all inputs by name).
         Will be executed repeatedly until it returns an empty list, or all requested items were already evaluated (and sent as params).
 
-        Comfy Docs: https://docs.comfy.org/custom-nodes/backend/lazy_evaluation#defining-check-lazy-status
+        Hanzo Studio Docs: https://docs.hanzo.ai/custom-nodes/backend/lazy_evaluation#defining-check-lazy-status
         """
 
         need = [name for name in kwargs if kwargs[name] is None]

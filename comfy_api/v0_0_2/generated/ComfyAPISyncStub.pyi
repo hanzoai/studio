@@ -8,7 +8,7 @@ class ComfyAPISyncStub:
     class ExecutionSync:
         def __init__(self) -> None: ...
         """
-        Update the progress bar displayed in the ComfyUI interface.
+        Update the progress bar displayed in the Hanzo Studio interface.
 
         This function allows custom nodes and API calls to report their progress
         back to the user interface, providing visual feedback during long operations.

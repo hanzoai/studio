@@ -376,7 +376,7 @@ class GeminiNode(IO.ComfyNode):
         Convert audio input to Gemini API compatible parts.
 
         Args:
-            audio_input: Audio input from ComfyUI, containing waveform tensor and sample rate.
+            audio_input: Audio input from Hanzo Studio, containing waveform tensor and sample rate.
 
         Returns:
             List of GeminiPart objects containing the encoded audio.

@@ -39,7 +39,7 @@ MixedPrecisionOps + Metadata Detection
 
 ### Representation
 
-To represent these derived datatypes, ComfyUI uses a subclass of torch.Tensor to implements these using the `QuantizedTensor` class found in `comfy/quant_ops.py`
+To represent these derived datatypes, Hanzo Studio uses a subclass of torch.Tensor to implements these using the `QuantizedTensor` class found in `comfy/quant_ops.py`
 
 A `Layout` class defines how a specific quantization format behaves:
 - Required parameters

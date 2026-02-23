@@ -115,7 +115,7 @@ class ImageOnlyCheckpointSave(comfy_extras.nodes_model_merging.CheckpointSave):
         return {"required": { "model": ("MODEL",),
                               "clip_vision": ("CLIP_VISION",),
                               "vae": ("VAE",),
-                              "filename_prefix": ("STRING", {"default": "checkpoints/ComfyUI"}),},
+                              "filename_prefix": ("STRING", {"default": "checkpoints/HanzoStudio"}),},
                 "hidden": {"prompt": "PROMPT", "extra_pnginfo": "EXTRA_PNGINFO"},}
 
     def save(self, model, clip_vision, vae, filename_prefix, prompt=None, extra_pnginfo=None):

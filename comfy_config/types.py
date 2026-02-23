@@ -3,7 +3,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 from typing import List, Optional
 
 # IMPORTANT: The type definitions specified in pyproject.toml for custom nodes
-# must remain synchronized with the corresponding files in the https://github.com/Comfy-Org/comfy-cli/blob/main/comfy_cli/registry/types.py.
+# must remain synchronized with the corresponding files in the https://github.com/hanzoai/studio-cli/blob/main/comfy_cli/registry/types.py.
 # Any changes to one must be reflected in the other to maintain consistency.
 
 class NodeVersion(BaseModel):

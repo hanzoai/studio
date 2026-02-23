@@ -18,7 +18,7 @@ from comfy_api import feature_flags
 
 
 if __name__ == "__main__":
-    #NOTE: These do not do anything on core ComfyUI, they are for custom nodes.
+    #NOTE: These do not do anything on core Hanzo Studio, they are for custom nodes.
     os.environ['HF_HUB_DISABLE_TELEMETRY'] = '1'
     os.environ['DO_NOT_TRACK'] = '1'
 
@@ -59,7 +59,7 @@ if __name__ == "__main__":
 
 def handle_comfyui_manager_unavailable():
     if not args.windows_standalone_build:
-        logging.warning(f"\n\nYou appear to be running comfyui-manager from source, this is not recommended. Please install comfyui-manager using the following command:\ncommand:\n\t{sys.executable} -m pip install --pre comfyui_manager\n")
+        logging.warning(f"\n\nYou appear to be running the studio manager from source, this is not recommended. Please install it using the following command:\ncommand:\n\t{sys.executable} -m pip install --pre comfyui_manager\n")
     args.enable_manager = False
 
 

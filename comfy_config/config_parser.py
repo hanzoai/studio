@@ -52,7 +52,7 @@ def validate_and_extract_accelerator_classifiers(classifiers: list) -> list:
 Extract configuration from a custom node directory's pyproject.toml file or a Python file.
 
 This function reads and parses the pyproject.toml file in the specified directory
-to extract project and ComfyUI-specific configuration information. If no
+to extract project and Hanzo Studio-specific configuration information. If no
 pyproject.toml file is found, it creates a minimal configuration using the
 folder name as the project name. If a Python file is provided, it uses the
 file name (without extension) as the project name.
@@ -67,7 +67,7 @@ Args:
 Returns:
     Optional[PyProjectConfig]: A PyProjectConfig object containing:
         - project: Basic project information (name, version, dependencies, etc.)
-        - tool_comfy: ComfyUI-specific configuration (publisher_id, models, etc.)
+        - tool_comfy: Hanzo Studio-specific configuration (publisher_id, models, etc.)
         Returns None if configuration extraction fails or if the provided file
         is not a Python file.
 

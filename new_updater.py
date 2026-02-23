@@ -26,7 +26,7 @@ def update_windows_updater():
     try:
         with open(dest_bat_deps_path, 'rb') as f:
             contents = f.read()
-            contents = contents.replace(b'..\\python_embeded\\python.exe .\\update.py ..\\ComfyUI\\', b'call update_comfyui.bat nopause')
+            contents = contents.replace(b'..\\python_embeded\\python.exe .\\update.py ..\\HanzoStudio\\', b'call update_comfyui.bat nopause')
         with open(dest_bat_deps_path, 'wb') as f:
             f.write(contents)
     except:

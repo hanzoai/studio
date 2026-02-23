@@ -15,7 +15,7 @@ import requests
 
 def pytest_addoption(parser: pytest.Parser) -> None:
     """
-    Allow overriding the database URL used by the spawned ComfyUI process.
+    Allow overriding the database URL used by the spawned Hanzo Studio process.
     Priority:
       1) --db-url command line option
       2) ASSETS_TEST_DB_URL environment variable (used by CI)
@@ -51,7 +51,7 @@ def _wait_http_ready(base: str, session: requests.Session, timeout: float = 90.0
         except Exception as e:
             last_err = e
         time.sleep(0.25)
-    raise RuntimeError(f"ComfyUI HTTP did not become ready: {last_err}")
+    raise RuntimeError(f"Hanzo Studio HTTP did not become ready: {last_err}")
 
 
 @pytest.fixture(scope="session")
@@ -80,7 +80,7 @@ def comfy_tmp_base_dir() -> Path:
 @pytest.fixture(scope="session")
 def comfy_url_and_proc(comfy_tmp_base_dir: Path, request: pytest.FixtureRequest):
     """
-    Boot ComfyUI subprocess with:
+    Boot Hanzo Studio subprocess with:
       - sandbox base dir
       - file-backed sqlite DB in temp dir
       - autoscan disabled
@@ -125,7 +125,7 @@ def comfy_url_and_proc(comfy_tmp_base_dir: Path, request: pytest.FixtureRequest)
         if proc.poll() is not None:
             out_log.flush()
             err_log.flush()
-            raise RuntimeError(f"ComfyUI exited early with code {proc.returncode}")
+            raise RuntimeError(f"Hanzo Studio exited early with code {proc.returncode}")
         time.sleep(0.1)
 
     base_url = f"http://127.0.0.1:{port}"
@@ -140,7 +140,7 @@ def comfy_url_and_proc(comfy_tmp_base_dir: Path, request: pytest.FixtureRequest)
         with contextlib.suppress(Exception):
             out_log.flush()
             err_log.flush()
-        raise RuntimeError(f"ComfyUI did not become ready: {e}")
+        raise RuntimeError(f"Hanzo Studio did not become ready: {e}")
 
     if proc and proc.poll() is None:
         with contextlib.suppress(Exception):

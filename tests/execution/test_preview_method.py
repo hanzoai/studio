@@ -2,7 +2,7 @@
 E2E tests for Queue-specific Preview Method Override feature.
 
 Tests actual execution with different preview_method values.
-Requires a running ComfyUI server with models.
+Requires a running Hanzo Studio server with models.
 
 Usage:
     COMFYUI_SERVER=http://localhost:8988 pytest test_preview_method_e2e.py -v -m preview_method
@@ -31,7 +31,7 @@ GRAPH_FILE = Path(__file__).parent.parent / "inference" / "graphs" / "default_gr
 
 
 def is_server_running() -> bool:
-    """Check if ComfyUI server is running."""
+    """Check if Hanzo Studio server is running."""
     try:
         request = urllib.request.Request(f"{SERVER_URL}/system_stats")
         with urllib.request.urlopen(request, timeout=2.0):
@@ -161,7 +161,7 @@ def load_graph() -> dict:
 pytestmark = [
     pytest.mark.skipif(
         not is_server_running(),
-        reason=f"ComfyUI server not running at {SERVER_URL}"
+        reason=f"Hanzo Studio server not running at {SERVER_URL}"
     ),
     pytest.mark.preview_method,
     pytest.mark.execution,

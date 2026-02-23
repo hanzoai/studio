@@ -180,7 +180,7 @@ def _init_glfw():
         _glfw.window_hint(_glfw.OPENGL_PROFILE, _glfw.OPENGL_CORE_PROFILE)
 
         logger.debug("_init_glfw: calling create_window()")
-        window = _glfw.create_window(64, 64, "ComfyUI GLSL", None, None)
+        window = _glfw.create_window(64, 64, "Hanzo Studio GLSL", None, None)
         if not window:
             raise RuntimeError("glfw.create_window() failed")
 

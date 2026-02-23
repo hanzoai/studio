@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Script to generate .pyi stub files for the synchronous API wrappers.
-This allows generating stubs without running the full ComfyUI application.
+This allows generating stubs without running the full Hanzo Studio application.
 """
 
 import os
@@ -9,7 +9,7 @@ import sys
 import logging
 import importlib
 
-# Add ComfyUI to path so we can import modules
+# Add Hanzo Studio to path so we can import modules
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from comfy_api.internal.async_to_sync import AsyncToSyncConverter

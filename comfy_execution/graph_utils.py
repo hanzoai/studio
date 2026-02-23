@@ -9,7 +9,7 @@ def is_link(obj):
         return False
     return True
 
-# The GraphBuilder is just a utility class that outputs graphs in the form expected by the ComfyUI back-end
+# The GraphBuilder is just a utility class that outputs graphs in the form expected by the Hanzo Studio back-end
 class GraphBuilder:
     _default_prefix_root = ""
     _default_prefix_call_index = 0

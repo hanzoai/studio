@@ -1,10 +1,10 @@
-#Rename this to extra_model_paths.yaml and ComfyUI will load it
+#Rename this to extra_model_paths.yaml and Hanzo Studio will load it
 
-#config for comfyui
-#your base path should be either an existing comfy install or a central folder where you store all of your models, loras, etc.
+#config for Hanzo Studio
+#your base path should be either an existing install or a central folder where you store all of your models, loras, etc.
 
-#comfyui:
-#     base_path: path/to/comfyui/
+#hanzo_studio:
+#     base_path: path/to/hanzo_studio/
 #     # You can use is_default to mark that these folders should be listed first, and used as the default dirs for eg downloads
 #     #is_default: true
 #     checkpoints: models/checkpoints/

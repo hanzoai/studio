@@ -324,7 +324,7 @@ class TestRealWorldScenarios:
     def test_sequential_queue_with_different_preview_methods(self):
         """
         Simulate real queue scenario: multiple prompts with different settings.
-        This tests the actual usage pattern in ComfyUI.
+        This tests the actual usage pattern in Hanzo Studio.
         """
         # Queue 1: User wants TAESD preview
         extra_data_1 = {"client_id": "client-1", "preview_method": "taesd"}

@@ -21,7 +21,7 @@ class TestPublicAPI:
 
     @fixture(scope="class", autouse=True)
     def _server(self, args_pytest):
-        """Start ComfyUI server for testing."""
+        """Start Hanzo Studio server for testing."""
         pargs = [
             'python', 'main.py',
             '--output-directory', args_pytest["output_dir"],

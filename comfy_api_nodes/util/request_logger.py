@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 
 
 def get_log_directory():
-    """Ensures the API log directory exists within ComfyUI's temp directory and returns its path."""
+    """Ensures the API log directory exists within Hanzo Studio's temp directory and returns its path."""
     base_temp_dir = folder_paths.get_temp_directory()
     log_dir = os.path.join(base_temp_dir, "api_logs")
     try:
@@ -130,7 +130,7 @@ def log_request_response(
 if __name__ == '__main__':
     # Example usage (for testing the logger directly)
     logger.setLevel(logging.DEBUG)
-    # Mock folder_paths for direct execution if not running within ComfyUI full context
+    # Mock folder_paths for direct execution if not running within Hanzo Studio full context
     if not hasattr(folder_paths, 'get_temp_directory'):
         class MockFolderPaths:
             def get_temp_directory(self):

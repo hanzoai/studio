@@ -1,5 +1,5 @@
 # Original: https://github.com/Tencent/Hunyuan3D-2/blob/main/hy3dgen/shapegen/models/autoencoders/model.py
-# Since the header on their VAE source file was a bit confusing we asked for permission to use this code from tencent under the GPL license used in ComfyUI.
+# Since the header on their VAE source file was a bit confusing we asked for permission to use this code from tencent under the GPL license used in Hanzo Studio.
 
 import torch
 import torch.nn as nn

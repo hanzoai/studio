@@ -1,5 +1,5 @@
 """
-    This file is part of ComfyUI.
+    This file is part of Hanzo Studio.
     Copyright (C) 2024 Comfy
 
     This program is free software: you can redistribute it and/or modify
@@ -1654,7 +1654,7 @@ class ModelPatcherDynamic(ModelPatcher):
         if key not in combined_patches:
             return
 
-        raise RuntimeError("Hooks not implemented in ModelPatcherDynamic. Please remove --fast arguments form ComfyUI startup")
+        raise RuntimeError("Hooks not implemented in ModelPatcherDynamic. Please remove --fast arguments from Hanzo Studio startup")
 
     def unpatch_hooks(self, whitelist_keys_set: set[str]=None) -> None:
         pass

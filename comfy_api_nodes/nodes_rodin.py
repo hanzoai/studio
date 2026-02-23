@@ -1,5 +1,5 @@
 """
-ComfyUI X Rodin3D(Deemos) API Nodes
+Hanzo Studio X Rodin3D(Deemos) API Nodes
 
 Rodin API docs: https://developer.hyper3d.ai/
 

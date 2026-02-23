@@ -189,7 +189,7 @@ class SaveAnimatedWEBP(IO.ComfyNode):
             category="image/animation",
             inputs=[
                 IO.Image.Input("images"),
-                IO.String.Input("filename_prefix", default="ComfyUI"),
+                IO.String.Input("filename_prefix", default="HanzoStudio"),
                 IO.Float.Input("fps", default=6.0, min=0.01, max=1000.0, step=0.01),
                 IO.Boolean.Input("lossless", default=True),
                 IO.Int.Input("quality", default=80, min=0, max=100),
@@ -226,7 +226,7 @@ class SaveAnimatedPNG(IO.ComfyNode):
             category="image/animation",
             inputs=[
                 IO.Image.Input("images"),
-                IO.String.Input("filename_prefix", default="ComfyUI"),
+                IO.String.Input("filename_prefix", default="HanzoStudio"),
                 IO.Float.Input("fps", default=6.0, min=0.01, max=1000.0, step=0.01),
                 IO.Int.Input("compress_level", default=4, min=0, max=9, advanced=True),
             ],
@@ -235,7 +235,7 @@ class SaveAnimatedPNG(IO.ComfyNode):
         )
 
     @classmethod
-    def execute(cls, images, fps, compress_level, filename_prefix="ComfyUI") -> IO.NodeOutput:
+    def execute(cls, images, fps, compress_level, filename_prefix="HanzoStudio") -> IO.NodeOutput:
         return IO.NodeOutput(
             ui=UI.ImageSaveHelper.get_save_animated_png_ui(
                 images=images,
@@ -488,7 +488,7 @@ class SaveSVGNode(IO.ComfyNode):
                 IO.SVG.Input("svg"),
                 IO.String.Input(
                     "filename_prefix",
-                    default="svg/ComfyUI",
+                    default="svg/HanzoStudio",
                     tooltip="The prefix for the file to save. This may include formatting information such as %date:yyyy-MM-dd% or %Empty Latent Image.width% to include values from nodes.",
                 ),
             ],
@@ -497,7 +497,7 @@ class SaveSVGNode(IO.ComfyNode):
         )
 
     @classmethod
-    def execute(cls, svg: IO.SVG.Type, filename_prefix="svg/ComfyUI") -> IO.NodeOutput:
+    def execute(cls, svg: IO.SVG.Type, filename_prefix="svg/HanzoStudio") -> IO.NodeOutput:
         full_output_folder, filename, counter, subfolder, filename_prefix = folder_paths.get_save_image_path(filename_prefix, folder_paths.get_output_directory())
         results: list[UI.SavedResult] = []
 

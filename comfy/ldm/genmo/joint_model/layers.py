@@ -1,5 +1,5 @@
 #original code from https://github.com/genmoai/models under apache 2.0 license
-#adapted to ComfyUI
+#adapted to Hanzo Studio
 
 import collections.abc
 import math

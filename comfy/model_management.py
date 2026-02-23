@@ -1,5 +1,5 @@
 """
-    This file is part of ComfyUI.
+    This file is part of Hanzo Studio.
     Copyright (C) 2024 Comfy
 
     This program is free software: you can redistribute it and/or modify
@@ -1342,7 +1342,7 @@ def unpin_memory(tensor):
 
     size_stored = PINNED_MEMORY.get(ptr, None)
     if size_stored is None:
-        logging.warning("Tried to unpin tensor not pinned by ComfyUI")
+        logging.warning("Tried to unpin tensor not pinned by Hanzo Studio")
         return False
 
     if size != size_stored:

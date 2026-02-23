@@ -1,8 +1,8 @@
 # Comfy Typing
-## Type hinting for ComfyUI Node development
+## Type hinting for Hanzo Studio Node development
 
 This module provides type hinting and concrete convenience types for node developers.
-If cloned to the custom_nodes directory of ComfyUI, types can be imported using:
+If cloned to the custom_nodes directory of Hanzo Studio, types can be imported using:
 
 ```python
 from comfy.comfy_types import IO, ComfyNodeABC, CheckLazyMixin

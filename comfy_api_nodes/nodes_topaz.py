@@ -415,7 +415,7 @@ class TopazVideoEnhance(IO.ComfyNode):
         )
         if len(upload_res.urls) > 1:
             raise NotImplementedError(
-                "Large files are not currently supported. Please open an issue in the ComfyUI repository."
+                "Large files are not currently supported. Please open an issue in the Hanzo Studio repository."
             )
         async with aiohttp.ClientSession(headers={"Content-Type": "video/mp4"}) as session:
             if isinstance(src_video_stream, BytesIO):

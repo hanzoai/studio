@@ -286,7 +286,7 @@ class Encoder(nn.Module):
         finally:
             tid = threading.get_ident()
             for _, module in self.named_modules():
-                # ComfyUI doesn't thread this kind of stuff today, but just in case
+                # Hanzo Studio doesn't thread this kind of stuff today, but just in case
                 # we key on the thread to make it thread safe.
                 tid = threading.get_ident()
                 if hasattr(module, "temporal_cache_state"):
@@ -551,7 +551,7 @@ class Decoder(nn.Module):
             return self.forward_orig(*args, **kwargs)
         finally:
             for _, module in self.named_modules():
-                #ComfyUI doesn't thread this kind of stuff today, but just incase
+                # Hanzo Studio doesn't thread this kind of stuff today, but just incase
                 #we key on the thread to make it thread safe.
                 tid = threading.get_ident()
                 if hasattr(module, "temporal_cache_state"):

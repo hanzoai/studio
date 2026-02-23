@@ -93,7 +93,7 @@ class LoraSave(io.ComfyNode):
             display_name="Extract and Save Lora",
             category="_for_testing",
             inputs=[
-                io.String.Input("filename_prefix", default="loras/ComfyUI_extracted_lora"),
+                io.String.Input("filename_prefix", default="loras/HanzoStudio_extracted_lora"),
                 io.Int.Input("rank", default=8, min=1, max=4096, step=1, advanced=True),
                 io.Combo.Input("lora_type", options=tuple(LORA_TYPES.keys()), advanced=True),
                 io.Boolean.Input("bias_diff", default=True, advanced=True),

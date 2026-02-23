@@ -2183,13 +2183,13 @@ def get_module_name(module_path: str) -> str:
     """
     Returns the module name based on the given module path.
     Examples:
-        get_module_name("C:/Users/username/ComfyUI/custom_nodes/my_custom_node.py") -> "my_custom_node"
-        get_module_name("C:/Users/username/ComfyUI/custom_nodes/my_custom_node") -> "my_custom_node"
-        get_module_name("C:/Users/username/ComfyUI/custom_nodes/my_custom_node/") -> "my_custom_node"
-        get_module_name("C:/Users/username/ComfyUI/custom_nodes/my_custom_node/__init__.py") -> "my_custom_node"
-        get_module_name("C:/Users/username/ComfyUI/custom_nodes/my_custom_node/__init__") -> "my_custom_node"
-        get_module_name("C:/Users/username/ComfyUI/custom_nodes/my_custom_node/__init__/") -> "my_custom_node"
-        get_module_name("C:/Users/username/ComfyUI/custom_nodes/my_custom_node.disabled") -> "custom_nodes
+        get_module_name("C:/Users/username/HanzoStudio/custom_nodes/my_custom_node.py") -> "my_custom_node"
+        get_module_name("C:/Users/username/HanzoStudio/custom_nodes/my_custom_node") -> "my_custom_node"
+        get_module_name("C:/Users/username/HanzoStudio/custom_nodes/my_custom_node/") -> "my_custom_node"
+        get_module_name("C:/Users/username/HanzoStudio/custom_nodes/my_custom_node/__init__.py") -> "my_custom_node"
+        get_module_name("C:/Users/username/HanzoStudio/custom_nodes/my_custom_node/__init__") -> "my_custom_node"
+        get_module_name("C:/Users/username/HanzoStudio/custom_nodes/my_custom_node/__init__/") -> "my_custom_node"
+        get_module_name("C:/Users/username/HanzoStudio/custom_nodes/my_custom_node.disabled") -> "custom_nodes
     Args:
         module_path (str): The path of the module.
     Returns:
@@ -2346,9 +2346,9 @@ async def init_external_custom_nodes():
 
 async def init_builtin_extra_nodes():
     """
-    Initializes the built-in extra nodes in ComfyUI.
+    Initializes the built-in extra nodes in Hanzo Studio.
 
-    This function loads the extra node files located in the "comfy_extras" directory and imports them into ComfyUI.
+    This function loads the extra node files located in the "comfy_extras" directory and imports them into Hanzo Studio.
     If any of the extra node files fail to import, a warning message is logged.
 
     Returns:
@@ -2495,7 +2495,7 @@ async def init_extra_nodes(init_custom_nodes=True, init_api_nodes=True):
         logging.warning("WARNING: some comfy_api_nodes/ nodes did not import correctly. This may be because they are missing some dependencies.\n")
         for node in import_failed_api:
             logging.warning("IMPORT FAILED: {}".format(node))
-        logging.warning("\nThis issue might be caused by new missing dependencies added the last time you updated ComfyUI.")
+        logging.warning("\nThis issue might be caused by new missing dependencies added the last time you updated Hanzo Studio.")
         if args.windows_standalone_build:
             logging.warning("Please run the update script: update/update_comfyui.bat")
         else:
@@ -2506,7 +2506,7 @@ async def init_extra_nodes(init_custom_nodes=True, init_api_nodes=True):
         logging.warning("WARNING: some comfy_extras/ nodes did not import correctly. This may be because they are missing some dependencies.\n")
         for node in import_failed:
             logging.warning("IMPORT FAILED: {}".format(node))
-        logging.warning("\nThis issue might be caused by new missing dependencies added the last time you updated ComfyUI.")
+        logging.warning("\nThis issue might be caused by new missing dependencies added the last time you updated Hanzo Studio.")
         if args.windows_standalone_build:
             logging.warning("Please run the update script: update/update_comfyui.bat")
         else:

@@ -19,7 +19,7 @@ from node_helpers import conditioning_set_values
 # #######################################################################################################
 # Hooks explanation
 # -------------------
-# The purpose of hooks is to allow conds to influence sampling without the need for ComfyUI core code to
+# The purpose of hooks is to allow conds to influence sampling without the need for Hanzo Studio core code to
 # make explicit special cases like it does for ControlNet and GLIGEN.
 #
 # This is necessary for nodes/features that are intended for use with masked or scheduled conds, or those
@@ -201,7 +201,7 @@ class ObjectPatchHook(Hook):
         return c
 
     def add_hook_patches(self, model: ModelPatcher, model_options: dict, target_dict: dict[str], registered: HookGroup):
-        raise NotImplementedError("ObjectPatchHook is not supported yet in ComfyUI.")
+        raise NotImplementedError("ObjectPatchHook is not supported yet in Hanzo Studio.")
 
 class AdditionalModelsHook(Hook):
     '''
@@ -282,7 +282,7 @@ class InjectionsHook(Hook):
         return c
 
     def add_hook_patches(self, model: ModelPatcher, model_options: dict, target_dict: dict[str], registered: HookGroup):
-        raise NotImplementedError("InjectionsHook is not supported yet in ComfyUI.")
+        raise NotImplementedError("InjectionsHook is not supported yet in Hanzo Studio.")
 
 class HookGroup:
     '''

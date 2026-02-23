@@ -36,7 +36,7 @@ def get_auth_header(node_cls: type[IO.ComfyNode]) -> dict[str, str]:
 
 
 def default_base_url() -> str:
-    return getattr(args, "comfy_api_base", "https://api.comfy.org")
+    return getattr(args, "comfy_api_base", "https://api.hanzo.ai")
 
 
 async def sleep_with_interrupt(
