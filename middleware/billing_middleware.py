@@ -9,7 +9,6 @@ Commerce API: GET  /api/v1/billing/balance
 """
 import logging
 import os
-import time as _time
 
 import aiohttp
 

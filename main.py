@@ -434,7 +434,7 @@ def start_studio(asyncio_loop=None):
 
     # In worker mode, add worker execution routes and register with coordinator
     if args.worker_mode:
-        from middleware.worker_client import add_worker_routes, WorkerClient
+        from middleware.worker_client import add_worker_routes
         add_worker_routes(prompt_server.routes, prompt_server)
         logging.info("Worker mode enabled — worker_id=%s coordinator=%s",
                       args.worker_id, args.coordinator_url)
