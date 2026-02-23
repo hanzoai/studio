@@ -225,7 +225,7 @@ parser.add_argument(
     "--comfy-api-base",
     type=str,
     default="https://api.comfy.org",
-    help="Set the base URL for the ComfyUI API.  (default: https://api.comfy.org)",
+    help="Set the base URL for the Hanzo Studio API.  (default: https://api.comfy.org)",
 )
 
 database_default_path = os.path.abspath(

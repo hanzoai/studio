@@ -1,14 +1,14 @@
 [project]
-name = "ComfyUI"
+name = "hanzo-studio"
 version = "0.14.1"
 readme = "README.md"
 license = { file = "LICENSE" }
 requires-python = ">=3.10"
 
 [project.urls]
-homepage = "https://www.comfy.org/"
-repository = "https://github.com/comfyanonymous/ComfyUI"
-documentation = "https://docs.comfy.org/"
+homepage = "https://hanzo.ai"
+repository = "https://github.com/hanzoai/studio"
+documentation = "https://docs.hanzo.ai"
 
 [tool.ruff]
 lint.select = [

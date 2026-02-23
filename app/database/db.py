@@ -24,7 +24,7 @@ except ImportError as e:
 ------------------------------------------------------------------------
 Error importing dependencies: {e}
 {get_missing_requirements_message()}
-This error is happening because ComfyUI now uses a local sqlite database.
+This error is happening because Hanzo Studio now uses a local sqlite database.
 ------------------------------------------------------------------------
 """.strip()
     )

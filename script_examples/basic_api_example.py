@@ -1,7 +1,7 @@
 import json
 from urllib import request
 
-#This is the ComfyUI api prompt format.
+#This is the Hanzo Studio api prompt format.
 
 #If you want it for a specific workflow you can "File -> Export (API)" in the interface.
 
@@ -85,7 +85,7 @@ prompt_text = """
     "9": {
         "class_type": "SaveImage",
         "inputs": {
-            "filename_prefix": "ComfyUI",
+            "filename_prefix": "HanzoStudio",
             "images": [
                 "8",
                 0

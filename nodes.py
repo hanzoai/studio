@@ -484,7 +484,7 @@ class SaveLatent:
     @classmethod
     def INPUT_TYPES(s):
         return {"required": { "samples": ("LATENT", ),
-                              "filename_prefix": ("STRING", {"default": "latents/ComfyUI"})},
+                              "filename_prefix": ("STRING", {"default": "latents/HanzoStudio"})},
                 "hidden": {"prompt": "PROMPT", "extra_pnginfo": "EXTRA_PNGINFO"},
                 }
     RETURN_TYPES = ()
@@ -494,7 +494,7 @@ class SaveLatent:
 
     CATEGORY = "_for_testing"
 
-    def save(self, samples, filename_prefix="ComfyUI", prompt=None, extra_pnginfo=None):
+    def save(self, samples, filename_prefix="HanzoStudio", prompt=None, extra_pnginfo=None):
         full_output_folder, filename, counter, subfolder, filename_prefix = folder_paths.get_save_image_path(filename_prefix, self.output_dir)
 
         # support save metadata for latent sharing
@@ -1638,7 +1638,7 @@ class SaveImage:
         return {
             "required": {
                 "images": ("IMAGE", {"tooltip": "The images to save."}),
-                "filename_prefix": ("STRING", {"default": "ComfyUI", "tooltip": "The prefix for the file to save. This may include formatting information such as %date:yyyy-MM-dd% or %Empty Latent Image.width% to include values from nodes."})
+                "filename_prefix": ("STRING", {"default": "HanzoStudio", "tooltip": "The prefix for the file to save. This may include formatting information such as %date:yyyy-MM-dd% or %Empty Latent Image.width% to include values from nodes."})
             },
             "hidden": {
                 "prompt": "PROMPT", "extra_pnginfo": "EXTRA_PNGINFO"
@@ -1652,10 +1652,10 @@ class SaveImage:
 
     CATEGORY = "image"
     ESSENTIALS_CATEGORY = "Basics"
-    DESCRIPTION = "Saves the input images to your ComfyUI output directory."
+    DESCRIPTION = "Saves the input images to your Hanzo Studio output directory."
     SEARCH_ALIASES = ["save", "save image", "export image", "output image", "write image", "download"]
 
-    def save_images(self, images, filename_prefix="ComfyUI", prompt=None, extra_pnginfo=None):
+    def save_images(self, images, filename_prefix="HanzoStudio", prompt=None, extra_pnginfo=None):
         filename_prefix += self.prefix_append
         full_output_folder, filename, counter, subfolder, filename_prefix = folder_paths.get_save_image_path(filename_prefix, self.output_dir, images[0].shape[1], images[0].shape[0])
         results = list()

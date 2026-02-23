@@ -514,7 +514,7 @@ def _friendly_http_message(status: int, body: Any) -> str:
     if status == 402:
         return "Payment Required: Please add credits to your account to use this node."
     if status == 409:
-        return "There is a problem with your account. Please contact support@comfy.org."
+        return "There is a problem with your account. Please contact support@hanzo.ai."
     if status == 429:
         return "Rate Limit Exceeded: The server returned 429 after all retry attempts. Please wait and try again."
     try:

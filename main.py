@@ -223,7 +223,7 @@ def cuda_malloc_warning():
             if b in device_name:
                 cuda_malloc_warning = True
         if cuda_malloc_warning:
-            logging.warning("\nWARNING: this card most likely does not support cuda-malloc, if you get \"CUDA error\" please run ComfyUI with: --disable-cuda-malloc\n")
+            logging.warning("\nWARNING: this card most likely does not support cuda-malloc, if you get \"CUDA error\" please run Hanzo Studio with: --disable-cuda-malloc\n")
 
 
 def prompt_worker(q, server_instance):
@@ -363,7 +363,7 @@ def setup_database():
 
 def start_comfyui(asyncio_loop=None):
     """
-    Starts the ComfyUI server using the provided asyncio event loop or creates a new one.
+    Starts the Hanzo Studio server using the provided asyncio event loop or creates a new one.
     Returns the event loop, server instance, and a function to start the server asynchronously.
     """
     if args.temp_directory:
@@ -421,14 +421,14 @@ def start_comfyui(asyncio_loop=None):
         await prompt_server.setup()
         await run(prompt_server, address=args.listen, port=args.port, verbose=not args.dont_print_server, call_on_start=call_on_start)
 
-    # Returning these so that other code can integrate with the ComfyUI loop and server
+    # Returning these so that other code can integrate with the Hanzo Studio loop and server
     return asyncio_loop, prompt_server, start_all
 
 
 if __name__ == "__main__":
-    # Running directly, just start ComfyUI.
+    # Running directly, just start Hanzo Studio.
     logging.info("Python version: {}".format(sys.version))
-    logging.info("ComfyUI version: {}".format(comfyui_version.__version__))
+    logging.info("Hanzo Studio version: {}".format(comfyui_version.__version__))
 
     if sys.version_info.major == 3 and sys.version_info.minor < 10:
         logging.warning("WARNING: You are using a python version older than 3.10, please upgrade to a newer one. 3.12 and above is recommended.")

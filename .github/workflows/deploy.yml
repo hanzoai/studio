@@ -2,7 +2,7 @@ name: Build and Deploy
 
 on:
   push:
-    branches: [hanzo/main]
+    branches: [main]
 
 env:
   REGISTRY: ghcr.io
