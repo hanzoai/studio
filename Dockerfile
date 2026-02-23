@@ -26,4 +26,4 @@ RUN mkdir -p models output input custom_nodes user
 
 EXPOSE 8188
 
-CMD ["python", "main.py", "--listen", "0.0.0.0", "--port", "8188"]
+CMD ["python", "main.py", "--listen", "0.0.0.0", "--port", "8188", "--cpu"]
