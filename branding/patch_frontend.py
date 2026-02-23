@@ -38,7 +38,9 @@ URL_REPLACEMENTS = [
 # These are the user-visible text labels
 # ============================================================
 DISPLAY_REPLACEMENTS = [
-    # Exact display strings (applied within string literals only)
+    # Exact display strings — multi-word phrases are safe to replace globally
+    # because they only appear as display text, not in code identifiers.
+    # Order matters: longer matches first to avoid partial replacements.
     ('ComfyUI Issues', 'Hanzo Studio Issues'),
     ('ComfyUI Docs', 'Hanzo Studio Docs'),
     ('ComfyUI Forum', 'Hanzo Studio Forum'),
@@ -53,13 +55,18 @@ DISPLAY_REPLACEMENTS = [
     ('ComfyUI api', 'Hanzo Studio api'),
     ('ComfyUI: ', 'Hanzo Studio: '),
     ('ComfyUI version', 'Hanzo Studio version'),
+    ('ComfyUI update', 'Hanzo Studio update'),
+    # Comfy-Org/ComfyOrg: ONLY as multi-word display phrases (not bare)
     ('Comfy-Org Discord', 'Hanzo AI Discord'),
     ('ComfyOrg Discord', 'Hanzo AI Discord'),
-    ('Comfy-Org', 'Hanzo AI'),
+    ('Comfy-Org Logo', 'Hanzo AI Logo'),
     ('ComfyOrg Logo', 'Hanzo AI Logo'),
-    ('ComfyOrg', 'Hanzo AI'),
     ('Comfy Org', 'Hanzo AI'),
+    # comfy.org domain in display text (not URLs — those are handled by URL_REPLACEMENTS)
     ('comfy.org', 'hanzo.ai'),
+    # Comfy Cloud branding
+    ('Comfy Cloud Logo', 'Hanzo Cloud Logo'),
+    ('Comfy Cloud', 'Hanzo Cloud'),
 ]
 
 # ============================================================
@@ -67,7 +74,7 @@ DISPLAY_REPLACEMENTS = [
 # Pattern: label:`...` or label:"..." or "key":"value"
 # ============================================================
 I18N_LABEL_PATTERNS = [
-    # In i18n bundles, display values appear as: label:`text`
+    # In i18n bundles, display values appear as: label:`text` or {label:"text"}
     (r'(label:\s*[`"\'])ComfyUI', r'\1Hanzo Studio'),
     (r'(label:\s*[`"\'])Comfy-Org', r'\1Hanzo AI'),
     (r'(label:\s*[`"\'])ComfyOrg', r'\1Hanzo AI'),
@@ -76,9 +83,21 @@ I18N_LABEL_PATTERNS = [
     (r'(title:\s*[`"\'])Comfy-Org', r'\1Hanzo AI'),
     # Alt text
     (r'(Alt:\s*[`"\'])ComfyUI', r'\1Hanzo Studio'),
-    (r'(Alt:\s*[`"\'])Comfy', r'\1Hanzo'),
+    (r'(Alt:\s*[`"\'])Comfy\b', r'\1Hanzo'),
     # Description patterns
     (r'(description:\s*[`"\'])ComfyUI', r'\1Hanzo Studio'),
+    # i18n value strings: `"key":"ComfyUI ..."` or `key:\`ComfyUI ...\``
+    # Match ComfyUI at the start of a value after a colon+quote
+    (r'(:\s*[`"\'])ComfyUI ([A-Z])', r'\1Hanzo Studio \2'),
+    # Standalone quoted "ComfyUI" as a value (not part of a longer identifier)
+    (r'([`"\'])ComfyUI([`"\'])', r'\1Hanzo Studio\2'),
+    # "Comfy-Org" as standalone quoted value
+    (r'([`"\'])Comfy-Org([`"\'])', r'\1Hanzo AI\2'),
+    (r'([`"\'])ComfyOrg([`"\'])', r'\1Hanzo AI\2'),
+    # Match display strings like: "ComfyUI Docs":`Hanzo Studio Docs`
+    (r'([`"\'])ComfyUI (Issues|Docs|Forum|Logo|Settings|Version)', r'\1Hanzo Studio \2'),
+    (r'([`"\'])Comfy-Org (Discord|Logo)', r'\1Hanzo AI \2'),
+    (r'([`"\'])ComfyOrg (Discord|Logo)', r'\1Hanzo AI \2'),
 ]
 
 # ============================================================
