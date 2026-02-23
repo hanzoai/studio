@@ -427,13 +427,28 @@ def start_studio(asyncio_loop=None):
 
 if __name__ == "__main__":
     # Running directly, just start Hanzo Studio.
+    import signal
+
     logging.info("Python version: {}".format(sys.version))
     logging.info("Hanzo Studio version: {}".format(studio_version.__version__))
 
     if sys.version_info.major == 3 and sys.version_info.minor < 10:
         logging.warning("WARNING: You are using a python version older than 3.10, please upgrade to a newer one. 3.12 and above is recommended.")
 
-    event_loop, _, start_all_func = start_studio()
+    event_loop, prompt_server, start_all_func = start_studio()
+
+    def _graceful_shutdown(signum, frame):
+        sig_name = signal.Signals(signum).name
+        logging.info(f"Received {sig_name}, shutting down gracefully...")
+        # Stop accepting new prompts
+        if prompt_server and prompt_server.prompt_queue:
+            prompt_server.prompt_queue.set_flag("disable_new", True)
+        # Stop the event loop (will cause run_until_complete to return)
+        event_loop.call_soon_threadsafe(event_loop.stop)
+
+    signal.signal(signal.SIGTERM, _graceful_shutdown)
+    signal.signal(signal.SIGINT, _graceful_shutdown)
+
     try:
         x = start_all_func()
         app.logger.print_startup_warnings()
@@ -441,4 +456,5 @@ if __name__ == "__main__":
     except KeyboardInterrupt:
         logging.info("\nStopped server")
 
+    logging.info("Cleaning up...")
     cleanup_temp()

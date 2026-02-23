@@ -316,6 +316,21 @@ class PromptServer():
                 self.sockets_metadata.pop(sid, None)
             return ws
 
+        @routes.get("/health")
+        async def health_check(request):
+            return web.json_response({"status": "ok"})
+
+        @routes.get("/ready")
+        async def readiness_check(request):
+            # Check that the prompt worker is alive and base directories exist
+            ready = (
+                os.path.isdir(folder_paths.get_input_directory())
+                and self.prompt_queue is not None
+            )
+            if ready:
+                return web.json_response({"status": "ready"})
+            return web.json_response({"status": "not_ready"}, status=503)
+
         @routes.get("/")
         async def get_root(request):
             response = web.FileResponse(os.path.join(self.web_root, "index.html"))

@@ -3,6 +3,8 @@ output/
 input/
 custom_nodes/
 user/
+temp/
+orgs/
 .git/
 .github/
 __pycache__/
@@ -15,9 +17,10 @@ venv/
 .mypy_cache/
 .pytest_cache/
 .ruff_cache/
-comfyui.log
-comfyui.prev.log
-comfyui.prev2.log
-hanzo_studio.log
-hanzo_studio.prev.log
-hanzo_studio.prev2.log
+tests/
+tests-unit/
+scripts/
+notebooks/
+*.swp
+.env
+.env.*
