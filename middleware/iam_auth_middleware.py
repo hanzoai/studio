@@ -31,6 +31,11 @@ PUBLIC_PATHS_EXACT = {
     "/api/ready",
     "/api/features",
     "/api/metrics",
+    # Worker registration uses its own auth (coordinator trust)
+    "/compute/workers/register",
+    "/api/compute/workers/register",
+    "/worker/execute",
+    "/api/worker/execute",
 }
 
 # Token validation cache: hash(token) -> (user_info, expires_at)

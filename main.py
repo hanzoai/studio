@@ -432,6 +432,13 @@ def start_studio(asyncio_loop=None):
     prompt_server.add_routes()
     hijack_progress(prompt_server)
 
+    # In worker mode, add worker execution routes and register with coordinator
+    if args.worker_mode:
+        from middleware.worker_client import add_worker_routes, WorkerClient
+        add_worker_routes(prompt_server.routes, prompt_server)
+        logging.info("Worker mode enabled — worker_id=%s coordinator=%s",
+                      args.worker_id, args.coordinator_url)
+
     threading.Thread(target=prompt_worker, daemon=True, args=(prompt_server.prompt_queue, prompt_server,)).start()
 
     if args.quick_test_for_ci:
@@ -451,6 +458,19 @@ def start_studio(asyncio_loop=None):
 
     async def start_all():
         await prompt_server.setup()
+
+        # Start worker heartbeat loop if in worker mode
+        if args.worker_mode and args.coordinator_url:
+            from middleware.worker_client import WorkerClient
+            worker_client = WorkerClient(
+                coordinator_url=args.coordinator_url,
+                worker_id=args.worker_id or f"worker-{os.getpid()}",
+                worker_port=args.port,
+                org_id=os.environ.get("STUDIO_ORG_ID", "default"),
+            )
+            await worker_client.start()
+            prompt_server._worker_client = worker_client
+
         await run(prompt_server, address=args.listen, port=args.port, verbose=not args.dont_print_server, call_on_start=call_on_start)
 
     # Returning these so that other code can integrate with the Hanzo Studio loop and server

@@ -51,6 +51,9 @@ from middleware.iam_auth_middleware import create_iam_auth_middleware
 from middleware.rate_limit_middleware import create_rate_limit_middleware
 from middleware import metrics_middleware
 from middleware import billing_middleware
+from middleware import compute_config
+from middleware import prompt_router
+from middleware import visor_client
 
 if args.enable_manager:
     import comfyui_manager
@@ -357,6 +360,31 @@ class PromptServer():
 
         @routes.get("/")
         async def get_root(request):
+            # If IAM auth is enabled, show login page to unauthenticated users
+            if args.enable_iam_auth:
+                has_token = bool(
+                    request.headers.get("Authorization", "").startswith("Bearer ")
+                    or request.cookies.get("hanzo_token")
+                    or request.cookies.get("access_token")
+                )
+                if not has_token:
+                    login_page = os.path.join(
+                        os.path.dirname(os.path.realpath(__file__)), "web", "login.html"
+                    )
+                    if os.path.isfile(login_page):
+                        with open(login_page, "r") as f:
+                            html = f.read()
+                        html = html.replace("{{IAM_URL}}", args.iam_url.rstrip("/"))
+                        return web.Response(
+                            text=html,
+                            content_type="text/html",
+                            headers={
+                                "Cache-Control": "no-cache",
+                                "Pragma": "no-cache",
+                                "Expires": "0",
+                            },
+                        )
+
             response = web.FileResponse(os.path.join(self.web_root, "index.html"))
             response.headers['Cache-Control'] = 'no-cache'
             response.headers["Pragma"] = "no-cache"
@@ -946,6 +974,31 @@ class PromptServer():
             json_data =  await request.json()
             json_data = self.trigger_on_prompt(json_data)
 
+            # --- Prompt routing: check if this should go to a GPU worker ---
+            if not args.worker_mode:
+                org_id = self._get_org_id(request)
+                try:
+                    route_result = await prompt_router.route_prompt(org_id, json_data)
+                except Exception as e:
+                    logging.warning("Prompt routing error: %s", e)
+                    route_result = None
+
+                if route_result is not None:
+                    action = route_result.get("action")
+                    if action == "forward":
+                        # Successfully forwarded to a GPU worker
+                        return web.json_response(route_result["response"])
+                    elif action == "provisioning":
+                        return web.json_response(
+                            {"status": "provisioning", "message": "GPU worker is being provisioned. Retry in 30-60 seconds."},
+                            status=202,
+                        )
+                    elif action == "unavailable":
+                        return web.json_response(
+                            {"error": "GPU requested but no GPU worker available. Use POST /api/compute/provision to launch one."},
+                            status=503,
+                        )
+
             if "number" in json_data:
                 number = float(json_data['number'])
             else:
@@ -1065,9 +1118,164 @@ class PromptServer():
 
             return web.Response(status=200)
 
+        # --- Compute Config API ---
+
+        @routes.get("/compute/config")
+        async def get_compute_config(request):
+            """Get the org's compute profile."""
+            org_id = self._get_org_id(request)
+            config = compute_config.load_config(org_id)
+            return web.json_response(config.to_dict())
+
+        @routes.put("/compute/config")
+        async def put_compute_config(request):
+            """Update the org's compute profile."""
+            org_id = self._get_org_id(request)
+            try:
+                updates = await request.json()
+            except Exception:
+                return web.json_response({"error": "Invalid JSON"}, status=400)
+
+            try:
+                config = compute_config.update_config(org_id, updates)
+            except ValueError as e:
+                return web.json_response({"error": str(e)}, status=400)
+
+            return web.json_response(config.to_dict())
+
+        @routes.get("/compute/workers")
+        async def get_compute_workers(request):
+            """List workers and their status for the org."""
+            org_id = self._get_org_id(request)
+            config = compute_config.load_config(org_id)
+            workers = []
+            for w in config.workers:
+                wd = {
+                    "worker_id": w.worker_id,
+                    "url": w.url,
+                    "device": w.device,
+                    "status": w.status if w.is_alive() else "offline",
+                    "gpu_model": w.gpu_model,
+                    "vram_gb": w.vram_gb,
+                    "last_heartbeat": w.last_heartbeat,
+                }
+                workers.append(wd)
+            return web.json_response({"workers": workers})
+
+        @routes.post("/compute/workers/register")
+        async def post_worker_register(request):
+            """Worker self-registration / heartbeat endpoint."""
+            try:
+                data = await request.json()
+            except Exception:
+                return web.json_response({"error": "Invalid JSON"}, status=400)
+
+            org_id = data.get("org_id") or self._get_org_id(request)
+            worker_data = {k: v for k, v in data.items() if k != "org_id"}
+            try:
+                worker = compute_config.register_worker(org_id, worker_data)
+            except ValueError as e:
+                return web.json_response({"error": str(e)}, status=400)
+
+            return web.json_response({
+                "status": "registered",
+                "worker_id": worker.worker_id,
+            })
+
+        @routes.post("/compute/provision")
+        async def post_provision_gpu(request):
+            """Request GPU provisioning via Visor."""
+            org_id = self._get_org_id(request)
+            config = compute_config.load_config(org_id)
+
+            if not config.gpu_enabled:
+                return web.json_response(
+                    {"error": "GPU not enabled in compute profile. Update config first."},
+                    status=400,
+                )
+
+            try:
+                body = await request.json()
+            except Exception:
+                body = {}
+
+            gpu_type = body.get("gpu_type", config.gpu_type or "t4")
+            worker_id = body.get("worker_id", f"gpu-{org_id}-{int(time.time())}")
+            default_coordinator = os.environ.get(
+                "STUDIO_COORDINATOR_URL",
+                f"http://{args.listen}:{args.port}",
+            )
+            coordinator_url = body.get("coordinator_url", default_coordinator)
+
+            result = await visor_client.launch_gpu_worker(
+                org_id=org_id,
+                gpu_type=gpu_type,
+                coordinator_url=coordinator_url,
+                worker_id=worker_id,
+            )
+
+            if result:
+                return web.json_response({
+                    "status": "provisioning",
+                    "machine_id": result.get("machine_id"),
+                    "worker_id": worker_id,
+                    "gpu_type": gpu_type,
+                    "message": "GPU worker is being provisioned. It will register automatically.",
+                }, status=202)
+            else:
+                return web.json_response(
+                    {"error": "Failed to provision GPU worker. Check Visor connectivity."},
+                    status=503,
+                )
+
+        @routes.delete("/compute/provision")
+        async def delete_provision_gpu(request):
+            """Tear down a provisioned GPU worker."""
+            try:
+                body = await request.json()
+            except Exception:
+                return web.json_response({"error": "Invalid JSON"}, status=400)
+
+            machine_id = body.get("machine_id")
+            if not machine_id:
+                return web.json_response({"error": "machine_id required"}, status=400)
+
+            worker_id = body.get("worker_id")
+            org_id = self._get_org_id(request)
+
+            success = await visor_client.terminate_gpu_worker(machine_id)
+
+            # Also remove worker from registry
+            if worker_id:
+                compute_config.remove_worker(org_id, worker_id)
+
+            if success:
+                return web.json_response({"status": "terminated", "machine_id": machine_id})
+            else:
+                return web.json_response(
+                    {"error": "Failed to terminate GPU worker"},
+                    status=503,
+                )
+
+    def _get_org_id(self, request) -> str:
+        """Extract org_id from IAM user context or fall back to default."""
+        iam_user = request.get("iam_user")
+        if iam_user:
+            return iam_user.get("org_id", "default")
+        return os.environ.get("STUDIO_ORG_ID", "default")
+
     async def setup(self):
         timeout = aiohttp.ClientTimeout(total=None) # no timeout
         self.client_session = aiohttp.ClientSession(timeout=timeout)
+
+        # Register shutdown hooks for compute subsystem sessions
+        async def _on_shutdown(app):
+            await prompt_router.close_session()
+            await visor_client.close_session()
+            wc = getattr(self, "_worker_client", None)
+            if wc:
+                await wc.stop()
+        self.app.on_shutdown.append(_on_shutdown)
 
     def add_routes(self):
         self.user_manager.add_routes(self.routes)

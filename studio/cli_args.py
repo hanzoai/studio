@@ -247,6 +247,11 @@ parser.add_argument(
     help="Set the base URL for the Hanzo Studio API.  (default: https://api.hanzo.ai)",
 )
 
+# --- Worker Mode ---
+parser.add_argument("--worker-mode", action="store_true", help="Run as headless worker (no frontend, no websocket UI). Registers with coordinator and pulls prompts.")
+parser.add_argument("--coordinator-url", type=str, default=os.environ.get("COORDINATOR_URL", ""), help="Coordinator URL to register with in worker mode (e.g. http://studio.hanzo.svc:8188).")
+parser.add_argument("--worker-id", type=str, default=os.environ.get("WORKER_ID", ""), help="Unique worker identifier for registration with the coordinator.")
+
 database_default_path = os.path.abspath(
     os.path.join(os.path.dirname(__file__), "..", "user", "studio.db")
 )
@@ -280,6 +285,8 @@ if os.environ.get("STUDIO_BILLING_CHECK_BALANCE", "").lower() in ("1", "true", "
     args.billing_check_balance = True
 if os.environ.get("STUDIO_ENABLE_METRICS", "").lower() in ("1", "true", "yes"):
     args.enable_metrics = True
+if os.environ.get("STUDIO_WORKER_MODE", "").lower() in ("1", "true", "yes"):
+    args.worker_mode = True
 
 # '--fast' is not provided, use an empty set
 if args.fast is None:
