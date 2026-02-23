@@ -230,6 +230,16 @@ parser.add_argument("--no-localhost-bypass", action="store_true", help="Disable 
 parser.add_argument("--org-id", type=str, default=os.environ.get("STUDIO_ORG_ID"), help="Organization ID for multi-tenant storage scoping. When set with --enable-iam-auth, org is extracted from IAM token instead.")
 parser.add_argument("--multi-tenant", action="store_true", help="Enable multi-tenant mode with per-org storage isolation.")
 
+# --- Billing ---
+parser.add_argument("--enable-billing", action="store_true", help="Enable Commerce billing integration (usage recording and balance checks).")
+parser.add_argument("--billing-check-balance", action="store_true", help="Check user balance before accepting prompts (requires --enable-billing).")
+
+# --- Rate Limiting ---
+parser.add_argument("--rate-limit-rpm", type=int, default=int(os.environ.get("STUDIO_RATE_LIMIT_RPM", "60")), help="Max prompt submissions per minute per org. 0 = unlimited. (default: 60)")
+
+# --- Metrics ---
+parser.add_argument("--enable-metrics", action="store_true", help="Enable /metrics endpoint for Prometheus/VictoriaMetrics scraping.")
+
 parser.add_argument(
     "--studio-api-base",
     type=str,
@@ -264,6 +274,12 @@ if os.environ.get("STUDIO_MULTI_TENANT", "").lower() in ("1", "true", "yes"):
     args.multi_tenant = True
 if os.environ.get("STUDIO_NO_LOCALHOST_BYPASS", "").lower() in ("1", "true", "yes"):
     args.no_localhost_bypass = True
+if os.environ.get("STUDIO_ENABLE_BILLING", "").lower() in ("1", "true", "yes"):
+    args.enable_billing = True
+if os.environ.get("STUDIO_BILLING_CHECK_BALANCE", "").lower() in ("1", "true", "yes"):
+    args.billing_check_balance = True
+if os.environ.get("STUDIO_ENABLE_METRICS", "").lower() in ("1", "true", "yes"):
+    args.enable_metrics = True
 
 # '--fast' is not provided, use an empty set
 if args.fast is None:

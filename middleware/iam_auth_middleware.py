@@ -26,9 +26,11 @@ PUBLIC_PATHS_EXACT = {
     "/",
     "/health",
     "/ready",
+    "/metrics",
     "/api/health",
     "/api/ready",
     "/api/features",
+    "/api/metrics",
 }
 
 # Token validation cache: hash(token) -> (user_info, expires_at)

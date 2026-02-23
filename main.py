@@ -241,6 +241,12 @@ def prompt_worker(q, server_instance):
     need_gc = False
     gc_collect_interval = 10.0
 
+    # Import metrics + billing for prompt tracking
+    from middleware import metrics_middleware
+    from middleware import billing_middleware
+    enable_billing = getattr(args, "enable_billing", False)
+    enable_metrics = getattr(args, "enable_metrics", False)
+
     while True:
         timeout = 1000.0
         if need_gc:
@@ -252,6 +258,9 @@ def prompt_worker(q, server_instance):
             execution_start_time = time.perf_counter()
             prompt_id = item[1]
             server_instance.last_prompt_id = prompt_id
+
+            if enable_metrics:
+                metrics_middleware.record_prompt_start()
 
             sensitive = item[5]
             extra_data = item[3].copy()
@@ -273,6 +282,29 @@ def prompt_worker(q, server_instance):
 
             current_time = time.perf_counter()
             execution_time = current_time - execution_start_time
+
+            # Record metrics
+            if enable_metrics:
+                metrics_middleware.record_prompt_end(execution_time, e.success)
+
+            # Record billing usage (fire-and-forget via event loop)
+            if enable_billing:
+                # Get user/org from extra_data if available
+                client_id = extra_data.get("client_id", "anonymous")
+                node_count = len(item[2]) if item[2] else 0
+                import asyncio
+                loop = server_instance.loop
+                asyncio.run_coroutine_threadsafe(
+                    billing_middleware.record_usage(
+                        user=client_id,
+                        org_id=os.environ.get("STUDIO_ORG_ID", "default"),
+                        prompt_id=prompt_id,
+                        execution_time=execution_time,
+                        success=e.success,
+                        node_count=node_count,
+                    ),
+                    loop,
+                )
 
             # Log Time in a more readable way after 10 minutes
             if execution_time > 600:

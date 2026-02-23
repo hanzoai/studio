@@ -48,6 +48,9 @@ from protocol import BinaryEventTypes
 # Import cache control middleware
 from middleware.cache_middleware import cache_control
 from middleware.iam_auth_middleware import create_iam_auth_middleware
+from middleware.rate_limit_middleware import create_rate_limit_middleware
+from middleware import metrics_middleware
+from middleware import billing_middleware
 
 if args.enable_manager:
     import comfyui_manager
@@ -224,6 +227,9 @@ class PromptServer():
                 localhost_bypass=localhost_bypass,
             ))
 
+        # Rate limiting (after auth so we have org context)
+        middlewares.append(create_rate_limit_middleware(rpm=args.rate_limit_rpm))
+
         if args.enable_compress_response_body:
             middlewares.append(compress_body)
 
@@ -330,6 +336,22 @@ class PromptServer():
             if ready:
                 return web.json_response({"status": "ready"})
             return web.json_response({"status": "not_ready"}, status=503)
+
+        @routes.get("/metrics")
+        async def prometheus_metrics(request):
+            if not args.enable_metrics:
+                return web.Response(status=404)
+            # Update live gauges before rendering
+            metrics_middleware.set_queue_depth(
+                self.prompt_queue.get_tasks_remaining()
+                if self.prompt_queue else 0
+            )
+            metrics_middleware.set_websocket_connections(len(self.sockets))
+            body = metrics_middleware.render_metrics()
+            return web.Response(
+                text=body,
+                content_type="text/plain; version=0.0.4; charset=utf-8",
+            )
 
         @routes.get("/")
         async def get_root(request):
@@ -903,6 +925,22 @@ class PromptServer():
         @routes.post("/prompt")
         async def post_prompt(request):
             logging.info("got prompt")
+
+            # Billing: check balance before accepting prompt
+            if args.enable_billing and args.billing_check_balance:
+                iam_user = request.get("iam_user")
+                if iam_user:
+                    user_id = iam_user.get("sub", "anonymous")
+                    org_id = iam_user.get("org_id", "default")
+                    has_balance, available = await billing_middleware.check_balance(
+                        user_id, org_id
+                    )
+                    if not has_balance:
+                        return web.json_response(
+                            {"error": "Insufficient balance", "available": available},
+                            status=402,
+                        )
+
             json_data =  await request.json()
             json_data = self.trigger_on_prompt(json_data)
 
