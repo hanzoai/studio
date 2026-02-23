@@ -221,6 +221,15 @@ parser.add_argument("--user-directory", type=is_valid_directory, default=None, h
 
 parser.add_argument("--enable-compress-response-body", action="store_true", help="Enable compressing response body.")
 
+# --- IAM Authentication ---
+parser.add_argument("--enable-iam-auth", action="store_true", help="Enable IAM authentication via hanzo.id. Requires valid Bearer token for API access. Localhost is exempt by default.")
+parser.add_argument("--iam-url", type=str, default=os.environ.get("STUDIO_IAM_URL", "https://hanzo.id"), help="IAM server URL for token validation (default: https://hanzo.id).")
+parser.add_argument("--no-localhost-bypass", action="store_true", help="Disable localhost auth bypass (require IAM tokens even for local connections).")
+
+# --- Multi-tenant ---
+parser.add_argument("--org-id", type=str, default=os.environ.get("STUDIO_ORG_ID"), help="Organization ID for multi-tenant storage scoping. When set with --enable-iam-auth, org is extracted from IAM token instead.")
+parser.add_argument("--multi-tenant", action="store_true", help="Enable multi-tenant mode with per-org storage isolation.")
+
 parser.add_argument(
     "--studio-api-base",
     type=str,
@@ -248,6 +257,13 @@ if args.disable_auto_launch:
 if args.force_fp16:
     args.fp16_unet = True
 
+# Allow env vars to enable IAM auth and multi-tenant (for Docker)
+if os.environ.get("STUDIO_ENABLE_IAM_AUTH", "").lower() in ("1", "true", "yes"):
+    args.enable_iam_auth = True
+if os.environ.get("STUDIO_MULTI_TENANT", "").lower() in ("1", "true", "yes"):
+    args.multi_tenant = True
+if os.environ.get("STUDIO_NO_LOCALHOST_BYPASS", "").lower() in ("1", "true", "yes"):
+    args.no_localhost_bypass = True
 
 # '--fast' is not provided, use an empty set
 if args.fast is None:

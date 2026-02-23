@@ -57,6 +57,17 @@ class UserManager():
 
     def get_request_user_id(self, request):
         user = "default"
+
+        # If IAM auth is active, extract user from IAM context
+        iam_user = request.get("iam_user")
+        if iam_user and iam_user.get("sub") and iam_user["sub"] != "local":
+            user = iam_user["sub"]
+            # Auto-register IAM users
+            if user not in self.users:
+                display = iam_user.get("name") or iam_user.get("email") or user
+                self.users[user] = display
+            return user
+
         if args.multi_user and "studio-user" in request.headers:
             user = request.headers["studio-user"]
             # Block System Users (use same error message to prevent probing)
@@ -68,9 +79,18 @@ class UserManager():
 
         return user
 
+    def get_request_org_id(self, request) -> str | None:
+        """Extract org_id from IAM context or fallback to CLI arg."""
+        iam_user = request.get("iam_user")
+        if iam_user and iam_user.get("org_id"):
+            return iam_user["org_id"]
+        return folder_paths.get_org_id()
+
     def get_request_user_filepath(self, request, file, type="userdata", create_dir=True):
         if type == "userdata":
-            root_dir = folder_paths.get_user_directory()
+            # Use org-scoped user directory if multi-tenant
+            org_id = self.get_request_org_id(request)
+            root_dir = folder_paths.get_org_user_directory(org_id)
         else:
             raise KeyError("Unknown filepath type:" + type)
 

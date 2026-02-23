@@ -30,4 +30,10 @@ RUN mkdir -p models output input custom_nodes user
 
 EXPOSE 8188
 
+# Default: listen on all interfaces, CPU mode
+# IAM auth and multi-tenant are configured via environment variables:
+#   STUDIO_IAM_URL=https://hanzo.id
+#   STUDIO_ENABLE_IAM_AUTH=1
+#   STUDIO_MULTI_TENANT=1
+#   STUDIO_ORG_ID=default-org
 CMD ["python", "main.py", "--listen", "0.0.0.0", "--port", "8188", "--cpu"]

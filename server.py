@@ -47,6 +47,7 @@ from protocol import BinaryEventTypes
 
 # Import cache control middleware
 from middleware.cache_middleware import cache_control
+from middleware.iam_auth_middleware import create_iam_auth_middleware
 
 if args.enable_manager:
     import comfyui_manager
@@ -215,6 +216,14 @@ class PromptServer():
         self.number = 0
 
         middlewares = [cache_control, deprecation_warning]
+
+        if args.enable_iam_auth:
+            localhost_bypass = not args.no_localhost_bypass
+            middlewares.append(create_iam_auth_middleware(
+                iam_url=args.iam_url,
+                localhost_bypass=localhost_bypass,
+            ))
+
         if args.enable_compress_response_body:
             middlewares.append(compress_body)
 
@@ -348,16 +357,23 @@ class PromptServer():
 
             return web.json_response(extensions)
 
-        def get_dir_by_type(dir_type):
+        def get_dir_by_type(dir_type, request=None):
             if dir_type is None:
                 dir_type = "input"
 
+            # Use org-scoped directories if multi-tenant
+            org_id = None
+            if request and request.get("iam_user"):
+                org_id = request["iam_user"].get("org_id")
+
             if dir_type == "input":
-                type_dir = folder_paths.get_input_directory()
+                type_dir = folder_paths.get_org_input_directory(org_id)
             elif dir_type == "temp":
-                type_dir = folder_paths.get_temp_directory()
+                type_dir = folder_paths.get_org_temp_directory(org_id)
             elif dir_type == "output":
-                type_dir = folder_paths.get_output_directory()
+                type_dir = folder_paths.get_org_output_directory(org_id)
+            else:
+                type_dir = folder_paths.get_input_directory()
 
             return type_dir, dir_type
 

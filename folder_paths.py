@@ -57,6 +57,84 @@ temp_directory = os.path.join(base_path, "temp")
 input_directory = os.path.join(base_path, "input")
 user_directory = os.path.join(base_path, "user")
 
+# --- Multi-tenant org-scoped storage ---
+_org_id: str | None = args.org_id if hasattr(args, "org_id") else None
+_multi_tenant: bool = getattr(args, "multi_tenant", False)
+
+
+def set_org_id(org_id: str | None) -> None:
+    """Set the active organization for multi-tenant path scoping."""
+    global _org_id
+    _org_id = org_id
+
+
+def get_org_id() -> str | None:
+    """Get the active organization ID."""
+    return _org_id
+
+
+def get_org_base_path(org_id: str | None = None) -> str:
+    """
+    Get the org-scoped base path. If multi-tenant is enabled and org_id is set,
+    returns {base_path}/orgs/{org_id}. Otherwise returns base_path.
+    """
+    oid = org_id or _org_id
+    if _multi_tenant and oid:
+        org_path = os.path.join(base_path, "orgs", oid)
+        os.makedirs(org_path, exist_ok=True)
+        return org_path
+    return base_path
+
+
+def get_org_output_directory(org_id: str | None = None) -> str:
+    """Get org-scoped output directory."""
+    ob = get_org_base_path(org_id)
+    if ob != base_path:
+        d = os.path.join(ob, "output")
+        os.makedirs(d, exist_ok=True)
+        return d
+    return get_output_directory()
+
+
+def get_org_input_directory(org_id: str | None = None) -> str:
+    """Get org-scoped input directory."""
+    ob = get_org_base_path(org_id)
+    if ob != base_path:
+        d = os.path.join(ob, "input")
+        os.makedirs(d, exist_ok=True)
+        return d
+    return get_input_directory()
+
+
+def get_org_temp_directory(org_id: str | None = None) -> str:
+    """Get org-scoped temp directory."""
+    ob = get_org_base_path(org_id)
+    if ob != base_path:
+        d = os.path.join(ob, "temp")
+        os.makedirs(d, exist_ok=True)
+        return d
+    return get_temp_directory()
+
+
+def get_org_user_directory(org_id: str | None = None) -> str:
+    """Get org-scoped user directory."""
+    ob = get_org_base_path(org_id)
+    if ob != base_path:
+        d = os.path.join(ob, "user")
+        os.makedirs(d, exist_ok=True)
+        return d
+    return get_user_directory()
+
+
+def get_org_models_directory(org_id: str | None = None) -> str:
+    """Get org-scoped models directory (org-private models)."""
+    ob = get_org_base_path(org_id)
+    if ob != base_path:
+        d = os.path.join(ob, "models")
+        os.makedirs(d, exist_ok=True)
+        return d
+    return models_dir
+
 filename_list_cache: dict[str, tuple[list[str], dict[str, float], float]] = {}
 
 class CacheHelper:

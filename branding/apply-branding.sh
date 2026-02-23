@@ -11,11 +11,13 @@ echo "Target: $STATIC_DIR"
 
 # --- 1. Replace logo SVG files ---
 echo "[1/6] Replacing logos..."
-for logo_file in studio-logo-single.svg studio-logo-mono.svg studio-cloud-logo.svg; do
+for logo_file in comfy-logo-single.svg comfy-logo-mono.svg comfy-cloud-logo.svg; do
     target="$STATIC_DIR/assets/images/$logo_file"
     if [ -f "$target" ]; then
         cp "$BRANDING_DIR/hanzo-logo.svg" "$target"
         echo "  Replaced $logo_file"
+    else
+        echo "  Not found: $logo_file (skipping)"
     fi
 done
 

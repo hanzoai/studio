@@ -67,6 +67,22 @@ DISPLAY_REPLACEMENTS = [
     # Comfy Cloud branding
     ('Comfy Cloud Logo', 'Hanzo Cloud Logo'),
     ('Comfy Cloud', 'Hanzo Cloud'),
+    # Catch standalone "ComfyUI" in display contexts not caught above
+    ('Welcome to ComfyUI', 'Welcome to Hanzo Studio'),
+    ('Powered by ComfyUI', 'Powered by Hanzo Studio'),
+    ('ComfyUI Desktop', 'Hanzo Studio Desktop'),
+    ('ComfyUI Manager', 'Hanzo Studio Manager'),
+    ('ComfyUI Community', 'Hanzo Studio Community'),
+    ('ComfyUI Workflow', 'Hanzo Studio Workflow'),
+    ('ComfyUI Node', 'Hanzo Studio Node'),
+    ('ComfyUI Extension', 'Hanzo Studio Extension'),
+    ('ComfyUI Custom', 'Hanzo Studio Custom'),
+    ('ComfyUI API', 'Hanzo Studio API'),
+    ('ComfyUI Python', 'Hanzo Studio Python'),
+    ('ComfyUI frontend', 'Hanzo Studio frontend'),
+    ('ComfyUI Backend', 'Hanzo Studio Backend'),
+    ('comfyui.com', 'hanzo.ai'),
+    ('comfy.org', 'hanzo.ai'),
 ]
 
 # ============================================================
