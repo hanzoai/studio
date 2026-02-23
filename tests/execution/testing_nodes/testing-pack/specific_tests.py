@@ -1,11 +1,11 @@
 import torch
 import time
 import asyncio
-from comfy.utils import ProgressBar
+from studio.utils import ProgressBar
 from .tools import VariantSupport
-from comfy_execution.graph_utils import GraphBuilder
-from comfy.comfy_types.node_typing import ComfyNodeABC
-from comfy.comfy_types import IO
+from studio_execution.graph_utils import GraphBuilder
+from studio.node_types.node_typing import StudioNodeABC
+from studio.node_types import IO
 
 class TestLazyMixImages:
     @classmethod
@@ -394,7 +394,7 @@ class TestSamplingInExpansion:
             "expand": g.finalize(),
         }
 
-class TestSleep(ComfyNodeABC):
+class TestSleep(StudioNodeABC):
     @classmethod
     def INPUT_TYPES(cls):
         return {
@@ -422,7 +422,7 @@ class TestSleep(ComfyNodeABC):
             await asyncio.sleep(0.01)
         return (value,)
 
-class TestParallelSleep(ComfyNodeABC):
+class TestParallelSleep(StudioNodeABC):
     @classmethod
     def INPUT_TYPES(cls):
         return {

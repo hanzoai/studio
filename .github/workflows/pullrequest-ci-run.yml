@@ -1,5 +1,5 @@
 # This is the GitHub Workflow that drives full-GPU-enabled tests of pull requests to Hanzo Studio, when the 'Run-CI-Test' label is added
-# Results are reported as checkmarks on the commits, as well as onto https://ci.comfy.org/
+# Results are reported as checkmarks on the commits, as well as onto https://ci.hanzo.ai/
 name: Pull Request CI Workflow Runs
 on:
     pull_request_target:
@@ -34,7 +34,7 @@ jobs:
           python_version: ${{ matrix.python_version }}
           torch_version: ${{ matrix.torch_version }}
           google_credentials: ${{ secrets.GCS_SERVICE_ACCOUNT_JSON }}
-          comfyui_flags: ${{ matrix.flags }}
+          studio_flags: ${{ matrix.flags }}
           use_prior_commit: 'true'
   comment:
     if: ${{ github.event.label.name == 'Run-CI-Test' }}
@@ -49,5 +49,5 @@ jobs:
               issue_number: context.issue.number,
               owner: context.repo.owner,
               repo: context.repo.repo,
-              body: '(Automated Bot Message) CI Tests are running, you can view the results at https://ci.comfy.org/?branch=${{ github.event.pull_request.number }}%2Fmerge'
+              body: '(Automated Bot Message) CI Tests are running, you can view the results at https://ci.hanzo.ai/?branch=${{ github.event.pull_request.number }}%2Fmerge'
             })

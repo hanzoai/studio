@@ -1,13 +1,13 @@
 import torch
 import asyncio
 from typing import Dict
-from comfy.utils import ProgressBar
-from comfy_execution.graph_utils import GraphBuilder
-from comfy.comfy_types.node_typing import ComfyNodeABC
-from comfy.comfy_types import IO
+from studio.utils import ProgressBar
+from studio_execution.graph_utils import GraphBuilder
+from studio.node_types.node_typing import StudioNodeABC
+from studio.node_types import IO
 
 
-class TestAsyncValidation(ComfyNodeABC):
+class TestAsyncValidation(StudioNodeABC):
     """Test node with async VALIDATE_INPUTS."""
 
     @classmethod
@@ -39,7 +39,7 @@ class TestAsyncValidation(ComfyNodeABC):
         return (image,)
 
 
-class TestAsyncError(ComfyNodeABC):
+class TestAsyncError(StudioNodeABC):
     """Test node that errors during async execution."""
 
     @classmethod
@@ -60,7 +60,7 @@ class TestAsyncError(ComfyNodeABC):
         raise RuntimeError("Intentional async execution error for testing")
 
 
-class TestAsyncValidationError(ComfyNodeABC):
+class TestAsyncValidationError(StudioNodeABC):
     """Test node with async validation that always fails."""
 
     @classmethod
@@ -90,7 +90,7 @@ class TestAsyncValidationError(ComfyNodeABC):
         return (image,)
 
 
-class TestAsyncTimeout(ComfyNodeABC):
+class TestAsyncTimeout(StudioNodeABC):
     """Test node that simulates timeout scenarios."""
 
     @classmethod
@@ -116,7 +116,7 @@ class TestAsyncTimeout(ComfyNodeABC):
             raise RuntimeError(f"Operation timed out after {timeout} seconds")
 
 
-class TestSyncError(ComfyNodeABC):
+class TestSyncError(StudioNodeABC):
     """Test node that errors synchronously (for mixed sync/async testing)."""
 
     @classmethod
@@ -135,7 +135,7 @@ class TestSyncError(ComfyNodeABC):
         raise RuntimeError("Intentional sync execution error for testing")
 
 
-class TestAsyncLazyCheck(ComfyNodeABC):
+class TestAsyncLazyCheck(StudioNodeABC):
     """Test node with async check_lazy_status."""
 
     @classmethod
@@ -168,7 +168,7 @@ class TestAsyncLazyCheck(ComfyNodeABC):
         return (torch.ones([1, 512, 512, 3]),)
 
 
-class TestDynamicAsyncGeneration(ComfyNodeABC):
+class TestDynamicAsyncGeneration(StudioNodeABC):
     """Test node that dynamically generates async nodes."""
 
     @classmethod
@@ -211,7 +211,7 @@ class TestDynamicAsyncGeneration(ComfyNodeABC):
         }
 
 
-class TestAsyncResourceUser(ComfyNodeABC):
+class TestAsyncResourceUser(StudioNodeABC):
     """Test node that uses resources during async execution."""
 
     # Class-level resource tracking for testing
@@ -248,7 +248,7 @@ class TestAsyncResourceUser(ComfyNodeABC):
             self._active_resources[resource_id] = False
 
 
-class TestAsyncBatchProcessing(ComfyNodeABC):
+class TestAsyncBatchProcessing(StudioNodeABC):
     """Test async processing of batched inputs."""
 
     @classmethod
@@ -288,7 +288,7 @@ class TestAsyncBatchProcessing(ComfyNodeABC):
         return (result,)
 
 
-class TestAsyncConcurrentLimit(ComfyNodeABC):
+class TestAsyncConcurrentLimit(StudioNodeABC):
     """Test concurrent execution limits for async nodes."""
 
     _semaphore = asyncio.Semaphore(2)  # Only allow 2 concurrent executions

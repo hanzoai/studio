@@ -7,7 +7,7 @@ import time
 import nodes
 import folder_paths
 import execution
-from comfy_execution.jobs import JobStatus, get_job, get_all_jobs
+from studio_execution.jobs import JobStatus, get_job, get_all_jobs
 import uuid
 import urllib
 import json
@@ -25,14 +25,14 @@ from aiohttp import web
 import logging
 
 import mimetypes
-from comfy.cli_args import args
-import comfy.utils
-import comfy.model_management
-from comfy_api import feature_flags
+from studio.cli_args import args
+import studio.utils
+import studio.model_management
+from studio_api import feature_flags
 import node_helpers
-from comfyui_version import __version__
+from studio_version import __version__
 from app.frontend_management import FrontendManager, parse_version
-from comfy_api.internal import _ComfyNodeInternal
+from studio_api.internal import _StudioNodeInternal
 from app.assets.scanner import seed_assets
 from app.assets.api.routes import register_assets_system
 
@@ -144,7 +144,7 @@ def is_loopback(host):
 def create_origin_only_middleware():
     @web.middleware
     async def origin_only_middleware(request: web.Request, handler):
-        #this code is used to prevent the case where a random website can queue comfy workflows by making a POST to 127.0.0.1 which browsers don't prevent for some dumb reason.
+        #this code is used to prevent the case where a random website can queue studio workflows by making a POST to 127.0.0.1 which browsers don't prevent for some dumb reason.
         #in that case the Host and Origin hostnames won't match
         #I know the proper fix would be to add a cookie but this should take care of the problem in the meantime
         if 'Host' in request.headers and 'Origin' in request.headers:
@@ -594,7 +594,7 @@ class PromptServer():
             safetensors_path = folder_paths.get_full_path(folder_name, filename)
             if safetensors_path is None:
                 return web.Response(status=404)
-            out = comfy.utils.safetensors_header(safetensors_path, max_size=1024*1024)
+            out = studio.utils.safetensors_header(safetensors_path, max_size=1024*1024)
             if out is None:
                 return web.Response(status=404)
             dt = json.loads(out)
@@ -604,13 +604,13 @@ class PromptServer():
 
         @routes.get("/system_stats")
         async def system_stats(request):
-            device = comfy.model_management.get_torch_device()
-            device_name = comfy.model_management.get_torch_device_name(device)
-            cpu_device = comfy.model_management.torch.device("cpu")
-            ram_total = comfy.model_management.get_total_memory(cpu_device)
-            ram_free = comfy.model_management.get_free_memory(cpu_device)
-            vram_total, torch_vram_total = comfy.model_management.get_total_memory(device, torch_total_too=True)
-            vram_free, torch_vram_free = comfy.model_management.get_free_memory(device, torch_free_too=True)
+            device = studio.model_management.get_torch_device()
+            device_name = studio.model_management.get_torch_device_name(device)
+            cpu_device = studio.model_management.torch.device("cpu")
+            ram_total = studio.model_management.get_total_memory(cpu_device)
+            ram_free = studio.model_management.get_free_memory(cpu_device)
+            vram_total, torch_vram_total = studio.model_management.get_total_memory(device, torch_total_too=True)
+            vram_free, torch_vram_free = studio.model_management.get_free_memory(device, torch_free_too=True)
             required_frontend_version = FrontendManager.get_required_frontend_version()
             installed_templates_version = FrontendManager.get_installed_templates_version()
             required_templates_version = FrontendManager.get_required_templates_version()
@@ -620,12 +620,12 @@ class PromptServer():
                     "os": sys.platform,
                     "ram_total": ram_total,
                     "ram_free": ram_free,
-                    "comfyui_version": __version__,
+                    "studio_version": __version__,
                     "required_frontend_version": required_frontend_version,
                     "installed_templates_version": installed_templates_version,
                     "required_templates_version": required_templates_version,
                     "python_version": sys.version,
-                    "pytorch_version": comfy.model_management.torch_version,
+                    "pytorch_version": studio.model_management.torch_version,
                     "embedded_python": os.path.split(os.path.split(sys.executable)[0])[1] == "python_embeded",
                     "argv": sys.argv
                 },
@@ -653,7 +653,7 @@ class PromptServer():
 
         def node_info(node_class):
             obj_class = nodes.NODE_CLASS_MAPPINGS[node_class]
-            if issubclass(obj_class, _ComfyNodeInternal):
+            if issubclass(obj_class, _StudioNodeInternal):
                 return obj_class.GET_NODE_INFO_V1()
             info = {}
             info['input'] = obj_class.INPUT_TYPES()

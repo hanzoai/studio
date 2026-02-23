@@ -217,13 +217,13 @@ def test_metadata_filename_is_set_for_seed_asset_without_hash(
     root: str,
     http: requests.Session,
     api_base: str,
-    comfy_tmp_base_dir: Path,
+    studio_tmp_base_dir: Path,
 ):
     """Seed ingest (no hash yet) must compute user_metadata['filename'] immediately."""
     scope = f"seedmeta-{uuid.uuid4().hex[:6]}"
     name = "seed_filename.bin"
 
-    base = comfy_tmp_base_dir / root / "unit-tests" / scope / "a" / "b"
+    base = studio_tmp_base_dir / root / "unit-tests" / scope / "a" / "b"
     base.mkdir(parents=True, exist_ok=True)
     fp = base / name
     fp.write_bytes(b"Z" * 2048)
@@ -246,7 +246,7 @@ def test_metadata_filename_is_set_for_seed_asset_without_hash(
     detail = r2.json()
     assert r2.status_code == 200, detail
     filename = (detail.get("user_metadata") or {}).get("filename")
-    expected = str(fp.relative_to(comfy_tmp_base_dir / root)).replace("\\", "/")
+    expected = str(fp.relative_to(studio_tmp_base_dir / root)).replace("\\", "/")
     assert filename == expected, f"expected filename={expected}, got {filename!r}"
 
 
@@ -256,7 +256,7 @@ def test_metadata_filename_computed_and_updated_on_retarget(
     root: str,
     http: requests.Session,
     api_base: str,
-    comfy_tmp_base_dir: Path,
+    studio_tmp_base_dir: Path,
     asset_factory,
     make_asset_bytes,
     run_scan_and_wait,
@@ -275,7 +275,7 @@ def test_metadata_filename_computed_and_updated_on_retarget(
     a = asset_factory(name1, [root, "unit-tests", scope, "a", "b"], {}, data)
     aid = a["id"]
 
-    root_base = comfy_tmp_base_dir / root
+    root_base = studio_tmp_base_dir / root
     p1 = (root_base / "unit-tests" / scope / "a" / "b" / get_asset_filename(a["asset_hash"], ".png"))
     assert p1.exists()
 

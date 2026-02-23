@@ -1,5 +1,5 @@
 """
-Tests for public ComfyAPI and ComfyAPISync functions.
+Tests for public StudioAPI and StudioAPISync functions.
 
 These tests verify that the public API methods work correctly in both sync and async contexts,
 ensuring that the sync wrapper generation (via get_type_hints() in async_to_sync.py) correctly
@@ -11,13 +11,13 @@ import time
 import subprocess
 import torch
 from pytest import fixture
-from comfy_execution.graph_utils import GraphBuilder
-from tests.execution.test_execution import ComfyClient
+from studio_execution.graph_utils import GraphBuilder
+from tests.execution.test_execution import StudioClient
 
 
 @pytest.mark.execution
 class TestPublicAPI:
-    """Test suite for public ComfyAPI and ComfyAPISync methods."""
+    """Test suite for public StudioAPI and StudioAPISync methods."""
 
     @fixture(scope="class", autouse=True)
     def _server(self, args_pytest):
@@ -38,7 +38,7 @@ class TestPublicAPI:
     @fixture(scope="class", autouse=True)
     def shared_client(self, args_pytest, _server):
         """Create shared client with connection retry."""
-        client = ComfyClient()
+        client = StudioClient()
         n_tries = 5
         for i in range(n_tries):
             time.sleep(4)
@@ -63,7 +63,7 @@ class TestPublicAPI:
         """Create GraphBuilder for each test."""
         yield GraphBuilder(prefix=request.node.name)
 
-    def test_sync_progress_update_executes(self, client: ComfyClient, builder: GraphBuilder):
+    def test_sync_progress_update_executes(self, client: StudioClient, builder: GraphBuilder):
         """Test that TestSyncProgressUpdate executes without errors.
 
         This test validates that api_sync.execution.set_progress() works correctly,
@@ -89,7 +89,7 @@ class TestPublicAPI:
         images = result.get_images(output)
         assert len(images) == 1, "Should have produced 1 image"
 
-    def test_async_progress_update_executes(self, client: ComfyClient, builder: GraphBuilder):
+    def test_async_progress_update_executes(self, client: StudioClient, builder: GraphBuilder):
         """Test that TestAsyncProgressUpdate executes without errors.
 
         This test validates that await api.execution.set_progress() works correctly
@@ -115,10 +115,10 @@ class TestPublicAPI:
         images = result.get_images(output)
         assert len(images) == 1, "Should have produced 1 image"
 
-    def test_sync_and_async_progress_together(self, client: ComfyClient, builder: GraphBuilder):
+    def test_sync_and_async_progress_together(self, client: StudioClient, builder: GraphBuilder):
         """Test both sync and async progress updates in same workflow.
 
-        This test ensures that both ComfyAPISync and ComfyAPI can coexist and work
+        This test ensures that both StudioAPISync and StudioAPI can coexist and work
         correctly in the same workflow execution.
         """
         g = builder

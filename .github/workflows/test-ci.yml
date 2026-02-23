@@ -1,6 +1,6 @@
 # This is the GitHub Workflow that drives automatic full-GPU-enabled tests of all new commits to the main branch of Hanzo Studio
 # Results are reported as checkmarks on the commits, as well as onto https://ci.hanzo.ai/
-name: Full Comfy CI Workflow Runs
+name: Full Hanzo Studio CI Workflow Runs
 on:
   push:
     branches:
@@ -46,7 +46,7 @@ jobs:
           python_version: ${{ matrix.python_version }}
           torch_version: ${{ matrix.torch_version }}
           google_credentials: ${{ secrets.GCS_SERVICE_ACCOUNT_JSON }}
-          comfyui_flags: ${{ matrix.flags }}
+          studio_flags: ${{ matrix.flags }}
 
   # test-win-nightly:
   #   strategy:
@@ -69,7 +69,7 @@ jobs:
   #         python_version: ${{ matrix.python_version }}
   #         torch_version: ${{ matrix.torch_version }}
   #         google_credentials: ${{ secrets.GCS_SERVICE_ACCOUNT_JSON }}
-  #         comfyui_flags: ${{ matrix.flags }}
+  #         studio_flags: ${{ matrix.flags }}
 
   test-unix-nightly:
     strategy:
@@ -96,4 +96,4 @@ jobs:
           python_version: ${{ matrix.python_version }}
           torch_version: ${{ matrix.torch_version }}
           google_credentials: ${{ secrets.GCS_SERVICE_ACCOUNT_JSON }}
-          comfyui_flags: ${{ matrix.flags }}
+          studio_flags: ${{ matrix.flags }}

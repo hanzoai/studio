@@ -1,6 +1,6 @@
-"""Unit tests for comfy_execution/jobs.py"""
+"""Unit tests for studio_execution/jobs.py"""
 
-from comfy_execution.jobs import (
+from studio_execution.jobs import (
     JobStatus,
     is_previewable,
     normalize_queue_item,

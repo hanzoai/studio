@@ -30,16 +30,16 @@ jobs:
 
       - name: Filter OpenAPI spec with Redocly
         run: |
-          npx @redocly/cli bundle openapi.yaml --output filtered-openapi.yaml --config comfy_api_nodes/redocly.yaml --remove-unused-components
+          npx @redocly/cli bundle openapi.yaml --output filtered-openapi.yaml --config studio_api_nodes/redocly.yaml --remove-unused-components
 
       - name: Generate API models
         run: |
-          datamodel-codegen --use-subclass-enum --input filtered-openapi.yaml --output comfy_api_nodes/apis --output-model-type pydantic_v2.BaseModel
+          datamodel-codegen --use-subclass-enum --input filtered-openapi.yaml --output studio_api_nodes/apis --output-model-type pydantic_v2.BaseModel
 
       - name: Check for changes
         id: git-check
         run: |
-          git diff --exit-code comfy_api_nodes/apis || echo "changes=true" >> $GITHUB_OUTPUT
+          git diff --exit-code studio_api_nodes/apis || echo "changes=true" >> $GITHUB_OUTPUT
 
       - name: Create Pull Request
         if: steps.git-check.outputs.changes == 'true'

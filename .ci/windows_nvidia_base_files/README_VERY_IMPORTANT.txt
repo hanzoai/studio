@@ -17,16 +17,16 @@ run_cpu.bat
 
 IF YOU GET A RED ERROR IN THE UI MAKE SURE YOU HAVE A MODEL/CHECKPOINT IN: HanzoStudio\models\checkpoints
 
-You can download the stable diffusion 1.5 one from: https://huggingface.co/Comfy-Org/stable-diffusion-v1-5-archive/blob/main/v1-5-pruned-emaonly-fp16.safetensors
+You can download the stable diffusion 1.5 one from: https://huggingface.co/hanzoai/stable-diffusion-v1-5-archive/blob/main/v1-5-pruned-emaonly-fp16.safetensors
 
 
 RECOMMENDED WAY TO UPDATE:
-To update the Hanzo Studio code: update\update_comfyui.bat
+To update the Hanzo Studio code: update\update_studio.bat
 
 
 
 To update Hanzo Studio with the python dependencies, note that you should ONLY run this if you have issues with python dependencies.
-update\update_comfyui_and_python_dependencies.bat
+update\update_studio_and_python_dependencies.bat
 
 
 TO SHARE MODELS BETWEEN HANZO STUDIO AND ANOTHER UI:

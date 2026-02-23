@@ -100,7 +100,7 @@ class SubgraphManager:
         if os.path.exists(blueprints_dir):
             for file in glob.glob(os.path.join(blueprints_dir, "*.json")):
                 file = file.replace('\\', '/')
-                entry_id, entry = self._create_entry(file, Source.templates, "comfyui")
+                entry_id, entry = self._create_entry(file, Source.templates, "studio")
                 subgraphs_dict[entry_id] = entry
 
         self.cached_blueprint_subgraphs = subgraphs_dict

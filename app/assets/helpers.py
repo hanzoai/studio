@@ -37,7 +37,7 @@ def list_tree(base_dir: str) -> list[str]:
 def prefixes_for_root(root: RootType) -> list[str]:
     if root == "models":
         bases: list[str] = []
-        for _bucket, paths in get_comfy_models_folders():
+        for _bucket, paths in get_studio_models_folders():
             bases.extend(paths)
         return [os.path.abspath(p) for p in bases]
     if root == "input":
@@ -74,11 +74,11 @@ def utcnow() -> datetime:
     """Naive UTC timestamp (no tzinfo). We always treat DB datetimes as UTC."""
     return datetime.now(timezone.utc).replace(tzinfo=None)
 
-def get_comfy_models_folders() -> list[tuple[str, list[str]]]:
+def get_studio_models_folders() -> list[tuple[str, list[str]]]:
     """Build a list of (folder_name, base_paths[]) categories that are configured for model locations.
 
     We trust `folder_paths.folder_names_and_paths` and include a category if
-    *any* of its base paths lies under the Comfy `models_dir`.
+    *any* of its base paths lies under the Studio `models_dir`.
     """
     targets: list[tuple[str, list[str]]] = []
     models_root = os.path.abspath(folder_paths.models_dir)
@@ -152,7 +152,7 @@ def get_relative_to_root_category_path_of_asset(file_path: str) -> tuple[Literal
     """Given an absolute or relative file path, determine which root category the path belongs to:
       - 'input' if the file resides under `folder_paths.get_input_directory()`
       - 'output' if the file resides under `folder_paths.get_output_directory()`
-      - 'models' if the file resides under any base path of categories returned by `get_comfy_models_folders()`
+      - 'models' if the file resides under any base path of categories returned by `get_studio_models_folders()`
 
     Returns:
         (root_category, relative_path_inside_that_root)
@@ -185,7 +185,7 @@ def get_relative_to_root_category_path_of_asset(file_path: str) -> tuple[Literal
 
     # 3) models (check deepest matching base to avoid ambiguity)
     best: tuple[int, str, str] | None = None  # (base_len, bucket, rel_inside_bucket)
-    for bucket, bases in get_comfy_models_folders():
+    for bucket, bases in get_studio_models_folders():
         for b in bases:
             base_abs = os.path.abspath(b)
             if not _is_within(fp_abs, base_abs):
@@ -232,7 +232,7 @@ def normalize_tags(tags: list[str] | None) -> list[str]:
 
 def collect_models_files() -> list[str]:
     out: list[str] = []
-    for folder_name, bases in get_comfy_models_folders():
+    for folder_name, bases in get_studio_models_folders():
         rel_files = folder_paths.get_filename_list(folder_name) or []
         for rel_path in rel_files:
             abs_path = folder_paths.get_full_path(folder_name, rel_path)

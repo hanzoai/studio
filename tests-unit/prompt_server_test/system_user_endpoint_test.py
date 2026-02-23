@@ -75,7 +75,7 @@ class TestSystemUserEndpointBlocking:
             # Attempt to access System User's data via HTTP
             resp = await client.get(
                 "/userdata?dir=.",
-                headers={"comfy-user": "__system"}
+                headers={"studio-user": "__system"}
             )
 
         # Should be blocked (403 Forbidden or similar error)
@@ -95,7 +95,7 @@ class TestSystemUserEndpointBlocking:
             mock_args.multi_user = True
             resp = await client.post(
                 "/userdata/test.txt",
-                headers={"comfy-user": "__system"},
+                headers={"studio-user": "__system"},
                 data=b"malicious content"
             )
 
@@ -124,7 +124,7 @@ class TestSystemUserEndpointBlocking:
             mock_args.multi_user = True
             resp = await client.delete(
                 "/userdata/secret.txt",
-                headers={"comfy-user": "__system"}
+                headers={"studio-user": "__system"}
             )
 
         assert resp.status in [400, 403, 500], \
@@ -146,7 +146,7 @@ class TestSystemUserEndpointBlocking:
             mock_args.multi_user = True
             resp = await client.get(
                 "/v2/userdata",
-                headers={"comfy-user": "__system"}
+                headers={"studio-user": "__system"}
             )
 
         assert resp.status in [400, 403, 500], \
@@ -169,7 +169,7 @@ class TestSystemUserEndpointBlocking:
             mock_args.multi_user = True
             resp = await client.post(
                 "/userdata/source.txt/move/dest.txt",
-                headers={"comfy-user": "__system"}
+                headers={"studio-user": "__system"}
             )
 
         assert resp.status in [400, 403, 500], \
@@ -244,7 +244,7 @@ class TestPublicUserStillWorks:
             mock_args.multi_user = True
             resp = await client.get(
                 "/userdata?dir=workflows",
-                headers={"comfy-user": "default"}
+                headers={"studio-user": "default"}
             )
 
         assert resp.status == 200
@@ -268,7 +268,7 @@ class TestPublicUserStillWorks:
             mock_args.multi_user = True
             resp = await client.post(
                 "/userdata/newfile.txt",
-                headers={"comfy-user": "default"},
+                headers={"studio-user": "default"},
                 data=b"user content"
             )
 
@@ -322,7 +322,7 @@ class TestCustomNodeScenario:
             mock_args.multi_user = True
             resp = await client.get(
                 "/userdata/secret.json",
-                headers={"comfy-user": "__mynode_config"}
+                headers={"studio-user": "__mynode_config"}
             )
 
         # Should be blocked

@@ -1,4 +1,4 @@
-from comfy_execution.graph_utils import GraphBuilder
+from studio_execution.graph_utils import GraphBuilder
 from .tools import VariantSupport
 
 @VariantSupport()

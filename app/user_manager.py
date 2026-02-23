@@ -8,7 +8,7 @@ import shutil
 import logging
 from aiohttp import web
 from urllib import parse
-from comfy.cli_args import args
+from studio.cli_args import args
 import folder_paths
 from .app_settings import AppSettings
 from typing import TypedDict
@@ -57,8 +57,8 @@ class UserManager():
 
     def get_request_user_id(self, request):
         user = "default"
-        if args.multi_user and "comfy-user" in request.headers:
-            user = request.headers["comfy-user"]
+        if args.multi_user and "studio-user" in request.headers:
+            user = request.headers["studio-user"]
             # Block System Users (use same error message to prevent probing)
             if user.startswith(folder_paths.SYSTEM_USER_PREFIX):
                 raise KeyError("Unknown user: " + user)

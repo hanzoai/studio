@@ -1,11 +1,11 @@
 import torch
 from PIL import Image
-from comfy.cli_args import args, LatentPreviewMethod
-from comfy.taesd.taesd import TAESD
-from comfy.sd import VAE
-import comfy.model_management
+from studio.cli_args import args, LatentPreviewMethod
+from studio.taesd.taesd import TAESD
+from studio.sd import VAE
+import studio.model_management
 import folder_paths
-import comfy.utils
+import studio.utils
 import logging
 
 default_preview_method = args.preview_method
@@ -22,9 +22,9 @@ def preview_to_image(latent_image, do_scale=True):
             latents_ubyte = (latent_image.clamp(0, 1)
                                 .mul(0xFF)  # to 0..255
                                 )
-        if comfy.model_management.directml_enabled:
+        if studio.model_management.directml_enabled:
                 latents_ubyte = latents_ubyte.to(dtype=torch.uint8)
-        latents_ubyte = latents_ubyte.to(device="cpu", dtype=torch.uint8, non_blocking=comfy.model_management.device_supports_non_blocking(latent_image.device))
+        latents_ubyte = latents_ubyte.to(device="cpu", dtype=torch.uint8, non_blocking=studio.model_management.device_supports_non_blocking(latent_image.device))
 
         return Image.fromarray(latents_ubyte.numpy())
 
@@ -95,7 +95,7 @@ def get_previewer(device, latent_format):
         if method == LatentPreviewMethod.TAESD:
             if taesd_decoder_path:
                 if latent_format.taesd_decoder_name in VIDEO_TAES:
-                    taesd = VAE(comfy.utils.load_torch_file(taesd_decoder_path))
+                    taesd = VAE(studio.utils.load_torch_file(taesd_decoder_path))
                     taesd.first_stage_model.show_progress_bar = False
                     previewer = TAEHVPreviewerImpl(taesd)
                 else:
@@ -116,7 +116,7 @@ def prepare_callback(model, steps, x0_output_dict=None):
 
     previewer = get_previewer(model.load_device, model.model.latent_format)
 
-    pbar = comfy.utils.ProgressBar(steps)
+    pbar = studio.utils.ProgressBar(steps)
     def callback(step, x0, x, total_steps):
         if x0_output_dict is not None:
             x0_output_dict["x0"] = x0

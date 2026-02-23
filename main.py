@@ -1,20 +1,20 @@
-import comfy.options
-comfy.options.enable_args_parsing()
+import studio.options
+studio.options.enable_args_parsing()
 
 import os
 import importlib.util
 import folder_paths
 import time
-from comfy.cli_args import args, enables_dynamic_vram
+from studio.cli_args import args, enables_dynamic_vram
 from app.logger import setup_logger
 from app.assets.scanner import seed_assets
 import itertools
 import utils.extra_config
 import logging
 import sys
-from comfy_execution.progress import get_progress_state
-from comfy_execution.utils import get_executing_context
-from comfy_api import feature_flags
+from studio_execution.progress import get_progress_state
+from studio_execution.utils import get_executing_context
+from studio_api import feature_flags
 
 
 if __name__ == "__main__":
@@ -178,24 +178,24 @@ import comfy_aimdo.control
 if enables_dynamic_vram():
     comfy_aimdo.control.init()
 
-import comfy.utils
+import studio.utils
 
 import execution
 import server
 from protocol import BinaryEventTypes
 import nodes
-import comfy.model_management
-import comfyui_version
+import studio.model_management
+import studio_version
 import app.logger
 import hook_breaker_ac10a0
 
-import comfy.memory_management
-import comfy.model_patcher
+import studio.memory_management
+import studio.model_patcher
 
 if enables_dynamic_vram():
-    if comfy.model_management.torch_version_numeric < (2, 8):
+    if studio.model_management.torch_version_numeric < (2, 8):
         logging.warning("Unsupported Pytorch detected. DynamicVRAM support requires Pytorch version 2.8 or later. Falling back to legacy ModelPatcher. VRAM estimates may be unreliable especially on Windows")
-    elif comfy_aimdo.control.init_device(comfy.model_management.get_torch_device().index):
+    elif comfy_aimdo.control.init_device(studio.model_management.get_torch_device().index):
         if args.verbose == 'DEBUG':
             comfy_aimdo.control.set_log_debug()
         elif args.verbose == 'CRITICAL':
@@ -207,16 +207,16 @@ if enables_dynamic_vram():
         else: #INFO
             comfy_aimdo.control.set_log_info()
 
-        comfy.model_patcher.CoreModelPatcher = comfy.model_patcher.ModelPatcherDynamic
-        comfy.memory_management.aimdo_enabled = True
+        studio.model_patcher.CoreModelPatcher = studio.model_patcher.ModelPatcherDynamic
+        studio.memory_management.aimdo_enabled = True
         logging.info("DynamicVRAM support detected and enabled")
     else:
         logging.warning("No working comfy-aimdo install detected. DynamicVRAM support disabled. Falling back to legacy ModelPatcher. VRAM estimates may be unreliable especially on Windows")
 
 
 def cuda_malloc_warning():
-    device = comfy.model_management.get_torch_device()
-    device_name = comfy.model_management.get_torch_device_name(device)
+    device = studio.model_management.get_torch_device()
+    device_name = studio.model_management.get_torch_device_name(device)
     cuda_malloc_warning = False
     if "cudaMallocAsync" in device_name:
         for b in cuda_malloc.blacklist:
@@ -285,7 +285,7 @@ def prompt_worker(q, server_instance):
         free_memory = flags.get("free_memory", False)
 
         if flags.get("unload_models", free_memory):
-            comfy.model_management.unload_all_models()
+            studio.model_management.unload_all_models()
             need_gc = True
             last_gc_collect = 0
 
@@ -298,7 +298,7 @@ def prompt_worker(q, server_instance):
             current_time = time.perf_counter()
             if (current_time - last_gc_collect) > gc_collect_interval:
                 gc.collect()
-                comfy.model_management.soft_empty_cache()
+                studio.model_management.soft_empty_cache()
                 last_gc_collect = current_time
                 need_gc = False
                 hook_breaker_ac10a0.restore_functions()
@@ -319,7 +319,7 @@ def hijack_progress(server_instance):
             prompt_id = executing_context.prompt_id
         if node_id is None and executing_context is not None:
             node_id = executing_context.node_id
-        comfy.model_management.throw_exception_if_processing_interrupted()
+        studio.model_management.throw_exception_if_processing_interrupted()
         if prompt_id is None:
             prompt_id = server_instance.last_prompt_id
         if node_id is None:
@@ -341,7 +341,7 @@ def hijack_progress(server_instance):
                     server_instance.client_id,
                 )
 
-    comfy.utils.set_progress_bar_global_hook(hook)
+    studio.utils.set_progress_bar_global_hook(hook)
 
 
 def cleanup_temp():
@@ -361,7 +361,7 @@ def setup_database():
         logging.error(f"Failed to initialize database. Please ensure you have installed the latest requirements. If the error persists, please report this as in future the database will be required: {e}")
 
 
-def start_comfyui(asyncio_loop=None):
+def start_studio(asyncio_loop=None):
     """
     Starts the Hanzo Studio server using the provided asyncio event loop or creates a new one.
     Returns the event loop, server instance, and a function to start the server asynchronously.
@@ -428,12 +428,12 @@ def start_comfyui(asyncio_loop=None):
 if __name__ == "__main__":
     # Running directly, just start Hanzo Studio.
     logging.info("Python version: {}".format(sys.version))
-    logging.info("Hanzo Studio version: {}".format(comfyui_version.__version__))
+    logging.info("Hanzo Studio version: {}".format(studio_version.__version__))
 
     if sys.version_info.major == 3 and sys.version_info.minor < 10:
         logging.warning("WARNING: You are using a python version older than 3.10, please upgrade to a newer one. 3.12 and above is recommended.")
 
-    event_loop, _, start_all_func = start_comfyui()
+    event_loop, _, start_all_func = start_studio()
     try:
         x = start_all_func()
         app.logger.print_startup_warnings()

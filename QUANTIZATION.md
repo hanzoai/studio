@@ -1,4 +1,4 @@
-# The Comfy guide to Quantization
+# The Hanzo Studio guide to Quantization
 
 
 ## How does quantization work?
@@ -27,7 +27,7 @@ tensor_dq ~ tensor
 Given that additional information (scaling factor) is needed to "interpret" the quantized values, we describe those as derived datatypes.
 
 
-## Quantization in Comfy
+## Quantization in Hanzo Studio
 
 ```
 QuantizedTensor (torch.Tensor subclass)
@@ -39,7 +39,7 @@ MixedPrecisionOps + Metadata Detection
 
 ### Representation
 
-To represent these derived datatypes, Hanzo Studio uses a subclass of torch.Tensor to implements these using the `QuantizedTensor` class found in `comfy/quant_ops.py`
+To represent these derived datatypes, Hanzo Studio uses a subclass of torch.Tensor to implements these using the `QuantizedTensor` class found in `studio/quant_ops.py`
 
 A `Layout` class defines how a specific quantization format behaves:
 - Required parameters
@@ -47,7 +47,7 @@ A `Layout` class defines how a specific quantization format behaves:
 - De-Quantize method
 
 ```python
-from comfy.quant_ops import QuantizedLayout
+from studio.quant_ops import QuantizedLayout
 
 class MyLayout(QuantizedLayout):
     @classmethod
@@ -67,7 +67,7 @@ The first is a **generic registry** that handles operations common to all quanti
 
 The second registry is layout-specific and allows to implement fast-paths like nn.Linear.
 ```python
-from comfy.quant_ops import register_layout_op
+from studio.quant_ops import register_layout_op
 
 @register_layout_op(torch.ops.aten.linear.default, MyLayout)
 def my_linear(func, args, kwargs):
@@ -80,7 +80,7 @@ For any unsupported operation, QuantizedTensor will fallback to call `dequantize
 
 ### Mixed Precision
 
-The `MixedPrecisionOps` class (lines 542-648 in `comfy/ops.py`) enables per-layer quantization decisions, allowing different layers in a model to use different precisions. This is activated when a model config contains a `layer_quant_config` dictionary that specifies which layers should be quantized and how.
+The `MixedPrecisionOps` class (lines 542-648 in `studio/ops.py`) enables per-layer quantization decisions, allowing different layers in a model to use different precisions. This is activated when a model config contains a `layer_quant_config` dictionary that specifies which layers should be quantized and how.
 
 **Architecture:**
 
@@ -125,7 +125,7 @@ We define 4 possible scaling parameters that should cover most recipes in the ne
 |--------|---------------|--------------|----------------|-----------------|-------------|
 | float8_e4m3fn | float32 | float32 (scalar) | - | - | float32 (scalar) |
 
-You can find the defined formats in `comfy/quant_ops.py` (QUANT_ALGOS).
+You can find the defined formats in `studio/quant_ops.py` (QUANT_ALGOS).
 
 ### Quantization Metadata
 

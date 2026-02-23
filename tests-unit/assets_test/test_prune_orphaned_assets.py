@@ -7,13 +7,13 @@ from conftest import get_asset_filename, trigger_sync_seed_assets
 
 
 @pytest.fixture
-def create_seed_file(comfy_tmp_base_dir: Path):
+def create_seed_file(studio_tmp_base_dir: Path):
     """Create a file on disk that will become a seed asset after sync."""
     created: list[Path] = []
 
     def _create(root: str, scope: str, name: str | None = None, data: bytes = b"TEST") -> Path:
         name = name or f"seed_{uuid.uuid4().hex[:8]}.bin"
-        path = comfy_tmp_base_dir / root / "unit-tests" / scope / name
+        path = studio_tmp_base_dir / root / "unit-tests" / scope / name
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(data)
         created.append(path)
@@ -82,7 +82,7 @@ def test_seed_asset_with_file_survives_prune(
 def test_hashed_asset_not_pruned_when_file_missing(
     http: requests.Session,
     api_base: str,
-    comfy_tmp_base_dir: Path,
+    studio_tmp_base_dir: Path,
     asset_factory,
     make_asset_bytes,
 ):
@@ -91,7 +91,7 @@ def test_hashed_asset_not_pruned_when_file_missing(
     data = make_asset_bytes("test", 2048)
     a = asset_factory("test.bin", ["input", "unit-tests", scope], {}, data)
 
-    path = comfy_tmp_base_dir / "input" / "unit-tests" / scope / get_asset_filename(a["asset_hash"], ".bin")
+    path = studio_tmp_base_dir / "input" / "unit-tests" / scope / get_asset_filename(a["asset_hash"], ".bin")
     path.unlink()
 
     trigger_sync_seed_assets(http, api_base)
@@ -129,7 +129,7 @@ def test_special_chars_in_path_escaped_correctly(
     find_asset,
     http: requests.Session,
     api_base: str,
-    comfy_tmp_base_dir: Path,
+    studio_tmp_base_dir: Path,
 ):
     """SQL LIKE wildcards (%, _) and spaces in paths don't cause false matches."""
     scope = f"special-{uuid.uuid4().hex[:6]}/{dirname}"

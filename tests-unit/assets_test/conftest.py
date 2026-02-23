@@ -55,14 +55,14 @@ def _wait_http_ready(base: str, session: requests.Session, timeout: float = 90.0
 
 
 @pytest.fixture(scope="session")
-def comfy_tmp_base_dir() -> Path:
+def studio_tmp_base_dir() -> Path:
     env_base = os.environ.get("ASSETS_TEST_BASE_DIR")
     created_by_fixture = False
     if env_base:
         tmp = Path(env_base)
         tmp.mkdir(parents=True, exist_ok=True)
     else:
-        tmp = Path(tempfile.mkdtemp(prefix="comfyui-assets-tests-"))
+        tmp = Path(tempfile.mkdtemp(prefix="studio-assets-tests-"))
         created_by_fixture = True
     _make_base_dirs(tmp)
     yield tmp
@@ -78,7 +78,7 @@ def comfy_tmp_base_dir() -> Path:
 
 
 @pytest.fixture(scope="session")
-def comfy_url_and_proc(comfy_tmp_base_dir: Path, request: pytest.FixtureRequest):
+def studio_url_and_proc(studio_tmp_base_dir: Path, request: pytest.FixtureRequest):
     """
     Boot Hanzo Studio subprocess with:
       - sandbox base dir
@@ -90,23 +90,23 @@ def comfy_url_and_proc(comfy_tmp_base_dir: Path, request: pytest.FixtureRequest)
     db_url = request.config.getoption("--db-url")
     if not db_url:
         # Use a file-backed sqlite database in the temp directory
-        db_path = comfy_tmp_base_dir / "assets-test.sqlite3"
+        db_path = studio_tmp_base_dir / "assets-test.sqlite3"
         db_url = f"sqlite:///{db_path}"
 
-    logs_dir = comfy_tmp_base_dir / "logs"
+    logs_dir = studio_tmp_base_dir / "logs"
     logs_dir.mkdir(exist_ok=True)
     out_log = open(logs_dir / "stdout.log", "w", buffering=1)
     err_log = open(logs_dir / "stderr.log", "w", buffering=1)
 
-    comfy_root = Path(__file__).resolve().parent.parent.parent
-    if not (comfy_root / "main.py").is_file():
-        raise FileNotFoundError(f"main.py not found under {comfy_root}")
+    studio_root = Path(__file__).resolve().parent.parent.parent
+    if not (studio_root / "main.py").is_file():
+        raise FileNotFoundError(f"main.py not found under {studio_root}")
 
     proc = subprocess.Popen(
         args=[
             sys.executable,
             "main.py",
-            f"--base-directory={str(comfy_tmp_base_dir)}",
+            f"--base-directory={str(studio_tmp_base_dir)}",
             f"--database-url={db_url}",
             "--disable-assets-autoscan",
             "--listen",
@@ -117,7 +117,7 @@ def comfy_url_and_proc(comfy_tmp_base_dir: Path, request: pytest.FixtureRequest)
         ],
         stdout=out_log,
         stderr=err_log,
-        cwd=str(comfy_root),
+        cwd=str(studio_root),
         env={**os.environ},
     )
 
@@ -158,8 +158,8 @@ def http() -> Iterator[requests.Session]:
 
 
 @pytest.fixture
-def api_base(comfy_url_and_proc) -> str:
-    base_url, _proc, _port = comfy_url_and_proc
+def api_base(studio_url_and_proc) -> str:
+    base_url, _proc, _port = studio_url_and_proc
     return base_url
 
 

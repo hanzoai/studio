@@ -14,5 +14,5 @@ def get_missing_requirements_message():
     return f"""
 Please install the updated requirements.txt file by running:
 {sys.executable} {extra}-m pip install -r {requirements_path}
-If you are on the portable package you can run: update\\update_comfyui.bat to update dependencies.
+If you are on the portable package you can run: update\\update_studio.bat to update dependencies.
 """.strip()

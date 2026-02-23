@@ -8,7 +8,7 @@ Tests the preview method override functionality:
 - Integration with args.preview_method
 """
 import pytest
-from comfy.cli_args import args, LatentPreviewMethod
+from studio.cli_args import args, LatentPreviewMethod
 from latent_preview import set_preview_method, default_preview_method
 
 

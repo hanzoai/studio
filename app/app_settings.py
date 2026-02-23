@@ -12,7 +12,7 @@ class AppSettings():
         try:
             file = self.user_manager.get_request_user_filepath(
                 request,
-                "comfy.settings.json"
+                "studio.settings.json"
             )
         except KeyError as e:
             logging.error("User settings not found.")
@@ -29,7 +29,7 @@ class AppSettings():
 
     def save_settings(self, request, settings):
         file = self.user_manager.get_request_user_filepath(
-            request, "comfy.settings.json")
+            request, "studio.settings.json")
         with open(file, "w") as f:
             f.write(json.dumps(settings, indent=4))
 

@@ -34,7 +34,7 @@ def test_download_chooses_existing_state_and_updates_access_time(
     root: str,
     http: requests.Session,
     api_base: str,
-    comfy_tmp_base_dir: Path,
+    studio_tmp_base_dir: Path,
     asset_factory,
     make_asset_bytes,
     run_scan_and_wait,
@@ -51,7 +51,7 @@ def test_download_chooses_existing_state_and_updates_access_time(
     a = asset_factory(name, [root, "unit-tests", scope], {}, data)
     aid = a["id"]
 
-    base = comfy_tmp_base_dir / root / "unit-tests" / scope
+    base = studio_tmp_base_dir / root / "unit-tests" / scope
     path1 = base / get_asset_filename(a["asset_hash"], ".bin")
     assert path1.exists()
 
@@ -97,7 +97,7 @@ def test_download_chooses_existing_state_and_updates_access_time(
 
 @pytest.mark.parametrize("seeded_asset", [{"tags": ["models", "checkpoints"]}], indirect=True)
 def test_download_missing_file_returns_404(
-    http: requests.Session, api_base: str, comfy_tmp_base_dir: Path, seeded_asset: dict
+    http: requests.Session, api_base: str, studio_tmp_base_dir: Path, seeded_asset: dict
 ):
     # Remove the underlying file then attempt download.
     # We initialize fixture without additional tags to know exactly the asset file path.
@@ -107,7 +107,7 @@ def test_download_missing_file_returns_404(
         detail = rg.json()
         assert rg.status_code == 200
         asset_filename = get_asset_filename(detail["asset_hash"], ".safetensors")
-        abs_path = comfy_tmp_base_dir / "models" / "checkpoints" / asset_filename
+        abs_path = studio_tmp_base_dir / "models" / "checkpoints" / asset_filename
         assert abs_path.exists()
         abs_path.unlink()
 
@@ -127,7 +127,7 @@ def test_download_404_if_all_states_missing(
     root: str,
     http: requests.Session,
     api_base: str,
-    comfy_tmp_base_dir: Path,
+    studio_tmp_base_dir: Path,
     asset_factory,
     make_asset_bytes,
     run_scan_and_wait,
@@ -141,7 +141,7 @@ def test_download_404_if_all_states_missing(
     a = asset_factory(name, [root, "unit-tests", scope], {}, data)
     aid = a["id"]
 
-    base = comfy_tmp_base_dir / root / "unit-tests" / scope
+    base = studio_tmp_base_dir / root / "unit-tests" / scope
     p1 = base / get_asset_filename(a["asset_hash"], ".bin")
     assert p1.exists()
 

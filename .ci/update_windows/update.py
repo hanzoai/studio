@@ -47,7 +47,7 @@ def pull(repo, remote_name='origin', branch='master'):
 pygit2.option(pygit2.GIT_OPT_SET_OWNER_VALIDATION, 0)
 repo_path = str(sys.argv[1])
 repo = pygit2.Repository(repo_path)
-ident = pygit2.Signature('comfyui', 'comfy@ui')
+ident = pygit2.Signature('hanzo-studio', 'studio@hanzo.ai')
 try:
     print("stashing current changes")  # noqa: T201
     repo.stash(ident)
@@ -153,8 +153,8 @@ if not os.path.exists(req_path) or not files_equal(repo_req_path, req_path):
         pass
 
 
-stable_update_script = os.path.join(repo_path, ".ci/update_windows/update_comfyui_stable.bat")
-stable_update_script_to = os.path.join(cur_path, "update_comfyui_stable.bat")
+stable_update_script = os.path.join(repo_path, ".ci/update_windows/update_studio_stable.bat")
+stable_update_script_to = os.path.join(cur_path, "update_studio_stable.bat")
 
 try:
     if not file_size(stable_update_script_to) > 10:

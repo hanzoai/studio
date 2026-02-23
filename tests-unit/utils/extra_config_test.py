@@ -36,7 +36,7 @@ def mock_expanded_home():
 def yaml_config_with_appdata():
     return """
     test_config:
-      base_path: '%APPDATA%/ComfyUI'
+      base_path: '%APPDATA%/HanzoStudio'
       checkpoints: 'models/checkpoints'
     """
 
@@ -141,9 +141,9 @@ def test_load_extra_model_paths_expands_appdata(
     load_extra_path_config(dummy_yaml_file_name)
 
     if sys.platform == "win32":
-        expected_base_path = 'C:/Users/TestUser/AppData/Roaming/ComfyUI'
+        expected_base_path = 'C:/Users/TestUser/AppData/Roaming/HanzoStudio'
     else:
-        expected_base_path = '/Users/TestUser/AppData/Roaming/ComfyUI'
+        expected_base_path = '/Users/TestUser/AppData/Roaming/HanzoStudio'
     expected_calls = [
         ('checkpoints', os.path.normpath(os.path.join(expected_base_path, 'models/checkpoints')), False),
     ]

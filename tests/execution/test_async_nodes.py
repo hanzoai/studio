@@ -6,8 +6,8 @@ import numpy as np
 import subprocess
 
 from pytest import fixture
-from comfy_execution.graph_utils import GraphBuilder
-from tests.execution.test_execution import ComfyClient, run_warmup
+from studio_execution.graph_utils import GraphBuilder
+from tests.execution.test_execution import StudioClient, run_warmup
 
 
 @pytest.mark.execution
@@ -37,7 +37,7 @@ class TestAsyncNodes:
 
     @fixture(scope="class", autouse=True)
     def shared_client(self, args_pytest, _server):
-        client = ComfyClient()
+        client = StudioClient()
         n_tries = 5
         for i in range(n_tries):
             time.sleep(4)
@@ -63,7 +63,7 @@ class TestAsyncNodes:
 
     # Happy Path Tests
 
-    def test_basic_async_execution(self, client: ComfyClient, builder: GraphBuilder):
+    def test_basic_async_execution(self, client: StudioClient, builder: GraphBuilder):
         """Test that a basic async node executes correctly."""
         g = builder
         image = g.node("StubImage", content="BLACK", height=512, width=512, batch_size=1)
@@ -81,7 +81,7 @@ class TestAsyncNodes:
         assert len(result_images) == 1, "Should have 1 image"
         assert np.array(result_images[0]).min() == 0 and np.array(result_images[0]).max() == 0, "Image should be black"
 
-    def test_multiple_async_parallel_execution(self, client: ComfyClient, builder: GraphBuilder, skip_timing_checks):
+    def test_multiple_async_parallel_execution(self, client: StudioClient, builder: GraphBuilder, skip_timing_checks):
         """Test that multiple async nodes execute in parallel."""
         # Warmup execution to ensure server is fully initialized
         run_warmup(client)
@@ -110,7 +110,7 @@ class TestAsyncNodes:
         # Verify all nodes executed
         assert result.did_run(sleep1) and result.did_run(sleep2) and result.did_run(sleep3)
 
-    def test_async_with_dependencies(self, client: ComfyClient, builder: GraphBuilder):
+    def test_async_with_dependencies(self, client: StudioClient, builder: GraphBuilder):
         """Test async nodes with proper dependency handling."""
         g = builder
         image1 = g.node("StubImage", content="BLACK", height=512, width=512, batch_size=1)
@@ -135,7 +135,7 @@ class TestAsyncNodes:
         avg_value = np.array(result_images[0]).mean()
         assert abs(avg_value - 127.5) < 1, f"Average value {avg_value} should be ~127.5"
 
-    def test_async_validate_inputs(self, client: ComfyClient, builder: GraphBuilder):
+    def test_async_validate_inputs(self, client: StudioClient, builder: GraphBuilder):
         """Test async VALIDATE_INPUTS function."""
         g = builder
         # Create a test node with async validation
@@ -151,7 +151,7 @@ class TestAsyncNodes:
         with pytest.raises(urllib.error.HTTPError):
             client.run(g)
 
-    def test_async_lazy_evaluation(self, client: ComfyClient, builder: GraphBuilder, skip_timing_checks):
+    def test_async_lazy_evaluation(self, client: StudioClient, builder: GraphBuilder, skip_timing_checks):
         """Test async nodes with lazy evaluation."""
         # Warmup execution to ensure server is fully initialized
         run_warmup(client, prefix="warmup_lazy")
@@ -179,7 +179,7 @@ class TestAsyncNodes:
         assert result.did_run(sleep1), "Sleep1 should have executed"
         assert not result.did_run(sleep2), "Sleep2 should have been skipped"
 
-    def test_async_check_lazy_status(self, client: ComfyClient, builder: GraphBuilder):
+    def test_async_check_lazy_status(self, client: StudioClient, builder: GraphBuilder):
         """Test async check_lazy_status function."""
         g = builder
         # Create a node with async check_lazy_status
@@ -194,7 +194,7 @@ class TestAsyncNodes:
 
     # Error Handling Tests
 
-    def test_async_execution_error(self, client: ComfyClient, builder: GraphBuilder):
+    def test_async_execution_error(self, client: StudioClient, builder: GraphBuilder):
         """Test that async execution errors are properly handled."""
         g = builder
         image = g.node("StubImage", content="BLACK", height=512, width=512, batch_size=1)
@@ -209,7 +209,7 @@ class TestAsyncNodes:
             assert 'prompt_id' in e.args[0], f"Did not get proper error message: {e}"
             assert e.args[0]['node_id'] == error_node.id, "Error should be from async error node"
 
-    def test_async_validation_error(self, client: ComfyClient, builder: GraphBuilder):
+    def test_async_validation_error(self, client: StudioClient, builder: GraphBuilder):
         """Test async validation error handling."""
         g = builder
         # Node with async validation that will fail
@@ -221,7 +221,7 @@ class TestAsyncNodes:
         # Verify it's a validation error
         assert exc_info.value.code == 400
 
-    def test_async_timeout_handling(self, client: ComfyClient, builder: GraphBuilder):
+    def test_async_timeout_handling(self, client: StudioClient, builder: GraphBuilder):
         """Test handling of async operations that timeout."""
         g = builder
         image = g.node("StubImage", content="BLACK", height=512, width=512, batch_size=1)
@@ -235,7 +235,7 @@ class TestAsyncNodes:
         except Exception as e:
             assert 'timeout' in str(e).lower(), f"Expected timeout error, got: {e}"
 
-    def test_concurrent_async_error_recovery(self, client: ComfyClient, builder: GraphBuilder):
+    def test_concurrent_async_error_recovery(self, client: StudioClient, builder: GraphBuilder):
         """Test that workflow can recover after async errors."""
         g = builder
         image = g.node("StubImage", content="BLACK", height=512, width=512, batch_size=1)
@@ -258,7 +258,7 @@ class TestAsyncNodes:
         result = client.run(g2)
         assert result.did_run(sleep_node), "Should be able to run after error"
 
-    def test_sync_error_during_async_execution(self, client: ComfyClient, builder: GraphBuilder):
+    def test_sync_error_during_async_execution(self, client: StudioClient, builder: GraphBuilder):
         """Test handling when sync node errors while async node is executing."""
         g = builder
         image = g.node("StubImage", content="BLACK", height=512, width=512, batch_size=1)
@@ -282,7 +282,7 @@ class TestAsyncNodes:
 
     # Edge Cases
 
-    def test_async_with_execution_blocker(self, client: ComfyClient, builder: GraphBuilder):
+    def test_async_with_execution_blocker(self, client: StudioClient, builder: GraphBuilder):
         """Test async nodes with execution blockers."""
         g = builder
         image1 = g.node("StubImage", content="BLACK", height=512, width=512, batch_size=1)
@@ -312,7 +312,7 @@ class TestAsyncNodes:
         images = result.get_images(output)
         assert len(images) == 1, "Should have blocked second image"
 
-    def test_async_caching_behavior(self, client: ComfyClient, builder: GraphBuilder, skip_timing_checks):
+    def test_async_caching_behavior(self, client: StudioClient, builder: GraphBuilder, skip_timing_checks):
         """Test that async nodes are properly cached."""
         # Warmup execution to ensure server is fully initialized
         run_warmup(client, prefix="warmup_cache")
@@ -335,7 +335,7 @@ class TestAsyncNodes:
         if not skip_timing_checks:
             assert elapsed_time < 0.1, f"Cached run took {elapsed_time}s, should be instant"
 
-    def test_async_with_dynamic_prompts(self, client: ComfyClient, builder: GraphBuilder, skip_timing_checks):
+    def test_async_with_dynamic_prompts(self, client: StudioClient, builder: GraphBuilder, skip_timing_checks):
         """Test async nodes within dynamically generated prompts."""
         # Warmup execution to ensure server is fully initialized
         run_warmup(client, prefix="warmup_dynamic")
@@ -361,7 +361,7 @@ class TestAsyncNodes:
             assert elapsed_time < 1.0, f"Dynamic async execution took {elapsed_time}s"
         assert result.did_run(dynamic_async)
 
-    def test_async_resource_cleanup(self, client: ComfyClient, builder: GraphBuilder):
+    def test_async_resource_cleanup(self, client: StudioClient, builder: GraphBuilder):
         """Test that async resources are properly cleaned up."""
         g = builder
         image = g.node("StubImage", content="BLACK", height=512, width=512, batch_size=1)
@@ -388,13 +388,13 @@ class TestAsyncNodes:
         for node in resource_nodes:
             assert not result2.did_run(node), "Should be cached"
 
-    def test_async_cancellation(self, client: ComfyClient, builder: GraphBuilder):
+    def test_async_cancellation(self, client: StudioClient, builder: GraphBuilder):
         """Test cancellation of async operations."""
         # This would require implementing cancellation in the client
         # For now, we'll test that long-running async operations can be interrupted
         pass  # TODO: Implement when cancellation API is available
 
-    def test_mixed_sync_async_execution(self, client: ComfyClient, builder: GraphBuilder):
+    def test_mixed_sync_async_execution(self, client: StudioClient, builder: GraphBuilder):
         """Test workflows with both sync and async nodes."""
         g = builder
         image1 = g.node("StubImage", content="BLACK", height=512, width=512, batch_size=1)

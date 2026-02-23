@@ -17,7 +17,7 @@ You can download the stable diffusion XL one from: https://huggingface.co/stabil
 
 
 RECOMMENDED WAY TO UPDATE:
-To update the Hanzo Studio code: update\update_comfyui.bat
+To update the Hanzo Studio code: update\update_studio.bat
 
 
 TO SHARE MODELS BETWEEN HANZO STUDIO AND ANOTHER UI:

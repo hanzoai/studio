@@ -26,7 +26,7 @@ reviews:
   enable_prompt_for_ai_agents: true
 
   path_filters:
-    - "!comfy_api_nodes/apis/**"
+    - "!studio_api_nodes/apis/**"
     - "!**/generated/*.pyi"
     - "!.ci/**"
     - "!script_examples/**"
@@ -44,26 +44,26 @@ reviews:
         only due to whitespace or structural reformatting (e.g., removing a `with:` block),
         treat it as unchanged. Contributors should not feel obligated to address
         pre-existing issues outside the scope of their contribution.
-    - path: "comfy/**"
+    - path: "studio/**"
       instructions: |
         Core ML/diffusion engine. Focus on:
         - Backward compatibility (breaking changes affect all custom nodes)
         - Memory management and GPU resource handling
         - Performance implications in hot paths
         - Thread safety for concurrent execution
-    - path: "comfy_api_nodes/**"
+    - path: "studio_api_nodes/**"
       instructions: |
         Third-party API integration nodes. Focus on:
         - No hardcoded API keys or secrets
         - Proper error handling for API failures (timeouts, rate limits, auth errors)
         - Correct Pydantic model usage
         - Security of user data passed to external APIs
-    - path: "comfy_extras/**"
+    - path: "studio_extras/**"
       instructions: |
         Community-contributed extra nodes. Focus on:
         - Consistency with node patterns (INPUT_TYPES, RETURN_TYPES, FUNCTION, CATEGORY)
         - No breaking changes to existing node interfaces
-    - path: "comfy_execution/**"
+    - path: "studio_execution/**"
       instructions: |
         Execution engine (graph execution, caching, jobs). Focus on:
         - Caching correctness

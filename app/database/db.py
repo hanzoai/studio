@@ -3,7 +3,7 @@ import os
 import shutil
 from app.logger import log_startup_warning
 from utils.install_util import get_missing_requirements_message
-from comfy.cli_args import args
+from studio.cli_args import args
 
 _DB_AVAILABLE = False
 Session = None

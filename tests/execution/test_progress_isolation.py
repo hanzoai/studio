@@ -7,8 +7,8 @@ import threading
 import uuid
 import websocket
 from typing import List, Dict, Any
-from comfy_execution.graph_utils import GraphBuilder
-from tests.execution.test_execution import ComfyClient
+from studio_execution.graph_utils import GraphBuilder
+from tests.execution.test_execution import StudioClient
 
 
 class ProgressTracker:
@@ -42,8 +42,8 @@ class ProgressTracker:
             return False
 
 
-class IsolatedClient(ComfyClient):
-    """Extended ComfyClient that tracks all WebSocket messages."""
+class IsolatedClient(StudioClient):
+    """Extended StudioClient that tracks all WebSocket messages."""
 
     def __init__(self):
         super().__init__()

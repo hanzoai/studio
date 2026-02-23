@@ -11,7 +11,7 @@ echo "Target: $STATIC_DIR"
 
 # --- 1. Replace logo SVG files ---
 echo "[1/6] Replacing logos..."
-for logo_file in comfy-logo-single.svg comfy-logo-mono.svg comfy-cloud-logo.svg; do
+for logo_file in studio-logo-single.svg studio-logo-mono.svg studio-cloud-logo.svg; do
     target="$STATIC_DIR/assets/images/$logo_file"
     if [ -f "$target" ]; then
         cp "$BRANDING_DIR/hanzo-logo.svg" "$target"
@@ -60,7 +60,7 @@ fi
 # --- 4. Patch manifest JSON files ---
 echo "[4/6] Patching manifests..."
 find "$STATIC_DIR" -name "manifest*.json" -exec sed -i 's/"ComfyUI"/"Hanzo Studio"/g' {} \;
-find "$STATIC_DIR" -name "manifest*.json" -exec sed -i 's/comfy\.org/hanzo.ai/g' {} \;
+find "$STATIC_DIR" -name "manifest*.json" -exec sed -i 's/studio\.org/hanzo.ai/g' {} \;
 echo "  Done"
 
 # --- 5. Smart JS/CSS patching via Python ---

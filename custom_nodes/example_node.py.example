@@ -126,5 +126,5 @@ class ExampleExtension(ComfyExtension):
         ]
 
 
-async def comfy_entrypoint() -> ExampleExtension:  # ComfyUI calls this to load your extension and its nodes.
+async def comfy_entrypoint() -> ExampleExtension:  # Hanzo Studio calls this to load your extension and its nodes.
     return ExampleExtension()

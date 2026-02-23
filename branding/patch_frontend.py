@@ -15,12 +15,12 @@ STATIC_DIR = sys.argv[1]
 # ============================================================
 URL_REPLACEMENTS = [
     # Domains
-    (r'https?://(?:www\.)?comfy\.org', 'https://hanzo.ai'),
-    (r'https?://docs\.comfy\.org', 'https://docs.hanzo.ai'),
-    (r'https?://forum\.comfy\.org', 'https://hanzo.ai/community'),
-    (r'https?://api\.comfy\.org', 'https://api.hanzo.ai'),
-    (r'https?://platform\.comfy\.org', 'https://hanzo.ai'),
-    (r'https?://media\.comfy\.org', 'https://media.hanzo.ai'),
+    (r'https?://(?:www\.)?studio\.org', 'https://hanzo.ai'),
+    (r'https?://docs\.studio\.org', 'https://docs.hanzo.ai'),
+    (r'https?://forum\.studio\.org', 'https://hanzo.ai/community'),
+    (r'https?://api\.studio\.org', 'https://api.hanzo.ai'),
+    (r'https?://platform\.studio\.org', 'https://hanzo.ai'),
+    (r'https?://media\.studio\.org', 'https://media.hanzo.ai'),
     # GitHub
     (r'github\.com/comfyanonymous/ComfyUI', 'github.com/hanzoai/studio'),
     (r'github\.com/Comfy-Org/ComfyUI', 'github.com/hanzoai/studio'),
@@ -30,7 +30,7 @@ URL_REPLACEMENTS = [
     (r'discord\.gg/comfyorg', 'discord.gg/hanzoai'),
     (r'discord\.com/invite/comfyorg', 'discord.com/invite/hanzoai'),
     # Email
-    (r'support@comfy\.org', 'support@hanzo.ai'),
+    (r'support@studio\.org', 'support@hanzo.ai'),
 ]
 
 # ============================================================
@@ -62,8 +62,8 @@ DISPLAY_REPLACEMENTS = [
     ('Comfy-Org Logo', 'Hanzo AI Logo'),
     ('ComfyOrg Logo', 'Hanzo AI Logo'),
     ('Comfy Org', 'Hanzo AI'),
-    # comfy.org domain in display text (not URLs — those are handled by URL_REPLACEMENTS)
-    ('comfy.org', 'hanzo.ai'),
+    # studio.org domain in display text (not URLs — those are handled by URL_REPLACEMENTS)
+    ('studio.org', 'hanzo.ai'),
     # Comfy Cloud branding
     ('Comfy Cloud Logo', 'Hanzo Cloud Logo'),
     ('Comfy Cloud', 'Hanzo Cloud'),

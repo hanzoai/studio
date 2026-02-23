@@ -7,7 +7,7 @@ import logging
 from typing import Literal, List
 from collections.abc import Collection
 
-from comfy.cli_args import args
+from studio.cli_args import args
 
 supported_pt_extensions: set[str] = {'.ckpt', '.pt', '.pt2', '.bin', '.pth', '.safetensors', '.pkl', '.sft'}
 

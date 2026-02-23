@@ -5,7 +5,7 @@ Tests actual execution with different preview_method values.
 Requires a running Hanzo Studio server with models.
 
 Usage:
-    COMFYUI_SERVER=http://localhost:8988 pytest test_preview_method_e2e.py -v -m preview_method
+    STUDIO_SERVER=http://localhost:8988 pytest test_preview_method_e2e.py -v -m preview_method
 
 Note:
     These tests execute actual image generation and wait for completion.
@@ -23,7 +23,7 @@ from pathlib import Path
 
 
 # Server configuration
-SERVER_URL = os.environ.get("COMFYUI_SERVER", "http://localhost:8988")
+SERVER_URL = os.environ.get("STUDIO_SERVER", "http://localhost:8988")
 SERVER_HOST = SERVER_URL.replace("http://", "").replace("https://", "")
 
 # Use existing inference graph fixture

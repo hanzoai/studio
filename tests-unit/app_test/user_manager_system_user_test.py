@@ -54,7 +54,7 @@ class TestGetRequestUserId:
 
     def test_system_user_raises_error(self, user_manager, mock_request):
         """Test System User in header raises KeyError."""
-        mock_request.headers = {"comfy-user": "__system"}
+        mock_request.headers = {"studio-user": "__system"}
 
         with patch('app.user_manager.args') as mock_args:
             mock_args.multi_user = True
@@ -63,7 +63,7 @@ class TestGetRequestUserId:
 
     def test_system_user_cache_raises_error(self, user_manager, mock_request):
         """Test System User cache raises KeyError."""
-        mock_request.headers = {"comfy-user": "__cache"}
+        mock_request.headers = {"studio-user": "__cache"}
 
         with patch('app.user_manager.args') as mock_args:
             mock_args.multi_user = True
@@ -72,7 +72,7 @@ class TestGetRequestUserId:
 
     def test_normal_user_works(self, user_manager, mock_request):
         """Test normal user access works."""
-        mock_request.headers = {"comfy-user": "default"}
+        mock_request.headers = {"studio-user": "default"}
 
         with patch('app.user_manager.args') as mock_args:
             mock_args.multi_user = True
@@ -81,7 +81,7 @@ class TestGetRequestUserId:
 
     def test_unknown_user_raises_error(self, user_manager, mock_request):
         """Test unknown user raises KeyError."""
-        mock_request.headers = {"comfy-user": "unknown_user"}
+        mock_request.headers = {"studio-user": "unknown_user"}
 
         with patch('app.user_manager.args') as mock_args:
             mock_args.multi_user = True
@@ -102,7 +102,7 @@ class TestGetRequestUserFilepath:
         # First, we need to mock get_request_user_id to return System User
         # But actually, get_request_user_id will raise KeyError first
         # So we test via get_public_user_directory returning None
-        mock_request.headers = {"comfy-user": "default"}
+        mock_request.headers = {"studio-user": "default"}
 
         with patch('app.user_manager.args') as mock_args:
             mock_args.multi_user = True
@@ -113,7 +113,7 @@ class TestGetRequestUserFilepath:
 
     def test_normal_user_gets_path(self, user_manager, mock_request, mock_user_directory):
         """Test normal user gets valid filepath."""
-        mock_request.headers = {"comfy-user": "default"}
+        mock_request.headers = {"studio-user": "default"}
 
         with patch('app.user_manager.args') as mock_args:
             mock_args.multi_user = True
@@ -175,7 +175,7 @@ class TestDefenseLayers:
 
     def test_layer1_get_request_user_id(self, user_manager, mock_request):
         """Test 1st defense layer blocks System Users."""
-        mock_request.headers = {"comfy-user": "__system"}
+        mock_request.headers = {"studio-user": "__system"}
 
         with patch('app.user_manager.args') as mock_args:
             mock_args.multi_user = True

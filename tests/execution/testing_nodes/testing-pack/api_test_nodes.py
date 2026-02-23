@@ -1,13 +1,13 @@
 import asyncio
 import time
-from comfy.comfy_types import IO, ComfyNodeABC, InputTypeDict
-from comfy_api.v0_0_2 import ComfyAPI, ComfyAPISync
+from studio.node_types import IO, StudioNodeABC, InputTypeDict
+from studio_api.v0_0_2 import StudioAPI, StudioAPISync
 
-api = ComfyAPI()
-api_sync = ComfyAPISync()
+api = StudioAPI()
+api_sync = StudioAPISync()
 
 
-class TestAsyncProgressUpdate(ComfyNodeABC):
+class TestAsyncProgressUpdate(StudioNodeABC):
     """Test node with async VALIDATE_INPUTS."""
 
     @classmethod
@@ -37,7 +37,7 @@ class TestAsyncProgressUpdate(ComfyNodeABC):
         return (value,)
 
 
-class TestSyncProgressUpdate(ComfyNodeABC):
+class TestSyncProgressUpdate(StudioNodeABC):
     """Test node with async VALIDATE_INPUTS."""
 
     @classmethod

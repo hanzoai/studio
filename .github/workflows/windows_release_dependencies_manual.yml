@@ -38,18 +38,18 @@ jobs:
         - shell: bash
           run: |
             echo "@echo off
-            call update_comfyui.bat nopause
+            call update_studio.bat nopause
             echo -
             echo This will try to update pytorch and all python dependencies.
             echo -
-            echo If you just want to update normally, close this and run update_comfyui.bat instead.
+            echo If you just want to update normally, close this and run update_studio.bat instead.
             echo -
             pause
-            ..\python_embeded\python.exe -s -m pip install --upgrade ${{ inputs.torch_dependencies }} -r ../ComfyUI/requirements.txt pygit2
-            pause" > update_comfyui_and_python_dependencies.bat
+            ..\python_embeded\python.exe -s -m pip install --upgrade ${{ inputs.torch_dependencies }} -r ../HanzoStudio/requirements.txt pygit2
+            pause" > update_studio_and_python_dependencies.bat
 
-            grep -v comfyui requirements.txt > requirements_nocomfyui.txt
-            python -m pip wheel --no-cache-dir ${{ inputs.torch_dependencies }} -r requirements_nocomfyui.txt pygit2 -w ./temp_wheel_dir
+            grep -v studio requirements.txt > requirements_nostudio.txt
+            python -m pip wheel --no-cache-dir ${{ inputs.torch_dependencies }} -r requirements_nostudio.txt pygit2 -w ./temp_wheel_dir
             python -m pip install --no-cache-dir ./temp_wheel_dir/*
             echo installed basic
             ls -lah temp_wheel_dir
@@ -60,5 +60,5 @@ jobs:
           with:
             path: |
               ${{ inputs.cache_tag }}_python_deps.tar
-              update_comfyui_and_python_dependencies.bat
+              update_studio_and_python_dependencies.bat
             key: ${{ runner.os }}-build-${{ inputs.cache_tag }}-${{ inputs.python_minor }}

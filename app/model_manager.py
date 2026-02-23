@@ -7,7 +7,7 @@ import time
 import logging
 import folder_paths
 import glob
-import comfy.utils
+import studio.utils
 from aiohttp import web
 from PIL import Image
 from io import BytesIO
@@ -180,7 +180,7 @@ class ModelFileManager:
 
         if safetensors_file:
             safetensors_filepath = os.path.join(dirname, safetensors_file)
-            header = comfy.utils.safetensors_header(safetensors_filepath, max_size=8*1024*1024)
+            header = studio.utils.safetensors_header(safetensors_filepath, max_size=8*1024*1024)
             if header:
                 safetensors_metadata = json.loads(header)
         safetensors_images = safetensors_metadata.get("__metadata__", {}).get("ssmd_cover_images", None)

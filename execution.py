@@ -12,14 +12,14 @@ import asyncio
 
 import torch
 
-from comfy.cli_args import args
-import comfy.memory_management
-import comfy.model_management
+from studio.cli_args import args
+import studio.memory_management
+import studio.model_management
 import comfy_aimdo.model_vbar
 
 from latent_preview import set_preview_method
 import nodes
-from comfy_execution.caching import (
+from studio_execution.caching import (
     BasicCache,
     CacheKeySetID,
     CacheKeySetInputSignature,
@@ -28,18 +28,18 @@ from comfy_execution.caching import (
     LRUCache,
     RAMPressureCache,
 )
-from comfy_execution.graph import (
+from studio_execution.graph import (
     DynamicPrompt,
     ExecutionBlocker,
     ExecutionList,
     get_input_info,
 )
-from comfy_execution.graph_utils import GraphBuilder, is_link
-from comfy_execution.validation import validate_node_input
-from comfy_execution.progress import get_progress_state, reset_progress_state, add_progress_handler, WebUIProgressHandler
-from comfy_execution.utils import CurrentNodeContext
-from comfy_api.internal import _ComfyNodeInternal, _NodeOutputInternal, first_real_override, is_class, make_locked_method_func
-from comfy_api.latest import io, _io
+from studio_execution.graph_utils import GraphBuilder, is_link
+from studio_execution.validation import validate_node_input
+from studio_execution.progress import get_progress_state, reset_progress_state, add_progress_handler, WebUIProgressHandler
+from studio_execution.utils import CurrentNodeContext
+from studio_api.internal import _StudioNodeInternal, _NodeOutputInternal, first_real_override, is_class, make_locked_method_func
+from studio_api.latest import io, _io
 
 
 class ExecutionResult(Enum):
@@ -66,7 +66,7 @@ class IsChangedCache:
         class_def = nodes.NODE_CLASS_MAPPINGS[class_type]
         has_is_changed = False
         is_changed_name = None
-        if issubclass(class_def, _ComfyNodeInternal) and first_real_override(class_def, "fingerprint_inputs") is not None:
+        if issubclass(class_def, _StudioNodeInternal) and first_real_override(class_def, "fingerprint_inputs") is not None:
             has_is_changed = True
             is_changed_name = "fingerprint_inputs"
         elif hasattr(class_def, "IS_CHANGED"):
@@ -147,10 +147,10 @@ class CacheSet:
         }
         return result
 
-SENSITIVE_EXTRA_DATA_KEYS = ("auth_token_comfy_org", "api_key_comfy_org")
+SENSITIVE_EXTRA_DATA_KEYS = ("auth_token_hanzo", "api_key_hanzo")
 
 def get_input_data(inputs, class_def, unique_id, execution_list=None, dynprompt=None, extra_data={}):
-    is_v3 = issubclass(class_def, _ComfyNodeInternal)
+    is_v3 = issubclass(class_def, _StudioNodeInternal)
     v3_data: io.V3Data = {}
     hidden_inputs_v3 = {}
     valid_inputs = class_def.INPUT_TYPES()
@@ -192,10 +192,10 @@ def get_input_data(inputs, class_def, unique_id, execution_list=None, dynprompt=
                 hidden_inputs_v3[io.Hidden.extra_pnginfo] = extra_data.get('extra_pnginfo', None)
             if io.Hidden.unique_id.name in hidden:
                 hidden_inputs_v3[io.Hidden.unique_id] = unique_id
-            if io.Hidden.auth_token_comfy_org.name in hidden:
-                hidden_inputs_v3[io.Hidden.auth_token_comfy_org] = extra_data.get("auth_token_comfy_org", None)
-            if io.Hidden.api_key_comfy_org.name in hidden:
-                hidden_inputs_v3[io.Hidden.api_key_comfy_org] = extra_data.get("api_key_comfy_org", None)
+            if io.Hidden.auth_token_hanzo.name in hidden:
+                hidden_inputs_v3[io.Hidden.auth_token_hanzo] = extra_data.get("auth_token_hanzo", None)
+            if io.Hidden.api_key_hanzo.name in hidden:
+                hidden_inputs_v3[io.Hidden.api_key_hanzo] = extra_data.get("api_key_hanzo", None)
     else:
         if "hidden" in valid_inputs:
             h = valid_inputs["hidden"]
@@ -208,10 +208,10 @@ def get_input_data(inputs, class_def, unique_id, execution_list=None, dynprompt=
                     input_data_all[x] = [extra_data.get('extra_pnginfo', None)]
                 if h[x] == "UNIQUE_ID":
                     input_data_all[x] = [unique_id]
-                if h[x] == "AUTH_TOKEN_COMFY_ORG":
-                    input_data_all[x] = [extra_data.get("auth_token_comfy_org", None)]
-                if h[x] == "API_KEY_COMFY_ORG":
-                    input_data_all[x] = [extra_data.get("api_key_comfy_org", None)]
+                if h[x] == "AUTH_TOKEN_HANZO":
+                    input_data_all[x] = [extra_data.get("auth_token_hanzo", None)]
+                if h[x] == "API_KEY_HANZO":
+                    input_data_all[x] = [extra_data.get("api_key_hanzo", None)]
     v3_data["hidden_inputs"] = hidden_inputs_v3
     return input_data_all, missing_keys, v3_data
 
@@ -260,7 +260,7 @@ async def _async_map_node_over_list(prompt_id, unique_id, obj, input_data_all, f
             if pre_execute_cb is not None and index is not None:
                 pre_execute_cb(index)
             # V3
-            if isinstance(obj, _ComfyNodeInternal) or (is_class(obj) and issubclass(obj, _ComfyNodeInternal)):
+            if isinstance(obj, _StudioNodeInternal) or (is_class(obj) and issubclass(obj, _StudioNodeInternal)):
                 # if is just a class, then assign no state, just create clone
                 if is_class(obj):
                     type_obj = obj
@@ -479,7 +479,7 @@ async def execute(server, dynprompt, caches, current_item, extra_data, executed,
                 obj = class_def()
                 caches.objects.set(unique_id, obj)
 
-            if issubclass(class_def, _ComfyNodeInternal):
+            if issubclass(class_def, _StudioNodeInternal):
                 lazy_status_present = first_real_override(class_def, "check_lazy_status") is not None
             else:
                 lazy_status_present = getattr(obj, "check_lazy_status", None) is not None
@@ -523,10 +523,10 @@ async def execute(server, dynprompt, caches, current_item, extra_data, executed,
             try:
                 output_data, output_ui, has_subgraph, has_pending_tasks = await get_output_data(prompt_id, unique_id, obj, input_data_all, execution_block_cb=execution_block_cb, pre_execute_cb=pre_execute_cb, v3_data=v3_data)
             finally:
-                if comfy.memory_management.aimdo_enabled:
+                if studio.memory_management.aimdo_enabled:
                     if args.verbose == "DEBUG":
                         comfy_aimdo.control.analyze()
-                    comfy.model_management.reset_cast_buffers()
+                    studio.model_management.reset_cast_buffers()
                     comfy_aimdo.model_vbar.vbars_reset_watermark_limits()
 
             if has_pending_tasks:
@@ -590,7 +590,7 @@ async def execute(server, dynprompt, caches, current_item, extra_data, executed,
         execution_list.cache_update(unique_id, cache_entry)
         caches.outputs.set(unique_id, cache_entry)
 
-    except comfy.model_management.InterruptProcessingException as iex:
+    except studio.model_management.InterruptProcessingException as iex:
         logging.info("Processing interrupted")
 
         # skip formatting inputs/outputs
@@ -612,11 +612,11 @@ async def execute(server, dynprompt, caches, current_item, extra_data, executed,
         logging.error(traceback.format_exc())
         tips = ""
 
-        if isinstance(ex, comfy.model_management.OOM_EXCEPTION):
+        if isinstance(ex, studio.model_management.OOM_EXCEPTION):
             tips = "This error means you ran out of memory on your GPU.\n\nTIPS: If the workflow worked before you might have accidentally set the batch_size to a large number."
-            logging.info("Memory summary: {}".format(comfy.model_management.debug_memory_summary()))
+            logging.info("Memory summary: {}".format(studio.model_management.debug_memory_summary()))
             logging.error("Got an OOM, unloading all loaded models.")
-            comfy.model_management.unload_all_models()
+            studio.model_management.unload_all_models()
         elif isinstance(ex, RuntimeError) and ("mat1 and mat2 shapes" in str(ex)) and "Sampler" in class_type:
             tips = "\n\nTIPS: If you have any \"Load CLIP\" or \"*CLIP Loader\" nodes in your workflow connected to this sampler node make sure the correct file(s) and type is selected."
 
@@ -662,7 +662,7 @@ class PromptExecutor:
 
         # First, send back the status to the frontend depending
         # on the exception type
-        if isinstance(ex, comfy.model_management.InterruptProcessingException):
+        if isinstance(ex, studio.model_management.InterruptProcessingException):
             mes = {
                 "prompt_id": prompt_id,
                 "node_id": node_id,
@@ -714,7 +714,7 @@ class PromptExecutor:
                 if self.caches.outputs.get(node_id) is not None:
                     cached_nodes.append(node_id)
 
-            comfy.model_management.cleanup_models_gc()
+            studio.model_management.cleanup_models_gc()
             self.add_message("execution_cached",
                           { "nodes": cached_nodes, "prompt_id": prompt_id},
                           broadcast=False)
@@ -758,8 +758,8 @@ class PromptExecutor:
                 "meta": meta_outputs,
             }
             self.server.last_node_id = None
-            if comfy.model_management.DISABLE_SMART_MEMORY:
-                comfy.model_management.unload_all_models()
+            if studio.model_management.DISABLE_SMART_MEMORY:
+                studio.model_management.unload_all_models()
 
 
 async def validate_inputs(prompt_id, prompt, item, validated):
@@ -777,8 +777,8 @@ async def validate_inputs(prompt_id, prompt, item, validated):
     v3_data = None
     validate_function_inputs = []
     validate_has_kwargs = False
-    if issubclass(obj_class, _ComfyNodeInternal):
-        obj_class: _io._ComfyNodeBaseInternal
+    if issubclass(obj_class, _StudioNodeInternal):
+        obj_class: _io._StudioNodeBaseInternal
         class_inputs = obj_class.INPUT_TYPES()
         class_inputs, _, v3_data = _io.get_finalized_class_inputs(class_inputs, inputs)
         validate_function_name = "validate_inputs"

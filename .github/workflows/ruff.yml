@@ -45,4 +45,4 @@ jobs:
       run: pip install pylint
 
     - name: Run Pylint
-      run: pylint comfy_api_nodes
+      run: pylint studio_api_nodes

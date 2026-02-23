@@ -21,23 +21,23 @@ from PIL.PngImagePlugin import PngInfo
 import numpy as np
 import safetensors.torch
 
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.realpath(__file__)), "comfy"))
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.realpath(__file__)), "studio"))
 
-import comfy.diffusers_load
-import comfy.samplers
-import comfy.sample
-import comfy.sd
-import comfy.utils
-import comfy.controlnet
-from comfy.comfy_types import IO, ComfyNodeABC, InputTypeDict, FileLocator
-from comfy_api.internal import register_versions, ComfyAPIWithVersion
-from comfy_api.version_list import supported_versions
-from comfy_api.latest import io, ComfyExtension
+import studio.diffusers_load
+import studio.samplers
+import studio.sample
+import studio.sd
+import studio.utils
+import studio.controlnet
+from studio.node_types import IO, StudioNodeABC, InputTypeDict, FileLocator
+from studio_api.internal import register_versions, StudioAPIWithVersion
+from studio_api.version_list import supported_versions
+from studio_api.latest import io, StudioExtension
 
-import comfy.clip_vision
+import studio.clip_vision
 
-import comfy.model_management
-from comfy.cli_args import args
+import studio.model_management
+from studio.cli_args import args
 
 import importlib
 
@@ -49,14 +49,14 @@ if args.enable_manager:
     import comfyui_manager
 
 def before_node_execution():
-    comfy.model_management.throw_exception_if_processing_interrupted()
+    studio.model_management.throw_exception_if_processing_interrupted()
 
 def interrupt_processing(value=True):
-    comfy.model_management.interrupt_current_processing(value)
+    studio.model_management.interrupt_current_processing(value)
 
 MAX_RESOLUTION=16384
 
-class CLIPTextEncode(ComfyNodeABC):
+class CLIPTextEncode(StudioNodeABC):
     @classmethod
     def INPUT_TYPES(s) -> InputTypeDict:
         return {
@@ -524,7 +524,7 @@ class SaveLatent:
         output["latent_tensor"] = samples["samples"].contiguous()
         output["latent_format_version_0"] = torch.tensor([])
 
-        comfy.utils.save_torch_file(output, file, metadata=metadata)
+        studio.utils.save_torch_file(output, file, metadata=metadata)
         return { "ui": { "latents": results } }
 
 
@@ -582,7 +582,7 @@ class CheckpointLoader:
     def load_checkpoint(self, config_name, ckpt_name):
         config_path = folder_paths.get_full_path("configs", config_name)
         ckpt_path = folder_paths.get_full_path_or_raise("checkpoints", ckpt_name)
-        return comfy.sd.load_checkpoint(config_path, ckpt_path, output_vae=True, output_clip=True, embedding_directory=folder_paths.get_folder_paths("embeddings"))
+        return studio.sd.load_checkpoint(config_path, ckpt_path, output_vae=True, output_clip=True, embedding_directory=folder_paths.get_folder_paths("embeddings"))
 
 class CheckpointLoaderSimple:
     @classmethod
@@ -604,7 +604,7 @@ class CheckpointLoaderSimple:
 
     def load_checkpoint(self, ckpt_name):
         ckpt_path = folder_paths.get_full_path_or_raise("checkpoints", ckpt_name)
-        out = comfy.sd.load_checkpoint_guess_config(ckpt_path, output_vae=True, output_clip=True, embedding_directory=folder_paths.get_folder_paths("embeddings"))
+        out = studio.sd.load_checkpoint_guess_config(ckpt_path, output_vae=True, output_clip=True, embedding_directory=folder_paths.get_folder_paths("embeddings"))
         return out[:3]
 
 class DiffusersLoader:
@@ -633,7 +633,7 @@ class DiffusersLoader:
                     model_path = path
                     break
 
-        return comfy.diffusers_load.load_diffusers(model_path, output_vae=output_vae, output_clip=output_clip, embedding_directory=folder_paths.get_folder_paths("embeddings"))
+        return studio.diffusers_load.load_diffusers(model_path, output_vae=output_vae, output_clip=output_clip, embedding_directory=folder_paths.get_folder_paths("embeddings"))
 
 
 class unCLIPCheckpointLoader:
@@ -648,7 +648,7 @@ class unCLIPCheckpointLoader:
 
     def load_checkpoint(self, ckpt_name, output_vae=True, output_clip=True):
         ckpt_path = folder_paths.get_full_path_or_raise("checkpoints", ckpt_name)
-        out = comfy.sd.load_checkpoint_guess_config(ckpt_path, output_vae=True, output_clip=True, output_clipvision=True, embedding_directory=folder_paths.get_folder_paths("embeddings"))
+        out = studio.sd.load_checkpoint_guess_config(ckpt_path, output_vae=True, output_clip=True, output_clipvision=True, embedding_directory=folder_paths.get_folder_paths("embeddings"))
         return out
 
 class CLIPSetLastLayer:
@@ -706,10 +706,10 @@ class LoraLoader:
                 self.loaded_lora = None
 
         if lora is None:
-            lora = comfy.utils.load_torch_file(lora_path, safe_load=True)
+            lora = studio.utils.load_torch_file(lora_path, safe_load=True)
             self.loaded_lora = (lora_path, lora)
 
-        model_lora, clip_lora = comfy.sd.load_lora_for_models(model, clip, lora, strength_model, strength_clip)
+        model_lora, clip_lora = studio.sd.load_lora_for_models(model, clip, lora, strength_model, strength_clip)
         return (model_lora, clip_lora)
 
 class LoraLoaderModelOnly(LoraLoader):
@@ -782,11 +782,11 @@ class VAELoader:
         encoder = next(filter(lambda a: a.startswith("{}_encoder.".format(name)), approx_vaes))
         decoder = next(filter(lambda a: a.startswith("{}_decoder.".format(name)), approx_vaes))
 
-        enc = comfy.utils.load_torch_file(folder_paths.get_full_path_or_raise("vae_approx", encoder))
+        enc = studio.utils.load_torch_file(folder_paths.get_full_path_or_raise("vae_approx", encoder))
         for k in enc:
             sd["taesd_encoder.{}".format(k)] = enc[k]
 
-        dec = comfy.utils.load_torch_file(folder_paths.get_full_path_or_raise("vae_approx", decoder))
+        dec = studio.utils.load_torch_file(folder_paths.get_full_path_or_raise("vae_approx", decoder))
         for k in dec:
             sd["taesd_decoder.{}".format(k)] = dec[k]
 
@@ -825,8 +825,8 @@ class VAELoader:
                 vae_path = folder_paths.get_full_path_or_raise("vae_approx", vae_name)
             else:
                 vae_path = folder_paths.get_full_path_or_raise("vae", vae_name)
-            sd, metadata = comfy.utils.load_torch_file(vae_path, return_metadata=True)
-        vae = comfy.sd.VAE(sd=sd, metadata=metadata)
+            sd, metadata = studio.utils.load_torch_file(vae_path, return_metadata=True)
+        vae = studio.sd.VAE(sd=sd, metadata=metadata)
         vae.throw_exception_if_invalid()
         return (vae,)
 
@@ -843,7 +843,7 @@ class ControlNetLoader:
 
     def load_controlnet(self, control_net_name):
         controlnet_path = folder_paths.get_full_path_or_raise("controlnet", control_net_name)
-        controlnet = comfy.controlnet.load_controlnet(controlnet_path)
+        controlnet = studio.controlnet.load_controlnet(controlnet_path)
         if controlnet is None:
             raise RuntimeError("ERROR: controlnet file is invalid and does not contain a valid controlnet model.")
         return (controlnet,)
@@ -861,7 +861,7 @@ class DiffControlNetLoader:
 
     def load_controlnet(self, model, control_net_name):
         controlnet_path = folder_paths.get_full_path_or_raise("controlnet", control_net_name)
-        controlnet = comfy.controlnet.load_controlnet(controlnet_path, model)
+        controlnet = studio.controlnet.load_controlnet(controlnet_path, model)
         return (controlnet,)
 
 
@@ -969,7 +969,7 @@ class UNETLoader:
             model_options["dtype"] = torch.float8_e5m2
 
         unet_path = folder_paths.get_full_path_or_raise("diffusion_models", unet_name)
-        model = comfy.sd.load_diffusion_model(unet_path, model_options=model_options)
+        model = studio.sd.load_diffusion_model(unet_path, model_options=model_options)
         return (model,)
 
 class CLIPLoader:
@@ -989,14 +989,14 @@ class CLIPLoader:
     DESCRIPTION = "[Recipes]\n\nstable_diffusion: clip-l\nstable_cascade: clip-g\nsd3: t5 xxl/ clip-g / clip-l\nstable_audio: t5 base\nmochi: t5 xxl\ncosmos: old t5 xxl\nlumina2: gemma 2 2B\nwan: umt5 xxl\n hidream: llama-3.1 (Recommend) or t5\nomnigen2: qwen vl 2.5 3B"
 
     def load_clip(self, clip_name, type="stable_diffusion", device="default"):
-        clip_type = getattr(comfy.sd.CLIPType, type.upper(), comfy.sd.CLIPType.STABLE_DIFFUSION)
+        clip_type = getattr(studio.sd.CLIPType, type.upper(), studio.sd.CLIPType.STABLE_DIFFUSION)
 
         model_options = {}
         if device == "cpu":
             model_options["load_device"] = model_options["offload_device"] = torch.device("cpu")
 
         clip_path = folder_paths.get_full_path_or_raise("text_encoders", clip_name)
-        clip = comfy.sd.load_clip(ckpt_paths=[clip_path], embedding_directory=folder_paths.get_folder_paths("embeddings"), clip_type=clip_type, model_options=model_options)
+        clip = studio.sd.load_clip(ckpt_paths=[clip_path], embedding_directory=folder_paths.get_folder_paths("embeddings"), clip_type=clip_type, model_options=model_options)
         return (clip,)
 
 class DualCLIPLoader:
@@ -1017,7 +1017,7 @@ class DualCLIPLoader:
     DESCRIPTION = "[Recipes]\n\nsdxl: clip-l, clip-g\nsd3: clip-l, clip-g / clip-l, t5 / clip-g, t5\nflux: clip-l, t5\nhidream: at least one of t5 or llama, recommended t5 and llama\nhunyuan_image: qwen2.5vl 7b and byt5 small\nnewbie: gemma-3-4b-it, jina clip v2"
 
     def load_clip(self, clip_name1, clip_name2, type, device="default"):
-        clip_type = getattr(comfy.sd.CLIPType, type.upper(), comfy.sd.CLIPType.STABLE_DIFFUSION)
+        clip_type = getattr(studio.sd.CLIPType, type.upper(), studio.sd.CLIPType.STABLE_DIFFUSION)
 
         clip_path1 = folder_paths.get_full_path_or_raise("text_encoders", clip_name1)
         clip_path2 = folder_paths.get_full_path_or_raise("text_encoders", clip_name2)
@@ -1026,7 +1026,7 @@ class DualCLIPLoader:
         if device == "cpu":
             model_options["load_device"] = model_options["offload_device"] = torch.device("cpu")
 
-        clip = comfy.sd.load_clip(ckpt_paths=[clip_path1, clip_path2], embedding_directory=folder_paths.get_folder_paths("embeddings"), clip_type=clip_type, model_options=model_options)
+        clip = studio.sd.load_clip(ckpt_paths=[clip_path1, clip_path2], embedding_directory=folder_paths.get_folder_paths("embeddings"), clip_type=clip_type, model_options=model_options)
         return (clip,)
 
 class CLIPVisionLoader:
@@ -1041,7 +1041,7 @@ class CLIPVisionLoader:
 
     def load_clip(self, clip_name):
         clip_path = folder_paths.get_full_path_or_raise("clip_vision", clip_name)
-        clip_vision = comfy.clip_vision.load(clip_path)
+        clip_vision = studio.clip_vision.load(clip_path)
         if clip_vision is None:
             raise RuntimeError("ERROR: clip vision file is invalid and does not contain a valid vision model.")
         return (clip_vision,)
@@ -1077,7 +1077,7 @@ class StyleModelLoader:
 
     def load_style_model(self, style_model_name):
         style_model_path = folder_paths.get_full_path_or_raise("style_models", style_model_name)
-        style_model = comfy.sd.load_style_model(style_model_path)
+        style_model = studio.sd.load_style_model(style_model_path)
         return (style_model,)
 
 
@@ -1176,7 +1176,7 @@ class GLIGENLoader:
 
     def load_gligen(self, gligen_name):
         gligen_path = folder_paths.get_full_path_or_raise("gligen", gligen_name)
-        gligen = comfy.sd.load_gligen(gligen_path)
+        gligen = studio.sd.load_gligen(gligen_path)
         return (gligen,)
 
 class GLIGENTextBoxApply:
@@ -1212,7 +1212,7 @@ class GLIGENTextBoxApply:
 
 class EmptyLatentImage:
     def __init__(self):
-        self.device = comfy.model_management.intermediate_device()
+        self.device = studio.model_management.intermediate_device()
 
     @classmethod
     def INPUT_TYPES(s):
@@ -1331,7 +1331,7 @@ class LatentUpscale:
                 width = max(64, width)
                 height = max(64, height)
 
-            s["samples"] = comfy.utils.common_upscale(samples["samples"], width // 8, height // 8, upscale_method, crop)
+            s["samples"] = studio.utils.common_upscale(samples["samples"], width // 8, height // 8, upscale_method, crop)
         return (s,)
 
 class LatentUpscaleBy:
@@ -1352,7 +1352,7 @@ class LatentUpscaleBy:
         s = samples.copy()
         width = round(samples["samples"].shape[-1] * scale_by)
         height = round(samples["samples"].shape[-2] * scale_by)
-        s["samples"] = comfy.utils.common_upscale(samples["samples"], width, height, upscale_method, "disabled")
+        s["samples"] = studio.utils.common_upscale(samples["samples"], width, height, upscale_method, "disabled")
         return (s,)
 
 class LatentRotate:
@@ -1474,7 +1474,7 @@ class LatentBlend:
 
         if samples1.shape != samples2.shape:
             samples2.permute(0, 3, 1, 2)
-            samples2 = comfy.utils.common_upscale(samples2, samples1.shape[3], samples1.shape[2], 'bicubic', crop='center')
+            samples2 = studio.utils.common_upscale(samples2, samples1.shape[3], samples1.shape[2], 'bicubic', crop='center')
             samples2.permute(0, 2, 3, 1)
 
         samples_blended = self.blend_mode(samples1, samples2, blend_mode)
@@ -1541,21 +1541,21 @@ class SetLatentNoiseMask:
 
 def common_ksampler(model, seed, steps, cfg, sampler_name, scheduler, positive, negative, latent, denoise=1.0, disable_noise=False, start_step=None, last_step=None, force_full_denoise=False):
     latent_image = latent["samples"]
-    latent_image = comfy.sample.fix_empty_latent_channels(model, latent_image, latent.get("downscale_ratio_spacial", None))
+    latent_image = studio.sample.fix_empty_latent_channels(model, latent_image, latent.get("downscale_ratio_spacial", None))
 
     if disable_noise:
         noise = torch.zeros(latent_image.size(), dtype=latent_image.dtype, layout=latent_image.layout, device="cpu")
     else:
         batch_inds = latent["batch_index"] if "batch_index" in latent else None
-        noise = comfy.sample.prepare_noise(latent_image, seed, batch_inds)
+        noise = studio.sample.prepare_noise(latent_image, seed, batch_inds)
 
     noise_mask = None
     if "noise_mask" in latent:
         noise_mask = latent["noise_mask"]
 
     callback = latent_preview.prepare_callback(model, steps)
-    disable_pbar = not comfy.utils.PROGRESS_BAR_ENABLED
-    samples = comfy.sample.sample(model, noise, steps, cfg, sampler_name, scheduler, positive, negative, latent_image,
+    disable_pbar = not studio.utils.PROGRESS_BAR_ENABLED
+    samples = studio.sample.sample(model, noise, steps, cfg, sampler_name, scheduler, positive, negative, latent_image,
                                   denoise=denoise, disable_noise=disable_noise, start_step=start_step, last_step=last_step,
                                   force_full_denoise=force_full_denoise, noise_mask=noise_mask, callback=callback, disable_pbar=disable_pbar, seed=seed)
     out = latent.copy()
@@ -1572,8 +1572,8 @@ class KSampler:
                 "seed": ("INT", {"default": 0, "min": 0, "max": 0xffffffffffffffff, "control_after_generate": True, "tooltip": "The random seed used for creating the noise."}),
                 "steps": ("INT", {"default": 20, "min": 1, "max": 10000, "tooltip": "The number of steps used in the denoising process."}),
                 "cfg": ("FLOAT", {"default": 8.0, "min": 0.0, "max": 100.0, "step":0.1, "round": 0.01, "tooltip": "The Classifier-Free Guidance scale balances creativity and adherence to the prompt. Higher values result in images more closely matching the prompt however too high values will negatively impact quality."}),
-                "sampler_name": (comfy.samplers.KSampler.SAMPLERS, {"tooltip": "The algorithm used when sampling, this can affect the quality, speed, and style of the generated output."}),
-                "scheduler": (comfy.samplers.KSampler.SCHEDULERS, {"tooltip": "The scheduler controls how noise is gradually removed to form the image."}),
+                "sampler_name": (studio.samplers.KSampler.SAMPLERS, {"tooltip": "The algorithm used when sampling, this can affect the quality, speed, and style of the generated output."}),
+                "scheduler": (studio.samplers.KSampler.SCHEDULERS, {"tooltip": "The scheduler controls how noise is gradually removed to form the image."}),
                 "positive": ("CONDITIONING", {"tooltip": "The conditioning describing the attributes you want to include in the image."}),
                 "negative": ("CONDITIONING", {"tooltip": "The conditioning describing the attributes you want to exclude from the image."}),
                 "latent_image": ("LATENT", {"tooltip": "The latent image to denoise."}),
@@ -1601,8 +1601,8 @@ class KSamplerAdvanced:
                     "noise_seed": ("INT", {"default": 0, "min": 0, "max": 0xffffffffffffffff, "control_after_generate": True}),
                     "steps": ("INT", {"default": 20, "min": 1, "max": 10000}),
                     "cfg": ("FLOAT", {"default": 8.0, "min": 0.0, "max": 100.0, "step":0.1, "round": 0.01}),
-                    "sampler_name": (comfy.samplers.KSampler.SAMPLERS, ),
-                    "scheduler": (comfy.samplers.KSampler.SCHEDULERS, ),
+                    "sampler_name": (studio.samplers.KSampler.SAMPLERS, ),
+                    "scheduler": (studio.samplers.KSampler.SCHEDULERS, ),
                     "positive": ("CONDITIONING", ),
                     "negative": ("CONDITIONING", ),
                     "latent_image": ("LATENT", ),
@@ -1882,7 +1882,7 @@ class ImageScale:
             elif height == 0:
                 height = max(1, round(samples.shape[2] * width / samples.shape[3]))
 
-            s = comfy.utils.common_upscale(samples, width, height, upscale_method, crop)
+            s = studio.utils.common_upscale(samples, width, height, upscale_method, crop)
             s = s.movedim(1,-1)
         return (s,)
 
@@ -1902,7 +1902,7 @@ class ImageScaleBy:
         samples = image.movedim(-1,1)
         width = round(samples.shape[3] * scale_by)
         height = round(samples.shape[2] * scale_by)
-        s = comfy.utils.common_upscale(samples, width, height, upscale_method, "disabled")
+        s = studio.utils.common_upscale(samples, width, height, upscale_method, "disabled")
         s = s.movedim(1,-1)
         return (s,)
 
@@ -1944,7 +1944,7 @@ class ImageBatch:
             else:
                 image1 = torch.nn.functional.pad(image1, (0,1), mode='constant', value=1.0)
         if image1.shape[1:] != image2.shape[1:]:
-            image2 = comfy.utils.common_upscale(image2.movedim(-1,1), image1.shape[2], image1.shape[1], "bilinear", "center").movedim(1,-1)
+            image2 = studio.utils.common_upscale(image2.movedim(-1,1), image1.shape[2], image1.shape[1], "bilinear", "center").movedim(1,-1)
         s = torch.cat((image1, image2), dim=0)
         return (s,)
 
@@ -2226,11 +2226,11 @@ async def load_custom_node(module_path: str, ignore=set(), module_parent="custom
         LOADED_MODULE_DIRS[module_name] = os.path.abspath(module_dir)
 
         try:
-            from comfy_config import config_parser
+            from studio_config import config_parser
 
             project_config = config_parser.extract_node_configuration(module_path)
 
-            web_dir_name = project_config.tool_comfy.web
+            web_dir_name = project_config.tool_studio.web
 
             if web_dir_name:
                 web_dir_path = os.path.join(module_path, web_dir_name)
@@ -2259,26 +2259,26 @@ async def load_custom_node(module_path: str, ignore=set(), module_parent="custom
                 NODE_DISPLAY_NAME_MAPPINGS.update(module.NODE_DISPLAY_NAME_MAPPINGS)
             return True
         # V3 Extension Definition
-        elif hasattr(module, "comfy_entrypoint"):
-            entrypoint = getattr(module, "comfy_entrypoint")
+        elif hasattr(module, "studio_entrypoint"):
+            entrypoint = getattr(module, "studio_entrypoint")
             if not callable(entrypoint):
-                logging.warning(f"comfy_entrypoint in {module_path} is not callable, skipping.")
+                logging.warning(f"studio_entrypoint in {module_path} is not callable, skipping.")
                 return False
             try:
                 if inspect.iscoroutinefunction(entrypoint):
                     extension = await entrypoint()
                 else:
                     extension = entrypoint()
-                if not isinstance(extension, ComfyExtension):
-                    logging.warning(f"comfy_entrypoint in {module_path} did not return a ComfyExtension, skipping.")
+                if not isinstance(extension, StudioExtension):
+                    logging.warning(f"studio_entrypoint in {module_path} did not return a StudioExtension, skipping.")
                     return False
                 await extension.on_load()
                 node_list = await extension.get_node_list()
                 if not isinstance(node_list, list):
-                    logging.warning(f"comfy_entrypoint in {module_path} did not return a list of nodes, skipping.")
+                    logging.warning(f"studio_entrypoint in {module_path} did not return a list of nodes, skipping.")
                     return False
                 for node_cls in node_list:
-                    node_cls: io.ComfyNode
+                    node_cls: io.StudioNode
                     schema = node_cls.GET_SCHEMA()
                     if schema.node_id not in ignore:
                         NODE_CLASS_MAPPINGS[schema.node_id] = node_cls
@@ -2287,7 +2287,7 @@ async def load_custom_node(module_path: str, ignore=set(), module_parent="custom
                         NODE_DISPLAY_NAME_MAPPINGS[schema.node_id] = schema.display_name
                 return True
             except Exception as e:
-                logging.warning(f"Error while calling comfy_entrypoint in {module_path}: {e}")
+                logging.warning(f"Error while calling studio_entrypoint in {module_path}: {e}")
                 return False
         else:
             logging.warning(f"Skip {module_path} module for custom nodes due to the lack of NODE_CLASS_MAPPINGS or NODES_LIST (need one).")
@@ -2348,13 +2348,13 @@ async def init_builtin_extra_nodes():
     """
     Initializes the built-in extra nodes in Hanzo Studio.
 
-    This function loads the extra node files located in the "comfy_extras" directory and imports them into Hanzo Studio.
+    This function loads the extra node files located in the "studio_extras" directory and imports them into Hanzo Studio.
     If any of the extra node files fail to import, a warning message is logged.
 
     Returns:
         None
     """
-    extras_dir = os.path.join(os.path.dirname(os.path.realpath(__file__)), "comfy_extras")
+    extras_dir = os.path.join(os.path.dirname(os.path.realpath(__file__)), "studio_extras")
     extras_files = [
         "nodes_latent.py",
         "nodes_hypernetwork.py",
@@ -2452,26 +2452,26 @@ async def init_builtin_extra_nodes():
 
     import_failed = []
     for node_file in extras_files:
-        if not await load_custom_node(os.path.join(extras_dir, node_file), module_parent="comfy_extras"):
+        if not await load_custom_node(os.path.join(extras_dir, node_file), module_parent="studio_extras"):
             import_failed.append(node_file)
 
     return import_failed
 
 
 async def init_builtin_api_nodes():
-    api_nodes_dir = os.path.join(os.path.dirname(os.path.realpath(__file__)), "comfy_api_nodes")
+    api_nodes_dir = os.path.join(os.path.dirname(os.path.realpath(__file__)), "studio_api_nodes")
     api_nodes_files = sorted(glob.glob(os.path.join(api_nodes_dir, "nodes_*.py")))
 
     import_failed = []
     for node_file in api_nodes_files:
-        if not await load_custom_node(node_file, module_parent="comfy_api_nodes"):
+        if not await load_custom_node(node_file, module_parent="studio_api_nodes"):
             import_failed.append(os.path.basename(node_file))
 
     return import_failed
 
 async def init_public_apis():
     register_versions([
-        ComfyAPIWithVersion(
+        StudioAPIWithVersion(
             version=getattr(v, "VERSION"),
             api_class=v
         ) for v in supported_versions
@@ -2492,23 +2492,23 @@ async def init_extra_nodes(init_custom_nodes=True, init_api_nodes=True):
         logging.info("Skipping loading of custom nodes")
 
     if len(import_failed_api) > 0:
-        logging.warning("WARNING: some comfy_api_nodes/ nodes did not import correctly. This may be because they are missing some dependencies.\n")
+        logging.warning("WARNING: some studio_api_nodes/ nodes did not import correctly. This may be because they are missing some dependencies.\n")
         for node in import_failed_api:
             logging.warning("IMPORT FAILED: {}".format(node))
         logging.warning("\nThis issue might be caused by new missing dependencies added the last time you updated Hanzo Studio.")
         if args.windows_standalone_build:
-            logging.warning("Please run the update script: update/update_comfyui.bat")
+            logging.warning("Please run the update script: update/update_studio.bat")
         else:
             logging.warning("Please do a: pip install -r requirements.txt")
         logging.warning("")
 
     if len(import_failed) > 0:
-        logging.warning("WARNING: some comfy_extras/ nodes did not import correctly. This may be because they are missing some dependencies.\n")
+        logging.warning("WARNING: some studio_extras/ nodes did not import correctly. This may be because they are missing some dependencies.\n")
         for node in import_failed:
             logging.warning("IMPORT FAILED: {}".format(node))
         logging.warning("\nThis issue might be caused by new missing dependencies added the last time you updated Hanzo Studio.")
         if args.windows_standalone_build:
-            logging.warning("Please run the update script: update/update_comfyui.bat")
+            logging.warning("Please run the update script: update/update_studio.bat")
         else:
             logging.warning("Please do a: pip install -r requirements.txt")
         logging.warning("")

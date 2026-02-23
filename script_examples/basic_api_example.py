@@ -100,7 +100,7 @@ def queue_prompt(prompt):
 
     # If the workflow contains API nodes, you can add an API key to the `extra_data`` field of the payload.
     # p["extra_data"] = {
-    #     "api_key_comfy_org": "your-api-key-here"  # replace with real key
+    #     "api_key_hanzo": "your-api-key-here"  # replace with real key
     # }
     # See: https://docs.hanzo.ai/tutorials/api-nodes/overview
 

@@ -1,6 +1,6 @@
 """Tests for feature flags functionality."""
 
-from comfy_api.feature_flags import (
+from studio_api.feature_flags import (
     get_connection_feature,
     supports_feature,
     get_server_features,

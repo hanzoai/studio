@@ -13,7 +13,7 @@ import uuid
 import urllib.request
 import urllib.parse
 import urllib.error
-from comfy_execution.graph_utils import GraphBuilder, Node
+from studio_execution.graph_utils import GraphBuilder, Node
 
 def run_warmup(client, prefix="warmup"):
     """Run a simple workflow to warm up the server."""
@@ -51,7 +51,7 @@ class RunResult:
     def get_prompt_id(self):
         return self.prompt_id
 
-class ComfyClient:
+class StudioClient:
     def __init__(self):
         self.test_name = ""
 
@@ -207,19 +207,19 @@ class TestExecution:
 
     def start_client(self, listen:str, port:int):
         # Start client
-        comfy_client = ComfyClient()
+        studio_client = StudioClient()
         # Connect to server (with retries)
         n_tries = 5
         for i in range(n_tries):
             time.sleep(4)
             try:
-                comfy_client.connect(listen=listen, port=port)
+                studio_client.connect(listen=listen, port=port)
             except ConnectionRefusedError as e:
                 print(e)  # noqa: T201
                 print(f"({i+1}/{n_tries}) Retrying...")  # noqa: T201
             else:
                 break
-        return comfy_client
+        return studio_client
 
     @fixture(scope="class", autouse=True)
     def shared_client(self, args_pytest, server):
@@ -237,7 +237,7 @@ class TestExecution:
     def builder(self, request):
         yield GraphBuilder(prefix=request.node.name)
 
-    def test_lazy_input(self, client: ComfyClient, builder: GraphBuilder):
+    def test_lazy_input(self, client: StudioClient, builder: GraphBuilder):
         g = builder
         input1 = g.node("StubImage", content="BLACK", height=512, width=512, batch_size=1)
         input2 = g.node("StubImage", content="WHITE", height=512, width=512, batch_size=1)
@@ -254,7 +254,7 @@ class TestExecution:
         assert result.did_run(mask)
         assert result.did_run(lazy_mix)
 
-    def test_full_cache(self, client: ComfyClient, builder: GraphBuilder, server):
+    def test_full_cache(self, client: StudioClient, builder: GraphBuilder, server):
         g = builder
         input1 = g.node("StubImage", content="BLACK", height=512, width=512, batch_size=1)
         input2 = g.node("StubImage", content="NOISE", height=512, width=512, batch_size=1)
@@ -271,7 +271,7 @@ class TestExecution:
             else:
                 assert result2.did_run(node), f"Node {node_id} was cached, but should have been run"
 
-    def test_partial_cache(self, client: ComfyClient, builder: GraphBuilder, server):
+    def test_partial_cache(self, client: StudioClient, builder: GraphBuilder, server):
         g = builder
         input1 = g.node("StubImage", content="BLACK", height=512, width=512, batch_size=1)
         input2 = g.node("StubImage", content="NOISE", height=512, width=512, batch_size=1)
@@ -290,7 +290,7 @@ class TestExecution:
             assert result2.did_run(input1), "Input1 should have been rerun"
             assert result2.did_run(input2), "Input2 should have been rerun"
 
-    def test_error(self, client: ComfyClient, builder: GraphBuilder):
+    def test_error(self, client: StudioClient, builder: GraphBuilder):
         g = builder
         input1 = g.node("StubImage", content="BLACK", height=512, width=512, batch_size=1)
         # Different size of the two images
@@ -311,7 +311,7 @@ class TestExecution:
         ("foo", True),
         (5.0, False),
     ])
-    def test_validation_error_literal(self, test_value, expect_error, client: ComfyClient, builder: GraphBuilder):
+    def test_validation_error_literal(self, test_value, expect_error, client: StudioClient, builder: GraphBuilder):
         g = builder
         validation1 = g.node("TestCustomValidation1", input1=test_value, input2=3.0)
         g.node("SaveImage", images=validation1.out(0))
@@ -326,7 +326,7 @@ class TestExecution:
         ("StubInt", 5),
         ("StubMask", 5.0)
     ])
-    def test_validation_error_edge1(self, test_type, test_value, client: ComfyClient, builder: GraphBuilder):
+    def test_validation_error_edge1(self, test_type, test_value, client: StudioClient, builder: GraphBuilder):
         g = builder
         stub = g.node(test_type, value=test_value)
         validation1 = g.node("TestCustomValidation1", input1=stub.out(0), input2=3.0)
@@ -339,7 +339,7 @@ class TestExecution:
         ("StubInt", 5, True),
         ("StubFloat", 5.0, False)
     ])
-    def test_validation_error_edge2(self, test_type, test_value, expect_error, client: ComfyClient, builder: GraphBuilder):
+    def test_validation_error_edge2(self, test_type, test_value, expect_error, client: StudioClient, builder: GraphBuilder):
         g = builder
         stub = g.node(test_type, value=test_value)
         validation2 = g.node("TestCustomValidation2", input1=stub.out(0), input2=3.0)
@@ -355,7 +355,7 @@ class TestExecution:
         ("StubInt", 5, True),
         ("StubFloat", 5.0, False)
     ])
-    def test_validation_error_edge3(self, test_type, test_value, expect_error, client: ComfyClient, builder: GraphBuilder):
+    def test_validation_error_edge3(self, test_type, test_value, expect_error, client: StudioClient, builder: GraphBuilder):
         g = builder
         stub = g.node(test_type, value=test_value)
         validation3 = g.node("TestCustomValidation3", input1=stub.out(0), input2=3.0)
@@ -371,7 +371,7 @@ class TestExecution:
         ("StubInt", 5, True),
         ("StubFloat", 5.0, False)
     ])
-    def test_validation_error_edge4(self, test_type, test_value, expect_error, client: ComfyClient, builder: GraphBuilder):
+    def test_validation_error_edge4(self, test_type, test_value, expect_error, client: StudioClient, builder: GraphBuilder):
         g = builder
         stub = g.node(test_type, value=test_value)
         validation4 = g.node("TestCustomValidation4", input1=stub.out(0), input2=3.0)
@@ -388,7 +388,7 @@ class TestExecution:
         (0.0, 5.0, False),
         (0.0, 7.0, True)
     ])
-    def test_validation_error_kwargs(self, test_value1, test_value2, expect_error, client: ComfyClient, builder: GraphBuilder):
+    def test_validation_error_kwargs(self, test_value1, test_value2, expect_error, client: StudioClient, builder: GraphBuilder):
         g = builder
         validation5 = g.node("TestCustomValidation5", input1=test_value1, input2=test_value2)
         g.node("SaveImage", images=validation5.out(0))
@@ -399,7 +399,7 @@ class TestExecution:
         else:
             client.run(g)
 
-    def test_cycle_error(self, client: ComfyClient, builder: GraphBuilder):
+    def test_cycle_error(self, client: StudioClient, builder: GraphBuilder):
         g = builder
         input1 = g.node("StubImage", content="BLACK", height=512, width=512, batch_size=1)
         input2 = g.node("StubImage", content="WHITE", height=512, width=512, batch_size=1)
@@ -413,7 +413,7 @@ class TestExecution:
         with pytest.raises(urllib.error.HTTPError):
             client.run(g)
 
-    def test_dynamic_cycle_error(self, client: ComfyClient, builder: GraphBuilder):
+    def test_dynamic_cycle_error(self, client: StudioClient, builder: GraphBuilder):
         g = builder
         input1 = g.node("StubImage", content="BLACK", height=512, width=512, batch_size=1)
         input2 = g.node("StubImage", content="WHITE", height=512, width=512, batch_size=1)
@@ -428,7 +428,7 @@ class TestExecution:
             assert 'prompt_id' in e.args[0], f"Did not get back a proper error message: {e}"
             assert e.args[0]['node_id'] == generator.id, "Error should have been on the generator node"
 
-    def test_missing_node_error(self, client: ComfyClient, builder: GraphBuilder):
+    def test_missing_node_error(self, client: StudioClient, builder: GraphBuilder):
         g = builder
         input1 = g.node("StubImage", content="BLACK", height=512, width=512, batch_size=1)
         input2 = g.node("StubImage", id="removeme", content="WHITE", height=512, width=512, batch_size=1)
@@ -447,7 +447,7 @@ class TestExecution:
         input2 = g.node("StubImage", id="removeme", content="WHITE", height=512, width=512, batch_size=1)
         client.run(g)
 
-    def test_custom_is_changed(self, client: ComfyClient, builder: GraphBuilder, server):
+    def test_custom_is_changed(self, client: StudioClient, builder: GraphBuilder, server):
         g = builder
         # Creating the nodes in this specific order previously caused a bug
         save = g.node("SaveImage")
@@ -470,7 +470,7 @@ class TestExecution:
         assert result3.did_run(is_changed), "is_changed should have been re-run"
         assert result4.did_run(is_changed), "is_changed should not have been cached"
 
-    def test_undeclared_inputs(self, client: ComfyClient, builder: GraphBuilder):
+    def test_undeclared_inputs(self, client: StudioClient, builder: GraphBuilder):
         g = builder
         input1 = g.node("StubImage", content="BLACK", height=512, width=512, batch_size=1)
         input2 = g.node("StubImage", content="WHITE", height=512, width=512, batch_size=1)
@@ -484,7 +484,7 @@ class TestExecution:
         expected = 255 // 4
         assert numpy.array(result_image).min() == expected and numpy.array(result_image).max() == expected, "Image should be grey"
 
-    def test_for_loop(self, client: ComfyClient, builder: GraphBuilder):
+    def test_for_loop(self, client: StudioClient, builder: GraphBuilder):
         g = builder
         iterations = 4
         input1 = g.node("StubImage", content="BLACK", height=512, width=512, batch_size=1)
@@ -503,7 +503,7 @@ class TestExecution:
             assert numpy.array(result_image).min() == expected and numpy.array(result_image).max() == expected, "Image should be grey"
             assert result.did_run(is_changed)
 
-    def test_mixed_expansion_returns(self, client: ComfyClient, builder: GraphBuilder):
+    def test_mixed_expansion_returns(self, client: StudioClient, builder: GraphBuilder):
         g = builder
         val_list = g.node("TestMakeListNode", value1=0.1, value2=0.2, value3=0.3)
         mixed = g.node("TestMixedExpansionReturns", input1=val_list.out(0))
@@ -522,7 +522,7 @@ class TestExecution:
         for i in range(3):
             assert numpy.array(images_literal[i]).min() == 255 and numpy.array(images_literal[i]).max() == 255, "All images should be white"
 
-    def test_mixed_lazy_results(self, client: ComfyClient, builder: GraphBuilder):
+    def test_mixed_lazy_results(self, client: StudioClient, builder: GraphBuilder):
         g = builder
         val_list = g.node("TestMakeListNode", value1=0.0, value2=0.5, value3=1.0)
         mask = g.node("StubMask", value=val_list.out(0), height=512, width=512, batch_size=1)
@@ -539,7 +539,7 @@ class TestExecution:
         assert numpy.array(images[1]).min() == 127 and numpy.array(images[1]).max() == 127, "Second image should be 0.5"
         assert numpy.array(images[2]).min() == 255 and numpy.array(images[2]).max() == 255, "Third image should be 1.0"
 
-    def test_output_reuse(self, client: ComfyClient, builder: GraphBuilder):
+    def test_output_reuse(self, client: StudioClient, builder: GraphBuilder):
         g = builder
         input1 = g.node("StubImage", content="BLACK", height=512, width=512, batch_size=1)
 
@@ -553,7 +553,7 @@ class TestExecution:
         assert len(images2) == 1, "Should have 1 image"
 
     # This tests that only constant outputs are used in the call to `IS_CHANGED`
-    def test_is_changed_with_outputs(self, client: ComfyClient, builder: GraphBuilder, server):
+    def test_is_changed_with_outputs(self, client: StudioClient, builder: GraphBuilder, server):
         g = builder
         input1 = g.node("StubConstantImage", value=0.5, height=512, width=512, batch_size=1)
         test_node = g.node("TestIsChangedWithConstants", image=input1.out(0), value=0.5)
@@ -575,7 +575,7 @@ class TestExecution:
             assert result.did_run(test_node), "The execution should have been re-run"
 
 
-    def test_parallel_sleep_nodes(self, client: ComfyClient, builder: GraphBuilder, skip_timing_checks):
+    def test_parallel_sleep_nodes(self, client: StudioClient, builder: GraphBuilder, skip_timing_checks):
         # Warmup execution to ensure server is fully initialized
         run_warmup(client)
 
@@ -606,7 +606,7 @@ class TestExecution:
         assert result.did_run(sleep_node2), "Sleep node 2 should have run"
         assert result.did_run(sleep_node3), "Sleep node 3 should have run"
 
-    def test_parallel_sleep_expansion(self, client: ComfyClient, builder: GraphBuilder, skip_timing_checks):
+    def test_parallel_sleep_expansion(self, client: StudioClient, builder: GraphBuilder, skip_timing_checks):
         # Warmup execution to ensure server is fully initialized
         run_warmup(client)
 
@@ -649,7 +649,7 @@ class TestExecution:
     # This tests that nodes with OUTPUT_IS_LIST function correctly when they receive an ExecutionBlocker
     # as input. We also test that when that list (containing an ExecutionBlocker) is passed to a node,
     # only that one entry in the list is blocked.
-    def test_execution_block_list_output(self, client: ComfyClient, builder: GraphBuilder):
+    def test_execution_block_list_output(self, client: StudioClient, builder: GraphBuilder):
         g = builder
         image1 = g.node("StubImage", content="BLACK", height=512, width=512, batch_size=1)
         image2 = g.node("StubImage", content="WHITE", height=512, width=512, batch_size=1)
@@ -673,7 +673,7 @@ class TestExecution:
         assert numpy.array(images[1]).min() == 0 and numpy.array(images[1]).max() == 0, "Second image should also be black"
 
     # Output nodes included in the partial execution list are executed
-    def test_partial_execution_included_outputs(self, client: ComfyClient, builder: GraphBuilder):
+    def test_partial_execution_included_outputs(self, client: StudioClient, builder: GraphBuilder):
         g = builder
         input1 = g.node("StubImage", content="BLACK", height=512, width=512, batch_size=1)
         input2 = g.node("StubImage", content="WHITE", height=512, width=512, batch_size=1)
@@ -695,7 +695,7 @@ class TestExecution:
         assert len(result.get_images(output2)) == 0, "Output2 should not have produced an image"
 
     # Output nodes NOT included in the partial execution list are NOT executed
-    def test_partial_execution_excluded_outputs(self, client: ComfyClient, builder: GraphBuilder):
+    def test_partial_execution_excluded_outputs(self, client: StudioClient, builder: GraphBuilder):
         g = builder
         input1 = g.node("StubImage", content="BLACK", height=512, width=512, batch_size=1)
         input2 = g.node("StubImage", content="WHITE", height=512, width=512, batch_size=1)
@@ -717,7 +717,7 @@ class TestExecution:
         assert not result.did_run(output2), "Output2 should not have run"
 
     # Output nodes NOT in list ARE executed if necessary for nodes that are in the list
-    def test_partial_execution_dependencies(self, client: ComfyClient, builder: GraphBuilder):
+    def test_partial_execution_dependencies(self, client: StudioClient, builder: GraphBuilder):
         g = builder
         input1 = g.node("StubImage", content="BLACK", height=512, width=512, batch_size=1)
 
@@ -743,7 +743,7 @@ class TestExecution:
         assert result.was_executed(final_output), "Final output should have been executed"
 
     # Lazy execution works with partial execution
-    def test_partial_execution_with_lazy_nodes(self, client: ComfyClient, builder: GraphBuilder):
+    def test_partial_execution_with_lazy_nodes(self, client: StudioClient, builder: GraphBuilder):
         g = builder
         input1 = g.node("StubImage", content="BLACK", height=512, width=512, batch_size=1)
         input2 = g.node("StubImage", content="WHITE", height=512, width=512, batch_size=1)
@@ -777,7 +777,7 @@ class TestExecution:
         assert not result.did_run(output2), "Output2 should not have run"
 
     # Multiple OUTPUT_NODEs with dependencies
-    def test_partial_execution_multiple_output_nodes(self, client: ComfyClient, builder: GraphBuilder):
+    def test_partial_execution_multiple_output_nodes(self, client: StudioClient, builder: GraphBuilder):
         g = builder
         input1 = g.node("StubImage", content="BLACK", height=512, width=512, batch_size=1)
         input2 = g.node("StubImage", content="WHITE", height=512, width=512, batch_size=1)
@@ -806,7 +806,7 @@ class TestExecution:
         assert not result.did_run(save3), "Save3 should not have run"
 
     # Empty partial execution list (should execute nothing)
-    def test_partial_execution_empty_list(self, client: ComfyClient, builder: GraphBuilder):
+    def test_partial_execution_empty_list(self, client: StudioClient, builder: GraphBuilder):
         g = builder
         input1 = g.node("StubImage", content="BLACK", height=512, width=512, batch_size=1)
         _output1 = g.node("SaveImage", images=input1.out(0))
@@ -828,7 +828,7 @@ class TestExecution:
         return client.run(g)
 
     def test_offset_returns_different_items_than_beginning_of_history(
-        self, client: ComfyClient, builder: GraphBuilder
+        self, client: StudioClient, builder: GraphBuilder
     ):
         """Test that offset skips items at the beginning"""
         for _ in range(5):
@@ -842,7 +842,7 @@ class TestExecution:
         ), "Offset should skip initial items"
 
     def test_offset_beyond_history_length_returns_empty(
-        self, client: ComfyClient, builder: GraphBuilder
+        self, client: StudioClient, builder: GraphBuilder
     ):
         """Test offset larger than total history returns empty result"""
         self._create_history_item(client, builder)
@@ -851,7 +851,7 @@ class TestExecution:
         assert len(result) == 0, "Large offset should return no items"
 
     def test_offset_at_exact_history_length_returns_empty(
-        self, client: ComfyClient, builder: GraphBuilder
+        self, client: StudioClient, builder: GraphBuilder
     ):
         """Test offset equal to history length returns empty"""
         for _ in range(3):
@@ -862,7 +862,7 @@ class TestExecution:
         assert len(result) == 0, "Offset at history length should return empty"
 
     def test_offset_zero_equals_no_offset_parameter(
-        self, client: ComfyClient, builder: GraphBuilder
+        self, client: StudioClient, builder: GraphBuilder
     ):
         """Test offset=0 behaves same as omitting offset"""
         self._create_history_item(client, builder)
@@ -873,7 +873,7 @@ class TestExecution:
         assert with_zero == without_offset, "offset=0 should equal no offset"
 
     def test_offset_without_max_items_skips_from_beginning(
-        self, client: ComfyClient, builder: GraphBuilder
+        self, client: StudioClient, builder: GraphBuilder
     ):
         """Test offset alone (no max_items) returns remaining items"""
         for _ in range(4):
@@ -887,7 +887,7 @@ class TestExecution:
         ), "Offset should skip specified number of items"
 
     def test_offset_with_max_items_returns_correct_window(
-        self, client: ComfyClient, builder: GraphBuilder
+        self, client: StudioClient, builder: GraphBuilder
     ):
         """Test offset + max_items returns correct slice of history"""
         for _ in range(6):
@@ -897,7 +897,7 @@ class TestExecution:
         assert len(window) <= 2, "Should respect max_items limit"
 
     def test_offset_near_end_returns_remaining_items_only(
-        self, client: ComfyClient, builder: GraphBuilder
+        self, client: StudioClient, builder: GraphBuilder
     ):
         """Test offset near end of history returns only remaining items"""
         for _ in range(3):
@@ -911,7 +911,7 @@ class TestExecution:
 
     # Jobs API tests
     def test_jobs_api_job_structure(
-        self, client: ComfyClient, builder: GraphBuilder
+        self, client: StudioClient, builder: GraphBuilder
     ):
         """Test that job objects have required fields"""
         self._create_history_item(client, builder)
@@ -927,7 +927,7 @@ class TestExecution:
         assert "preview_output" in job, "Job should have preview_output"
 
     def test_jobs_api_preview_output_structure(
-        self, client: ComfyClient, builder: GraphBuilder
+        self, client: StudioClient, builder: GraphBuilder
     ):
         """Test that preview_output has correct structure"""
         self._create_history_item(client, builder)
@@ -942,7 +942,7 @@ class TestExecution:
             assert "mediaType" in preview, "Preview should have mediaType"
 
     def test_jobs_api_pagination(
-        self, client: ComfyClient, builder: GraphBuilder
+        self, client: StudioClient, builder: GraphBuilder
     ):
         """Test jobs API pagination"""
         for _ in range(5):
@@ -959,7 +959,7 @@ class TestExecution:
         assert first_ids.isdisjoint(second_ids), "Pages should have different jobs"
 
     def test_jobs_api_sorting(
-        self, client: ComfyClient, builder: GraphBuilder
+        self, client: StudioClient, builder: GraphBuilder
     ):
         """Test jobs API sorting"""
         for _ in range(3):
@@ -977,7 +977,7 @@ class TestExecution:
                 assert asc_times == sorted(asc_times), "Asc should be oldest first"
 
     def test_jobs_api_status_filter(
-        self, client: ComfyClient, builder: GraphBuilder
+        self, client: StudioClient, builder: GraphBuilder
     ):
         """Test jobs API status filtering"""
         self._create_history_item(client, builder)
@@ -994,7 +994,7 @@ class TestExecution:
             assert job["status"] == "pending", "Should only return pending jobs"
 
     def test_get_job_by_id(
-        self, client: ComfyClient, builder: GraphBuilder
+        self, client: StudioClient, builder: GraphBuilder
     ):
         """Test getting a single job by ID"""
         result = self._create_history_item(client, builder)
@@ -1006,7 +1006,7 @@ class TestExecution:
         assert "outputs" in job, "Single job should include outputs"
 
     def test_get_job_not_found(
-        self, client: ComfyClient, builder: GraphBuilder
+        self, client: StudioClient, builder: GraphBuilder
     ):
         """Test getting a non-existent job returns 404"""
         job = client.get_job("nonexistent-job-id")

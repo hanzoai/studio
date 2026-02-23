@@ -1,5 +1,5 @@
-from comfy_execution.graph_utils import GraphBuilder, is_link
-from comfy_execution.graph import ExecutionBlocker
+from studio_execution.graph_utils import GraphBuilder, is_link
+from studio_execution.graph import ExecutionBlocker
 from .tools import VariantSupport
 
 NUM_FLOW_SOCKETS = 5

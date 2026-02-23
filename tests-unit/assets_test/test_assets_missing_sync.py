@@ -14,13 +14,13 @@ def test_seed_asset_removed_when_file_is_deleted(
     root: str,
     http: requests.Session,
     api_base: str,
-    comfy_tmp_base_dir: Path,
+    studio_tmp_base_dir: Path,
 ):
     """Asset without hash (seed) whose file disappears:
        after triggering sync_seed_assets, Asset + AssetInfo disappear.
     """
     # Create a file directly under input/unit-tests/<case> so tags include "unit-tests"
-    case_dir = comfy_tmp_base_dir / root / "unit-tests" / "syncseed"
+    case_dir = studio_tmp_base_dir / root / "unit-tests" / "syncseed"
     case_dir.mkdir(parents=True, exist_ok=True)
     name = f"seed_{uuid.uuid4().hex[:8]}.bin"
     fp = case_dir / name
@@ -65,7 +65,7 @@ def test_seed_asset_removed_when_file_is_deleted(
 def test_hashed_asset_missing_tag_added_then_removed_after_scan(
     http: requests.Session,
     api_base: str,
-    comfy_tmp_base_dir: Path,
+    studio_tmp_base_dir: Path,
     asset_factory,
     make_asset_bytes,
 ):
@@ -79,7 +79,7 @@ def test_hashed_asset_missing_tag_added_then_removed_after_scan(
     a = asset_factory(name, tags, {}, data)
 
     # Compute its on-disk path and remove it
-    dest = comfy_tmp_base_dir / "input" / "unit-tests" / "msync2" / get_asset_filename(a["asset_hash"], ".png")
+    dest = studio_tmp_base_dir / "input" / "unit-tests" / "msync2" / get_asset_filename(a["asset_hash"], ".png")
     assert dest.exists(), f"Expected asset file at {dest}"
     dest.unlink()
 
@@ -106,7 +106,7 @@ def test_hashed_asset_missing_tag_added_then_removed_after_scan(
 def test_hashed_asset_two_asset_infos_both_get_missing(
     http: requests.Session,
     api_base: str,
-    comfy_tmp_base_dir: Path,
+    studio_tmp_base_dir: Path,
     asset_factory,
 ):
     """Hashed asset with a single cache_state, but two AssetInfo rows:
@@ -130,7 +130,7 @@ def test_hashed_asset_two_asset_infos_both_get_missing(
     second_id = b2["id"]
 
     # Remove the single underlying file
-    p = comfy_tmp_base_dir / "input" / "unit-tests" / "multiinfo" / get_asset_filename(b2["asset_hash"], ".png")
+    p = studio_tmp_base_dir / "input" / "unit-tests" / "multiinfo" / get_asset_filename(b2["asset_hash"], ".png")
     assert p.exists()
     p.unlink()
 
@@ -166,7 +166,7 @@ def test_hashed_asset_two_asset_infos_both_get_missing(
 def test_hashed_asset_two_cache_states_partial_delete_then_full_delete(
     http: requests.Session,
     api_base: str,
-    comfy_tmp_base_dir: Path,
+    studio_tmp_base_dir: Path,
     asset_factory,
     make_asset_bytes,
     run_scan_and_wait,
@@ -180,11 +180,11 @@ def test_hashed_asset_two_cache_states_partial_delete_then_full_delete(
     data = make_asset_bytes(name, 3072)
 
     created = asset_factory(name, tags, {}, data)
-    path1 = comfy_tmp_base_dir / "input" / "unit-tests" / "dual" / get_asset_filename(created["asset_hash"], ".png")
+    path1 = studio_tmp_base_dir / "input" / "unit-tests" / "dual" / get_asset_filename(created["asset_hash"], ".png")
     assert path1.exists()
 
     # Create a second on-disk copy under the same root but different subfolder
-    path2 = comfy_tmp_base_dir / "input" / "unit-tests" / "dual_copy" / name
+    path2 = studio_tmp_base_dir / "input" / "unit-tests" / "dual_copy" / name
     path2.parent.mkdir(parents=True, exist_ok=True)
     path2.write_bytes(data)
 
@@ -231,7 +231,7 @@ def test_missing_tag_clears_on_fastpass_when_mtime_and_size_match(
     root: str,
     http: requests.Session,
     api_base: str,
-    comfy_tmp_base_dir: Path,
+    studio_tmp_base_dir: Path,
     asset_factory,
     make_asset_bytes,
 ):
@@ -248,7 +248,7 @@ def test_missing_tag_clears_on_fastpass_when_mtime_and_size_match(
 
     a = asset_factory(name, [root, "unit-tests", scope], {}, data)
     aid = a["id"]
-    base = comfy_tmp_base_dir / root / "unit-tests" / scope
+    base = studio_tmp_base_dir / root / "unit-tests" / scope
     p = base / get_asset_filename(a["asset_hash"], ".bin")
     st0 = p.stat()
     orig_mtime_ns = getattr(st0, "st_mtime_ns", int(st0.st_mtime * 1_000_000_000))
@@ -281,7 +281,7 @@ def test_fastpass_removes_stale_state_row_no_missing(
     root: str,
     http: requests.Session,
     api_base: str,
-    comfy_tmp_base_dir: Path,
+    studio_tmp_base_dir: Path,
     asset_factory,
     make_asset_bytes,
     run_scan_and_wait,
@@ -302,7 +302,7 @@ def test_fastpass_removes_stale_state_row_no_missing(
 
     # Upload hashed asset at path1
     a = asset_factory(name, [root, "unit-tests", scope], {}, data)
-    base = comfy_tmp_base_dir / root / "unit-tests" / scope
+    base = studio_tmp_base_dir / root / "unit-tests" / scope
     a1_filename = get_asset_filename(a["asset_hash"], ".bin")
     p1 = base / a1_filename
     assert p1.exists()
