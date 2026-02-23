@@ -18,6 +18,10 @@ RUN pip install --no-cache-dir \
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
+# Apply Hanzo Studio branding to frontend package
+COPY branding/ /tmp/branding/
+RUN chmod +x /tmp/branding/apply-branding.sh && /tmp/branding/apply-branding.sh && rm -rf /tmp/branding
+
 # Copy application code
 COPY . .
 
