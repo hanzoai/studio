@@ -39,19 +39,11 @@ jobs:
 
   deploy:
     needs: build
-    runs-on: ubuntu-latest
-
-    steps:
-      - uses: digitalocean/action-doctl@v2
-        with:
-          token: ${{ secrets.DO_API_TOKEN }}
-
-      - name: Configure kubectl
-        run: doctl kubernetes cluster kubeconfig save 1a153000-90a6-48ad-9375-7ef901a9bf7f
-
-      - name: Deploy
-        run: |
-          kubectl set image deployment/studio \
-            studio=${{ env.IMAGE }}:${{ github.sha }} \
-            -n hanzo
-          kubectl rollout status deployment/studio -n hanzo --timeout=300s
+    uses: hanzoai/universe/.github/workflows/reusable-deploy-service.yml@main
+    with:
+      service: studio
+      image: ghcr.io/hanzoai/studio:${{ github.sha }}
+      cluster: hanzo-k8s
+      namespace: hanzo
+    secrets:
+      HANZO_API_KEY: ${{ secrets.HANZO_API_KEY }}
