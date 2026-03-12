@@ -14,18 +14,14 @@ jobs:
     permissions:
       contents: read
       packages: write
-
     steps:
       - uses: actions/checkout@v4
-
       - uses: docker/setup-buildx-action@v3
-
       - uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-
       - uses: docker/build-push-action@v6
         with:
           context: .
@@ -39,10 +35,39 @@ jobs:
 
   deploy:
     needs: build
-    uses: hanzoai/universe/.github/workflows/reusable-deploy-service.yml@main
-    with:
-      service: studio
-      image: ghcr.io/hanzoai/studio:${{ github.sha }}
-      cluster: hanzo-k8s
-      namespace: hanzo
-    secrets: inherit
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Fetch deploy credentials from KMS
+        id: kms
+        env:
+          KMS_CLIENT_ID: ${{ secrets.KMS_CLIENT_ID }}
+          KMS_CLIENT_SECRET: ${{ secrets.KMS_CLIENT_SECRET }}
+          KMS_ENDPOINT: ${{ vars.KMS_ENDPOINT || 'https://kms.hanzo.ai' }}
+        run: |
+          HANZO_API_KEY=$(curl -sf "${KMS_ENDPOINT}/api/v1/auth/universal-auth/login" \
+            -H "Content-Type: application/json" \
+            -d "{\"clientId\":\"${KMS_CLIENT_ID}\",\"clientSecret\":\"${KMS_CLIENT_SECRET}\"}" | jq -r '.accessToken')
+          response=$(curl -sf "${KMS_ENDPOINT}/api/v3/secrets/raw?workspaceId=e1359bf4-31b4-4dfa-bb90-323e2c298ad8&secretPath=/deploy&environment=prod" \
+            -H "Authorization: Bearer ${HANZO_API_KEY}" 2>/dev/null || echo "")
+          token=$(echo "$response" | jq -r '.secrets[] | select(.secretKey=="DO_API_TOKEN") | .secretValue // empty')
+          if [ -z "${token:-}" ]; then
+            echo "::error::Deploy credentials not found in KMS"
+            exit 1
+          fi
+          echo "::add-mask::${token}"
+          echo "token=${token}" >> "$GITHUB_OUTPUT"
+
+      - name: Install doctl
+        uses: digitalocean/action-doctl@v2
+        with:
+          token: ${{ steps.kms.outputs.token }}
+
+      - name: Configure kubectl
+        run: doctl kubernetes cluster kubeconfig save 1a153000-90a6-48ad-9375-7ef901a9bf7f
+
+      - name: Deploy to K8s
+        run: |
+          CONTAINER=$(kubectl get deployment studio -n hanzo -o jsonpath='{.spec.template.spec.containers[0].name}')
+          kubectl set image "deployment/studio" "$CONTAINER=${{ env.IMAGE }}:${{ github.sha }}" -n hanzo
+          kubectl rollout status deployment/studio -n hanzo --timeout=300s
