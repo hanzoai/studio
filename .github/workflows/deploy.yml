@@ -45,6 +45,4 @@ jobs:
       image: ghcr.io/hanzoai/studio:${{ github.sha }}
       cluster: hanzo-k8s
       namespace: hanzo
-    secrets:
-      KMS_K8S_CLIENT_ID: ${{ secrets.KMS_CLIENT_ID }}
-      KMS_K8S_CLIENT_SECRET: ${{ secrets.KMS_CLIENT_SECRET }}
+    secrets: inherit
