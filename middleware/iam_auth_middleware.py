@@ -1,7 +1,8 @@
 """
 IAM authentication middleware for Hanzo Studio.
 
-Validates Bearer tokens against hanzo.id (Casdoor) /api/get-account endpoint.
+Validates Bearer tokens against the IAM OIDC userinfo endpoint
+(/v1/iam/oauth/userinfo) per HIP-0111.
 Localhost connections bypass auth. Static assets and health checks are exempt.
 """
 import logging
@@ -81,7 +82,7 @@ def create_iam_auth_middleware(iam_url: str, localhost_bypass: bool = True):
         localhost_bypass: If True, skip auth for loopback connections
     """
     iam_url = iam_url.rstrip("/")
-    account_endpoint = f"{iam_url}/api/get-account"
+    account_endpoint = f"{iam_url}/v1/iam/oauth/userinfo"
 
     # Shared session — created lazily, reused across requests
     _shared_session: aiohttp.ClientSession | None = None
@@ -163,14 +164,17 @@ def create_iam_auth_middleware(iam_url: str, localhost_bypass: bool = True):
                 status=503,
             )
 
-        # Extract user/org context from IAM response
-        # Casdoor returns: id, name, owner (org), email, etc.
+        # Extract user/org context from the OIDC userinfo response (HIP-0111).
+        # OIDC userinfo returns flat standard claims: sub, email, name, picture.
+        # NOTE: org derivation relies on a non-standard "owner"/"organization"
+        # claim. The IAM server must be configured to emit it in the requested
+        # scopes; otherwise org_id falls back to "default".
         user_info = {
-            "sub": raw.get("id", raw.get("sub", "")),
+            "sub": raw.get("sub", raw.get("id", "")),
             "name": raw.get("name", raw.get("displayName", "")),
             "email": raw.get("email", ""),
             "org_id": raw.get("owner", raw.get("organization", "default")),
-            "avatar": raw.get("avatar", ""),
+            "avatar": raw.get("picture", raw.get("avatar", "")),
         }
 
         # Cache the validated token
