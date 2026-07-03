@@ -35,6 +35,12 @@
 
 Hanzo Studio lets you design and execute advanced stable diffusion pipelines using a graph/nodes/flowchart based interface. Available on Windows, Linux, and macOS.
 
+## Upstream & License
+
+Hanzo Studio is a fork of [**ComfyUI**](https://github.com/comfyanonymous/ComfyUI) by comfyanonymous and the ComfyUI contributors — full credit to the upstream project for the engine this builds on. ComfyUI is licensed under the **GNU General Public License v3.0 (GPL-3.0)**, and this fork stays under the same license. All modifications in this fork are likewise GPL-3.0.
+
+See [`LICENSE`](LICENSE) for the full license text and [`NOTICE`](NOTICE) for the fork's attribution and a summary of what it changes (branding, Hanzo Engine integration nodes, and fashion workflow templates).
+
 ## Get Started
 
 #### [Manual Install](#manual-install-windows-linux)

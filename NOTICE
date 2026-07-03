@@ -1,0 +1,39 @@
+Hanzo Studio
+============
+
+Hanzo Studio is a fork of ComfyUI (https://github.com/comfyanonymous/ComfyUI),
+Copyright (c) ComfyUI contributors, licensed under the GNU General Public
+License v3.0 (GPL-3.0).
+
+Modifications Copyright (c) 2026 Hanzo Industries Inc, also released under the
+GNU General Public License v3.0 (GPL-3.0). See the LICENSE file for the full
+license text.
+
+As required by the GPL-3.0, this fork remains under the same license as the
+upstream project. The original ComfyUI copyright notices are retained.
+
+Modifications made in this fork
+-------------------------------
+
+- Branding: user-visible name changed from "ComfyUI" to "Hanzo Studio",
+  including the served page <title>, favicon, in-app logos, and display
+  strings. The prebuilt frontend package (comfyui-frontend-package) is patched
+  at install time by branding/apply-branding.sh; source assets live in
+  branding/. Backend Python packages are namespaced under studio_* and the
+  server reports itself as "Hanzo Studio".
+
+- Hanzo Engine integration nodes (custom_nodes/hanzo_engine/): custom nodes
+  that call a local Hanzo Engine OpenAI-compatible server — HanzoChat
+  (chat/completions), HanzoImageGen (images/generations), and
+  HanzoVisionCaption (vision chat/completions). Hanzo Engine is the native-Rust,
+  all-modality inference and training backend.
+
+- Fashion/swimwear starter workflows (user/default/workflows/fashion/):
+  product-shot, garment-edit, and caption-dataset workflow templates for a
+  designer's day-to-day use.
+
+- Deployment/integration middleware for Hanzo infrastructure (IAM auth via
+  hanzo.id, commerce/billing, metrics), wired through environment variables and
+  the Dockerfile.
+
+Third-party components retain their own upstream copyrights and licenses.
