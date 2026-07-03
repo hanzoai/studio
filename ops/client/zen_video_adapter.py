@@ -22,9 +22,7 @@ Deps: aiohttp only (already in the Studio venv). No new packages.
 """
 import os
 import time
-import json
 import uuid
-import asyncio
 import logging
 from aiohttp import web, ClientSession, ClientTimeout
 

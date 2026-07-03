@@ -70,7 +70,6 @@ def test_persist_and_restore_round_trip():
         # Restored item is a real queue tuple that can be popped and run.
         item2, _ = q2.get(timeout=1)
         assert item2[1] == "b" and isinstance(item2[2], dict)
-        print("OK test_persist_and_restore_round_trip")
     finally:
         os.environ.pop("STUDIO_PERSIST_QUEUE", None)
 
@@ -83,7 +82,6 @@ def test_disabled_by_default_is_inert():
     q.put(_item(1, "a"))
     q.get(timeout=1)
     assert not os.path.exists(snap), "flag unset -> nothing written to disk"
-    print("OK test_disabled_by_default_is_inert")
 
 
 def test_restore_skips_corrupt_rows():
@@ -96,13 +94,13 @@ def test_restore_skips_corrupt_rows():
         q = PromptQueue(_StubServer())
         _, queued = q.get_current_queue_volatile()
         assert len(queued) == 1 and queued[0][1] == "good"
-        print("OK test_restore_skips_corrupt_rows")
     finally:
         os.environ.pop("STUDIO_PERSIST_QUEUE", None)
 
 
 if __name__ == "__main__":
+    # Standalone smoke run: each test raises AssertionError on failure, so a
+    # clean exit (status 0) means all three passed.
     test_persist_and_restore_round_trip()
     test_disabled_by_default_is_inert()
     test_restore_skips_corrupt_rows()
-    print("\nALL PASS")
