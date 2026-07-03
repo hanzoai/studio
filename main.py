@@ -494,13 +494,26 @@ if __name__ == "__main__":
 
     event_loop, prompt_server, start_all_func = start_studio()
 
+    # Sentinel: a non-empty list means shutdown is already in progress. Using a
+    # mutable container (not a global) keeps the handler closure-clean.
+    shutdown_started = []
+
     def _graceful_shutdown(signum, frame):
         sig_name = signal.Signals(signum).name
+        if shutdown_started:
+            logging.info(f"Received {sig_name} again, already shutting down...")
+            return
+        shutdown_started.append(True)
         logging.info(f"Received {sig_name}, shutting down gracefully...")
-        # Stop accepting new prompts
+        # Stop accepting new prompts and snapshot any pending work to disk so a
+        # restart can pick it back up (no-op unless STUDIO_PERSIST_QUEUE=1).
         if prompt_server and prompt_server.prompt_queue:
             prompt_server.prompt_queue.set_flag("disable_new", True)
-        # Stop the event loop (will cause run_until_complete to return)
+            prompt_server.prompt_queue.persist_now()
+        # Ask the event loop to stop. Because the server coroutine never finishes
+        # on its own, run_until_complete() then raises RuntimeError('Event loop
+        # stopped before Future completed.'); the except clause below treats that
+        # as the expected graceful-exit path rather than a crash.
         event_loop.call_soon_threadsafe(event_loop.stop)
 
     signal.signal(signal.SIGTERM, _graceful_shutdown)
@@ -512,6 +525,14 @@ if __name__ == "__main__":
         event_loop.run_until_complete(x)
     except KeyboardInterrupt:
         logging.info("\nStopped server")
+    except RuntimeError as e:
+        # A signal handler stopped the loop before the (never-completing) server
+        # coroutine finished; asyncio surfaces this as RuntimeError. This is our
+        # graceful-exit path, not a crash. Anything else is a real error.
+        if "Event loop stopped before Future completed" in str(e):
+            logging.info("Server stopped by shutdown signal")
+        else:
+            raise
 
     logging.info("Cleaning up...")
     cleanup_temp()

@@ -1,7 +1,9 @@
 import copy
 import heapq
 import inspect
+import json
 import logging
+import os
 import sys
 import threading
 import time
@@ -1144,12 +1146,60 @@ class PromptQueue:
         self.currently_running = {}
         self.history = {}
         self.flags = {}
+        # Optional crash-durable queue: snapshot pending + in-flight prompts to
+        # disk on every change, re-queue them on boot. Off by default; enable
+        # with STUDIO_PERSIST_QUEUE=1. Persistence is strictly best-effort and
+        # never affects the render path (all failures are caught and logged).
+        self._persist_path = None
+        if os.environ.get("STUDIO_PERSIST_QUEUE") == "1":
+            import folder_paths
+            self._persist_path = os.path.join(folder_paths.get_user_directory(), "queue_snapshot.json")
+            self._restore_locked()
+
+    def _snapshot_items(self):
+        # Pending queue plus any in-flight items, so a crash mid-render re-queues
+        # the interrupted prompt. Tuples serialize to JSON lists.
+        return [list(it) for it in (list(self.queue) + list(self.currently_running.values()))]
+
+    def _persist_locked(self):
+        if self._persist_path is None:
+            return
+        try:
+            data = json.dumps(self._snapshot_items())
+            tmp = self._persist_path + ".tmp"
+            with open(tmp, "w") as f:
+                f.write(data)
+            os.replace(tmp, self._persist_path)  # atomic
+        except Exception as e:
+            logging.warning("[persist-queue] snapshot failed: %s", e)
+
+    def _restore_locked(self):
+        try:
+            if not os.path.exists(self._persist_path):
+                return
+            with open(self._persist_path) as f:
+                items = json.load(f)
+            restored = 0
+            for it in items:
+                # Minimal validation: (number, prompt_id:str, prompt:dict, ...)
+                if isinstance(it, list) and len(it) >= 3 and isinstance(it[1], str) and isinstance(it[2], dict):
+                    heapq.heappush(self.queue, tuple(it))
+                    restored += 1
+            if restored:
+                logging.info("[persist-queue] restored %d pending prompt(s) from previous run", restored)
+        except Exception as e:
+            logging.warning("[persist-queue] restore failed: %s", e)
+
+    def persist_now(self):
+        with self.mutex:
+            self._persist_locked()
 
     def put(self, item):
         with self.mutex:
             heapq.heappush(self.queue, item)
             self.server.queue_updated()
             self.not_empty.notify()
+            self._persist_locked()
 
     def get(self, timeout=None):
         with self.not_empty:
@@ -1162,6 +1212,7 @@ class PromptQueue:
             self.currently_running[i] = copy.deepcopy(item)
             self.task_counter += 1
             self.server.queue_updated()
+            self._persist_locked()
             return (item, i)
 
     class ExecutionStatus(NamedTuple):
@@ -1190,6 +1241,7 @@ class PromptQueue:
             }
             self.history[prompt[1]].update(history_result)
             self.server.queue_updated()
+            self._persist_locked()
 
     # Note: slow
     def get_current_queue(self):
@@ -1214,6 +1266,7 @@ class PromptQueue:
         with self.mutex:
             self.queue = []
             self.server.queue_updated()
+            self._persist_locked()
 
     def delete_queue_item(self, function):
         with self.mutex:
@@ -1225,6 +1278,7 @@ class PromptQueue:
                         self.queue.pop(x)
                         heapq.heapify(self.queue)
                     self.server.queue_updated()
+                    self._persist_locked()
                     return True
         return False
 
