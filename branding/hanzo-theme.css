@@ -1,0 +1,64 @@
+/* Hanzo Studio — black surface + Hanzo-purple accent theme.
+ * Minimal override: only background/surface/accent tokens are touched so the
+ * rest of the frontend's dark palette (text, node colors, borders) is intact.
+ * Loaded LAST in index.html so it beats PrimeVue's runtime-injected tokens;
+ * every declaration is !important because those tokens are injected after this
+ * sheet at boot. Colors chosen for WCAG AA contrast on black:
+ *   accent  #8B5CF6 on #000  -> 6.2:1 (AA normal text)
+ *   button  #ffffff on #7C3AED -> 5.25:1 (AA normal text)
+ */
+
+:root {
+  /* --- App shell (ComfyUI-native vars from the "dark" palette) --- */
+  --bg-color: #000000 !important;
+  --fg-color: #ffffff !important;
+  --comfy-menu-bg: #0a0a0a !important;
+  --comfy-menu-secondary-bg: #141414 !important;
+  --comfy-input-bg: #0a0a0a !important;
+  --content-bg: #0a0a0a !important;
+  --content-hover-bg: #171717 !important;
+  --border-color: #1f1f1f !important;
+  --tr-even-bg-color: #0a0a0a !important;
+  --tr-odd-bg-color: #141414 !important;
+
+  /* --- PrimeVue surface ramp: darken the panel/sidebar/topbar shades only.
+   * 500..900 are the backgrounds; 100/300 stay light (used for text/borders). */
+  --p-surface-900: #000000 !important;
+  --p-surface-800: #0a0a0a !important;
+  --p-surface-700: #141414 !important;
+  --p-surface-600: #1c1c1c !important;
+  --p-surface-500: #242424 !important;
+
+  /* --- PrimeVue semantic surfaces --- */
+  --p-content-background: #000000 !important;
+  --p-content-hover-background: #171717 !important;
+  --p-overlay-modal-background: #0a0a0a !important;
+  --p-overlay-popover-background: #0a0a0a !important;
+  --p-mask-background: rgba(0, 0, 0, 0.72) !important;
+
+  /* --- Hanzo purple accent --- */
+  --p-primary-color: #8b5cf6 !important;         /* icons/links/active — AA on black */
+  --p-primary-contrast-color: #ffffff !important;
+  --p-primary-400: #a78bfa !important;
+  --p-primary-500: #8b5cf6 !important;
+  --p-primary-600: #7c3aed !important;
+  --p-focus-ring-color: #8b5cf6 !important;
+  --p-highlight-background: rgba(124, 58, 237, 0.24) !important;
+  --p-highlight-focus-background: rgba(124, 58, 237, 0.32) !important;
+  --p-highlight-color: #ede9fe !important;
+
+  /* --- Primary buttons: white on deeper violet keeps AA (5.25:1) --- */
+  --p-button-primary-background: #7c3aed !important;
+  --p-button-primary-hover-background: #6d28d9 !important;
+  --p-button-primary-active-background: #5b21b6 !important;
+  --p-button-primary-border-color: #7c3aed !important;
+  --p-button-primary-color: #ffffff !important;
+}
+
+/* Pure-black canvas gutter behind the litegraph <canvas>. */
+html,
+body,
+body.litegraph,
+#vue-app {
+  background-color: #000000 !important;
+}

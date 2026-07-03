@@ -41,6 +41,10 @@ DISPLAY_REPLACEMENTS = [
     # Exact display strings — multi-word phrases are safe to replace globally
     # because they only appear as display text, not in code identifiers.
     # Order matters: longer matches first to avoid partial replacements.
+    # Browser-tab title suffix: the frontend builds document.title as
+    # `${workflowName} - ComfyUI`. The " - ComfyUI" constant has a space (not a
+    # quote) before ComfyUI, so the quoted-string patterns below miss it.
+    (' - ComfyUI', ' - Hanzo Studio'),
     ('ComfyUI Issues', 'Hanzo Studio Issues'),
     ('ComfyUI Docs', 'Hanzo Studio Docs'),
     ('ComfyUI Forum', 'Hanzo Studio Forum'),
