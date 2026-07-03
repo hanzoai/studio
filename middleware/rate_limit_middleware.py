@@ -6,13 +6,14 @@ Tracks requests in-memory using a simple time-bucketed approach.
 """
 import logging
 import time as _time
+import os
 import threading
 
 from aiohttp import web
 
 
 # Default: 60 requests per minute per org
-_DEFAULT_RPM = 60
+_DEFAULT_RPM = int(os.environ.get("STUDIO_RPM", "0"))  # 0 = unlimited (single-user local default)
 _WINDOW_SECONDS = 60
 
 # org_id -> list of request timestamps
