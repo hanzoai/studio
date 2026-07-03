@@ -13,4 +13,10 @@ on:
 jobs:
   cicd:
     uses: hanzoai/ci/.github/workflows/build.yml@v1
+    # Target the Hanzo arc scale set by its installation name. ARC scale sets
+    # are matched by name, not by the [self-hosted,linux,amd64] label triple
+    # that ci@v1 defaults to — without this override the job never gets a
+    # runner and sits queued.
+    with:
+      runner: '["hanzo-build-linux-amd64"]'
     secrets: inherit
