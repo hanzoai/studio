@@ -1,0 +1,68 @@
+{
+  "1": {
+    "class_type": "UNETLoader",
+    "inputs": { "unet_name": "wan2.2_ti2v_5B_fp16.safetensors", "weight_dtype": "default" },
+    "_meta": { "title": "Load zen3-video model" }
+  },
+  "2": {
+    "class_type": "CLIPLoader",
+    "inputs": { "clip_name": "umt5_xxl_fp8_e4m3fn_scaled.safetensors", "type": "wan" },
+    "_meta": { "title": "Load text encoder" }
+  },
+  "3": {
+    "class_type": "VAELoader",
+    "inputs": { "vae_name": "wan2.2_vae.safetensors" },
+    "_meta": { "title": "Load VAE" }
+  },
+  "4": {
+    "class_type": "CLIPTextEncode",
+    "inputs": { "text": "a red fox running through a snowy forest, cinematic, highly detailed", "clip": ["2", 0] },
+    "_meta": { "title": "Positive prompt" }
+  },
+  "5": {
+    "class_type": "CLIPTextEncode",
+    "inputs": { "text": "blurry, low quality, distorted, watermark, static, jpeg artifacts", "clip": ["2", 0] },
+    "_meta": { "title": "Negative prompt" }
+  },
+  "6": {
+    "class_type": "ModelSamplingSD3",
+    "inputs": { "model": ["1", 0], "shift": 8.0 },
+    "_meta": { "title": "Model sampling (shift)" }
+  },
+  "7": {
+    "class_type": "Wan22ImageToVideoLatent",
+    "inputs": { "vae": ["3", 0], "width": 640, "height": 384, "length": 25, "batch_size": 1 },
+    "_meta": { "title": "Empty video latent (t2v)" }
+  },
+  "8": {
+    "class_type": "KSampler",
+    "inputs": {
+      "model": ["6", 0],
+      "seed": 0,
+      "steps": 20,
+      "cfg": 5.0,
+      "sampler_name": "euler",
+      "scheduler": "simple",
+      "positive": ["4", 0],
+      "negative": ["5", 0],
+      "latent_image": ["7", 0],
+      "denoise": 1.0
+    },
+    "_meta": { "title": "Sampler" }
+  },
+  "9": {
+    "class_type": "VAEDecode",
+    "inputs": { "samples": ["8", 0], "vae": ["3", 0] },
+    "_meta": { "title": "Decode" }
+  },
+  "10": {
+    "class_type": "CreateVideo",
+    "inputs": { "images": ["9", 0], "fps": 16.0 },
+    "_meta": { "title": "Frames -> video" }
+  },
+  "11": {
+    "class_type": "SaveVideo",
+    "inputs": { "video": ["10", 0], "filename_prefix": "zen3-video/clip", "format": "auto", "codec": "auto" },
+    "_meta": { "title": "Save mp4" }
+  }
+}

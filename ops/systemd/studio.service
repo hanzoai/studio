@@ -1,0 +1,25 @@
+[Unit]
+Description=Hanzo Studio (ComfyUI) - GPU image/video generation on GB10
+Documentation=https://github.com/hanzoai/studio
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+User=z
+Group=z
+WorkingDirectory=/home/z/work/hanzo/studio
+Environment=HF_HOME=/home/z/.cache/huggingface
+Environment=PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
+ExecStart=/home/z/work/hanzo/studio/.venv/bin/python main.py --listen 0.0.0.0 --port 8188 --normalvram --disable-auto-launch --output-directory /home/z/work/hanzo/studio/output
+Restart=on-failure
+RestartSec=8
+# graceful shutdown so the socket is released before any restart (avoids EADDRINUSE races)
+KillSignal=SIGINT
+KillMode=mixed
+TimeoutStopSec=30
+Nice=5
+
+[Install]
+WantedBy=multi-user.target
