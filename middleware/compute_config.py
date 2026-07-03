@@ -63,6 +63,7 @@ class ComputeProfile:
     workers: list = field(default_factory=list)
     auto_provision: bool = False
     max_concurrent: int = 1
+    default_engine: str = "local"   # engine id renders route to (see engine_selector)
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -138,6 +139,9 @@ def update_config(org_id: str, updates: dict) -> ComputeProfile:
         if "max_concurrent" in updates:
             mc = int(updates["max_concurrent"])
             profile.max_concurrent = max(1, min(mc, 32))
+
+        if "default_engine" in updates:
+            profile.default_engine = str(updates["default_engine"])
 
         # Derive gpu_enabled from profile if not explicitly set
         if "active_profile" in updates and "gpu_enabled" not in updates:

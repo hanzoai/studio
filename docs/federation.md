@@ -1,168 +1,155 @@
 # Hanzo Studio — GPU Federation
 
-How `studio.hanzo.ai` schedules generation jobs across a heterogeneous GPU pool:
-in-cluster cloud pods **and** local boxes (e.g. a GB10) that join over an
-**outbound-only** connection. No inbound tunnel to the local box is ever
-required.
+How `studio.hanzo.ai` runs generation jobs durably and spreads them across a
+heterogeneous GPU pool: in-cluster cloud pods **and** local boxes (e.g. a GB10)
+that join over an **outbound-only** connection. No inbound tunnel to a local box
+is ever required.
 
-This document is the contract. Sections are marked **[implemented]** (code in
-this repo today) or **[specced]** (agreed design, not yet wired). Nothing here is
-a stub in code — specced pieces live in this doc until they are built.
+Sections are marked **[implemented]** (code in this repo today), **[fast-path]**
+(retained in-cluster optimization), or **[future]**.
 
 ## 1. Roles
 
 - **Coordinator** — the `studio.hanzo.ai` deployment. Full UI, IAM auth,
-  multi-tenant storage. Owns the per-org worker registry and the job schedule.
-  Runs a small CPU footprint (it routes; it does not need a GPU).
-- **Worker** — a headless Studio started with `--worker-mode`. Reports its
-  device (GPU model, VRAM), registers with the coordinator, and executes prompts
-  it is given. A worker belongs to exactly one org (`STUDIO_ORG_ID`).
+  multi-tenant storage. Accepts `/prompt`, owns the durable render queue and the
+  per-org worker registry + engine selection.
+- **Worker** — a Studio process that executes prompts. Either the same box as the
+  coordinator (local render), an in-cluster pod reached by push (§2a), or a box
+  sharing the coordinator's render queue.
 
-A worker is the *same binary* as the coordinator; `--worker-mode` only drops the
-UI/websocket surface and turns on registration + the execute endpoint. This is
-the ComfyUI-Distributed lineage (workers are full ComfyUI instances the control
-plane drives) narrowed to **job-level** dispatch and hardened for multi-tenant +
-NAT traversal.
+A worker is the *same binary* as the coordinator.
 
-## 2. Two dispatch models
+## 2. Durable render queue **[implemented]**
 
-Reachability, not preference, decides which model a worker uses.
+The render queue is crash-durable: pending and in-flight prompts survive a
+process crash, and a killed render is re-run instead of being lost. Storage is a
+single **SQLite** file (stdlib `sqlite3`, WAL) — **zero external processes**, per
+the house rule (SQLite embedded by default; Postgres only for prod multi-instance).
 
-### 2a. Push — for in-cluster workers **[implemented]**
+Enable with `STUDIO_QUEUE_DB=<path>`. `server.py` then swaps `PromptQueue` for
+`SqlitePromptQueue`; the existing prompt-executor thread is the claim loop
+unchanged. The `PromptQueue` seam maps onto a durable job state machine:
 
-The coordinator can open a connection to the worker (both are pods in
-`hanzo-k8s`, or the worker has a routable `WORKER_EXTERNAL_URL`).
+```
+put(item)             → INSERT job (pending)              # idempotent on prompt_id
+get(timeout)          → claim next pending (claimed, leased)   # BEGIN IMMEDIATE
+task_done(success)    → job → done
+task_done(error)      → job → pending (retry) | failed    # per STUDIO_TASKS_MAX_ATTEMPTS
+```
+
+Guarantees:
+
+- **Exactly-once submit** — the row is keyed by `prompt_id` (`INSERT OR IGNORE`);
+  a resubmit of the same prompt is a no-op.
+- **Exactly-once claim** — `get()` claims under `BEGIN IMMEDIATE`, so with several
+  Studio processes on the same `STUDIO_QUEUE_DB` exactly one claims each job.
+- **Crash-recovery** — a claim carries a lease. A background heartbeat renews it
+  while the render runs; if the process dies, the lease expires and the reap step
+  (run on every `get()`, in the heartbeat thread, and on boot) returns the job to
+  `pending` for another claim. A render retry is idempotent — SaveImage suffixes
+  increment.
+
+Files: `middleware/tasks_queue.py` (`SqlitePromptQueue`), `server.py` (queue
+selection). Precedence:
+
+| Precedence | Trigger | Backend | Durability |
+|---|---|---|---|
+| 1 | `STUDIO_QUEUE_DB` set | `SqlitePromptQueue` (one file) | Crash-durable, exactly-once, retry, multi-process |
+| 2 | `STUDIO_PERSIST_QUEUE=1` | `PromptQueue` + JSON snapshot | Single-box crash-survival (re-queue on boot) |
+| 3 | (default) | `PromptQueue` (in-memory) | None — same as upstream ComfyUI |
+
+Env: `STUDIO_QUEUE_DB` (path), `STUDIO_TASKS_QUEUE` (default `studio-render`),
+`STUDIO_TASKS_MAX_ATTEMPTS` (default 3), `STUDIO_TASKS_LEASE_MS` (default 60000,
+heartbeat renews at lease/3), `STUDIO_WORKER_ID` (default `<host>-<pid>`).
+
+### 2a. Push — in-cluster fast path **[fast-path]**
+
+When the coordinator can already reach a worker (both pods in `hanzo-k8s`, or a
+routable `WORKER_EXTERNAL_URL`), it may forward a prompt directly:
 
 ```
 client → POST /prompt (coordinator)
   prompt_router.route_prompt(org, body)
     → get_available_gpu_worker(org)         # compute_config registry
     → POST {worker.url}/v1/worker/execute   # forward_to_worker
-  worker queues + executes locally, returns {prompt_id, ...}
 ```
 
-Files: `middleware/prompt_router.py`, `middleware/worker_client.py`
-(`add_worker_routes` → `/v1/worker/execute`), `server.py` (`/prompt` calls
-`route_prompt`).
+Files: `middleware/prompt_router.py`, `middleware/worker_client.py`. This path is
+not durable on its own (a forwarded prompt lost to a worker crash is not retried);
+keep it for latency-sensitive in-cluster dispatch. It requires the coordinator to
+reach the worker, so it cannot serve a NAT'd box.
 
-Limitation: requires the coordinator to reach the worker. A GB10 behind NAT is
-**not** reachable, so push cannot serve it.
+## 3. Engine selector **[implemented]**
 
-### 2b. Pull — for NAT'd local boxes (the GB10 pattern) **[specced]**
+An org chooses which execution target ("engine") its prompts run on. Engines are
+derived from what already exists in the per-org compute registry:
 
-The worker dials **out** and keeps the connection; the coordinator pushes jobs
-down that already-open channel. No inbound port on the box.
+- `local` — this Studio instance (always present), and
+- each registered org GPU worker (from `compute.json`'s worker registry).
 
-Primary transport is a WebSocket the worker opens to the coordinator:
+Endpoints (coordinator):
 
-```
-worker → WSS {coordinator}/v1/workers/connect      (Authorization: worker token)
-  ← {type:"job", job_id, prompt, extra_data, org_id}
-  → {type:"progress", job_id, value, max}
-  → {type:"result", job_id, status, outputs:[{name, s3_url}...]}
-```
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `/v1/engines` | List engines for the org + the current default. |
+| PUT | `/v1/engines/default` | Set the org's default engine. Body `{"engine": "<id>"}`. |
 
-HTTP long-poll fallback for environments without WSS:
+The default is stored on the org's compute profile (`ComputeProfile.default_engine`).
+`prompt_router.route_prompt` honors it: if the default names a live worker, the
+prompt is forwarded there; `local` (the default) leaves current behavior
+unchanged. A stale default (worker deregistered) falls back to `local`, never 500.
 
-```
-worker → POST /v1/jobs/claim   {worker_id, org_id}     # long-poll, ≤30s
-  ← 204 (no work) | 200 {job_id, prompt, extra_data}
-worker → POST /v1/jobs/{job_id}/result {status, outputs}
-```
+Files: `middleware/engine_selector.py`, `middleware/compute_config.py`,
+`middleware/prompt_router.py`. **Frontend TODO:** a queue-panel/settings dropdown
+to pick the engine — the API + per-org default ship now; the UI control is a
+follow-up.
 
-The coordinator keeps a per-org, per-worker job queue (a natural extension of
-`compute_config`), enqueues on `/prompt` when the target worker is pull-mode, and
-hands the job to whichever channel the worker holds open. `route_prompt` gains a
-third branch (`{"action":"queued"}` → `202`) alongside the existing
-forward/provisioning/unavailable branches.
+## 4. Security **[implemented]**
 
-Not implemented because it does not "drop out" of ComfyUI's `--listen`
-architecture — it needs a real coordinator-side queue and a WS control channel.
-Building it does not change the endpoints below.
+- **User auth** — all user-facing routes require an IAM JWT (JWKS-verified); org
+  comes from the `owner` claim. See `middleware/iam_auth_middleware.py`.
+- **Worker trust** — the IAM-exempt `/v1/worker/execute` and `/v1/workers/register`
+  require `X-Worker-Token == STUDIO_WORKER_TOKEN` (`worker_client.verify_worker_token`).
+  KMS-sourced in cloud; empty in a single-trust-domain local dev, where the check
+  is skipped.
+- **Org isolation** — a render carries its `org_id` in `extra_data`; the worker
+  binds it as the execution org so outputs land in that org's namespace (§5). A
+  worker only serves its own `STUDIO_ORG_ID`.
 
-## 3. Endpoints
+## 5. Output persistence **[future]**
 
-All under `/v1/` (also served under the `/api/v1/` alias ComfyUI adds for the
-frontend proxy). Worker↔coordinator endpoints are exempt from user IAM and
-carry the coordinator shared secret instead (`X-Worker-Token`, §5).
+Workers execute against their own output dir (org-scoped via
+`folder_paths.set_execution_org`). For the coordinator UI to serve results across
+boxes, workers upload outputs to `s3.lux.cloud` (hanzo bucket), key
+`studio/{org_id}/{prompt_id}/{filename}`, and the coordinator serves via `/view`
+(or a signed redirect). Until then, results remain on the executing worker —
+fine for the single-box and in-cluster cases.
 
-| Method | Path | Dir | Status | Purpose |
-|---|---|---|---|---|
-| POST | `/v1/workers/register` | worker→coord | **impl** | Register / heartbeat. Body: `{worker_id, url, org_id, device, gpu_model, vram_gb, status}`. |
-| GET  | `/v1/workers` | client→coord | **impl** | List the org's workers + liveness. |
-| POST | `/v1/worker/execute` | coord→worker | **impl** | Push a prompt to a reachable worker. Same body as `/prompt`. |
-| WSS  | `/v1/workers/connect` | worker→coord | **spec** | Persistent pull channel for NAT'd workers. |
-| POST | `/v1/jobs/claim` | worker→coord | **spec** | HTTP long-poll fallback to claim a job. |
-| POST | `/v1/jobs/{id}/result` | worker→coord | **spec** | Report result + artifact URLs. |
-| GET  | `/v1/compute/config` | client→coord | **impl** | Read the org's compute profile. |
-| PUT  | `/v1/compute/config` | client→coord | **impl** | Update profile (GPU tier, auto-provision). |
-| POST | `/v1/compute/provision` | client→coord | **impl** | Autoscale a cloud GPU worker via Visor. |
+## 6. Future direction
 
-(Compute-profile + Visor autoscale routes are still under `/compute/*` in
-`server.py`; the `/v1/compute/*` labels above are the canonical names to fold to
-when those handlers are next touched. Worker-registry + execute already moved.)
-
-## 4. Registration & scheduling **[implemented]**
-
-- Worker sends a heartbeat every 30s (`WorkerClient._heartbeat_loop`).
-- Coordinator upserts it into the org's `compute.json`
-  (`compute_config.register_worker`), pruning workers silent >300s.
-  Liveness for scheduling is 90s (`WorkerInfo.is_alive`).
-- `get_available_gpu_worker(org)` returns the first ready, alive CUDA worker.
-- `prompt_router.route_prompt` chooses local vs worker from the prompt's
-  `device_preference` (`auto`|`cpu`|`gpu`) and the org's `gpu_enabled`.
-- If no worker and the org has `auto_provision`, Visor launches a cloud GPU VM
-  that boots a worker (`middleware/visor_client.py`).
-
-## 5. Security
-
-- **User auth** — all user-facing routes require an IAM JWT (JWKS-verified);
-  org comes from the `owner` claim. See `middleware/iam_auth_middleware.py`.
-- **Worker trust** — worker↔coordinator endpoints are IAM-exempt (they carry no
-  user) and instead require `X-Worker-Token == STUDIO_WORKER_TOKEN`
-  (`worker_client.verify_worker_token`). The token is KMS-sourced in cloud;
-  empty in a single-trust-domain local dev, where the check is skipped.
-  **[specced]** forward direction: replace the shared secret with an IAM
-  service-account token (`hanzo-studio` client-credentials grant) so each worker
-  is individually attributable and revocable.
-- **Org isolation** — a job carries its `org_id`; the worker binds it as the
-  execution org so outputs land in that org's namespace (§6). A worker only ever
-  claims jobs for its own `STUDIO_ORG_ID`.
-- **No inbound** — pull-mode boxes expose nothing; the coordinator is reached
-  over TLS via `hanzoai/ingress`.
-
-## 6. Output persistence **[specced]**
-
-Push/pull both execute on the worker, which writes to *its own* output dir
-(org-scoped via `folder_paths.set_execution_org`). For the coordinator UI to
-show results, workers must ship artifacts to shared storage:
-
-- On completion, upload outputs to `s3.lux.cloud` (hanzo bucket),
-  key `studio/{org_id}/{prompt_id}/{filename}`.
-- Report the object URLs in the `result` message; the coordinator records them
-  in history so `/view` (or a signed redirect) serves them.
-
-Until this lands, push-mode results remain on the worker and are addressable
-only if the worker is reachable — acceptable for the in-cluster pool, blocking
-for the NAT pull pool. This is the top build item after the pull channel.
+The durable queue, engine selection, and dispatch are deliberately kept in a thin
+Python layer at the `PromptQueue`/`prompt_router` seams so the backend can be
+swapped without touching the render path. Two moves are planned: (a) a **remote
+queue backend** — the same job state machine served by **Hanzo Tasks**
+(`github.com/hanzoai/tasks`) over its HTTP surface, so multiple coordinators and
+NAT'd `--worker`-style claimers share one durable queue instead of a local file;
+and (b) folding that scheduling/queue layer into a **Go subsystem inside the
+`hanzoai/cloud` unified binary** (HIP-0106), leaving Studio's Python as a pure
+execution worker. The engine selector will likewise grow a third class,
+**leased cloud machines** provisioned via the platform's Visor compute surface
+(`GET {cloud}/v1/machines`) — the `/v1/engines` shape already accommodates the
+extra entries; the client interface is stubbed in `engine_selector.py` and wired
+when the console lands.
 
 ## 7. Joining a local box (GB10)
 
-```bash
-python main.py \
-  --worker-mode \
-  --coordinator-url https://studio.hanzo.ai \
-  --worker-id gb10-1
-# env: STUDIO_ORG_ID=<org>  STUDIO_WORKER_TOKEN=<from KMS>
-```
+Two paths today:
 
-Today (push) this works only if the coordinator can reach the box (set
-`WORKER_EXTERNAL_URL`). Once §2b lands, the box needs **no** inbound access: it
-registers, opens the WSS channel, and pulls jobs for its org.
+- **Shared queue** (durable): point the box at the same `STUDIO_QUEUE_DB` (shared
+  volume) as the coordinator; its prompt-executor thread claims jobs directly.
+  Exactly-once claim + crash-recovery hold across processes.
+- **Push** (in-cluster, fast): `python main.py --worker-mode --coordinator-url … --worker-id gb10-1`
+  with `STUDIO_WORKER_TOKEN`; requires the coordinator to reach the box.
 
-## 8. Build order
-
-1. Pull WSS channel `/v1/workers/connect` + coordinator per-worker queue (§2b).
-2. Artifact upload to `s3.lux.cloud` + result recording (§6).
-3. IAM service-account worker identity replacing the shared secret (§5).
-4. Fold `/compute/*` profile routes to `/v1/compute/*` (§3).
+The remote-queue backend (§6) generalizes the shared-queue path to boxes that
+cannot share a filesystem, outbound-only.

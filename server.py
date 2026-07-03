@@ -215,7 +215,15 @@ class PromptServer():
         self.node_replace_manager = NodeReplaceManager()
         self.internal_routes = InternalRoutes(self)
         self.supports = ["custom_nodes_from_web"]
-        self.prompt_queue = execution.PromptQueue(self)
+        # Queue backend precedence: SQLite (durable, zero external process) >
+        # PERSIST (JSON snapshot) > memory. STUDIO_QUEUE_DB opts into the
+        # crash-durable SQLite queue; without it Studio behaves exactly as
+        # before (in-memory + optional JSON snapshot).
+        if os.environ.get("STUDIO_QUEUE_DB"):
+            from middleware.tasks_queue import SqlitePromptQueue
+            self.prompt_queue = SqlitePromptQueue(self)
+        else:
+            self.prompt_queue = execution.PromptQueue(self)
         self.loop = loop
         self.messages = asyncio.Queue()
         self.client_session:Optional[aiohttp.ClientSession] = None
@@ -1292,6 +1300,8 @@ class PromptServer():
         self.custom_node_manager.add_routes(self.routes, self.app, nodes.LOADED_MODULE_DIRS.items())
         self.subgraph_manager.add_routes(self.routes, nodes.LOADED_MODULE_DIRS.items())
         self.node_replace_manager.add_routes(self.routes)
+        from middleware.engine_selector import add_engine_routes
+        add_engine_routes(self.routes, self)
         self.app.add_subapp('/internal', self.internal_routes.get_app())
 
         # Prefix every route with /api for easier matching for delegation.

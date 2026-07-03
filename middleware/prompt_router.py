@@ -59,6 +59,17 @@ async def route_prompt(
     if device_pref == "cpu":
         return None
 
+    # Engine selector: if the org picked a specific worker as its default
+    # engine, route there. `local` (the default) leaves current behavior
+    # unchanged. See middleware/engine_selector.py.
+    from middleware.engine_selector import resolve_engine_worker
+    engine_worker = resolve_engine_worker(org_id)
+    if engine_worker is not None:
+        result = await forward_to_worker(engine_worker, json_data)
+        if result is not None:
+            return {"action": "forward", "worker": engine_worker, "response": result}
+        logger.warning("Default engine %s failed, falling through", engine_worker.worker_id)
+
     config = load_config(org_id)
 
     # No GPU enabled in profile — execute locally
