@@ -38,9 +38,16 @@ def user_manager(mock_user_directory):
 
 @pytest.fixture
 def mock_request():
-    """Create a mock request object."""
+    """Create a mock request object.
+
+    A real aiohttp request is a Mapping whose .get("iam_user") is None when no
+    IAM middleware ran; MagicMock's default .get is truthy, which would send
+    get_request_user_id down the IAM branch and mask the studio-user header
+    path these tests exercise. Pin it to None.
+    """
     request = MagicMock()
     request.headers = {}
+    request.get = MagicMock(return_value=None)
     return request
 
 

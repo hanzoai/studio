@@ -62,6 +62,9 @@ class UserManager():
         iam_user = request.get("iam_user")
         if iam_user and iam_user.get("sub") and iam_user["sub"] != "local":
             user = iam_user["sub"]
+            # A token subject must never escape into a System User namespace.
+            if user.startswith(folder_paths.SYSTEM_USER_PREFIX):
+                raise KeyError("Unknown user: " + user)
             # Auto-register IAM users
             if user not in self.users:
                 display = iam_user.get("name") or iam_user.get("email") or user
@@ -95,7 +98,7 @@ class UserManager():
             raise KeyError("Unknown filepath type:" + type)
 
         user = self.get_request_user_id(request)
-        user_root = folder_paths.get_public_user_directory(user)
+        user_root = folder_paths.get_public_user_directory(user, org_id)
         if user_root is None:
             return None
         path = user_root

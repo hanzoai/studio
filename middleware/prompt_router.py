@@ -90,17 +90,18 @@ async def forward_to_worker(worker: WorkerInfo, json_data: dict) -> Optional[dic
     """
     Forward a prompt to a remote worker via HTTP POST.
 
-    The worker exposes /api/worker/execute which accepts the same JSON body
+    The worker exposes /v1/worker/execute which accepts the same JSON body
     as POST /prompt and returns the same response shape.
 
     Returns the worker's JSON response or None on failure.
     """
-    url = f"{worker.url.rstrip('/')}/api/worker/execute"
+    from middleware.worker_client import _worker_headers
+    url = f"{worker.url.rstrip('/')}/v1/worker/execute"
     logger.info("Forwarding prompt to worker %s at %s", worker.worker_id, url)
 
     try:
         session = await _get_session()
-        async with session.post(url, json=json_data) as resp:
+        async with session.post(url, json=json_data, headers=_worker_headers()) as resp:
             if resp.status == 200:
                 return await resp.json()
             logger.warning(

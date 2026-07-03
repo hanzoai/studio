@@ -1,0 +1,41 @@
+# Canonical CI/CD config for hanzoai/studio — read by both the hanzoai/ci
+# reusable workflow (.github/workflows/cicd.yml) and platform.hanzo.ai.
+# One image, unit gates, and a main-branch rollout onto the existing
+# `studio` operator Service CR (universe: infra/k8s/operator/crs/studio.yaml).
+
+images:
+  - name: studio
+    context: .
+    dockerfile: Dockerfile
+    repo: ghcr.io/hanzoai/studio
+
+# CI gates. Full requirements (CPU torch) are installed so every import
+# resolves, then the dependency-light unit suites run (auth, tenancy, user
+# manager, prompt server). Inference/execution/GPU suites run out-of-band.
+test:
+  - name: unit
+    run: |
+      uv venv --python 3.11
+      uv pip install -r requirements.txt pytest pytest-aiohttp pytest-asyncio
+      uv run pytest -q \
+        tests-unit/folder_paths_test \
+        tests-unit/middleware_test \
+        tests-unit/app_test \
+        tests-unit/prompt_server_test
+
+# Deploy: roll the freshly-built image onto the studio Service CR.
+deploy:
+  cluster: do-sfo3-hanzo-k8s
+  namespace: hanzo
+  # Quoted to dodge YAML 1.1 boolean coercion of a bare `on:` key.
+  "on": [main]
+  services:
+    - name: studio
+      image: studio
+
+# KMS (kms.hanzo.ai, Universal Auth) supplies the GHCR push token and the
+# target kubeconfig at run time. Only KMS_CLIENT_ID/KMS_CLIENT_SECRET live in
+# GitHub; everything else is fetched here.
+kms:
+  path: /deploy
+  environment: prod

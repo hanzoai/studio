@@ -267,7 +267,12 @@ def prompt_worker(q, server_instance):
             for k in sensitive:
                 extra_data[k] = sensitive[k]
 
-            e.execute(item[2], prompt_id, extra_data, item[4])
+            # Tenancy: scope this execution's output/temp/input dirs to the org.
+            folder_paths.set_execution_org(extra_data.get("org_id"))
+            try:
+                e.execute(item[2], prompt_id, extra_data, item[4])
+            finally:
+                folder_paths.set_execution_org(None)
             need_gc = True
 
             remove_sensitive = lambda prompt: prompt[:5] + prompt[6:]

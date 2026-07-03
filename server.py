@@ -223,12 +223,14 @@ class PromptServer():
 
         middlewares = [cache_control, deprecation_warning]
 
+        self._iam_auth = None
         if args.enable_iam_auth:
             localhost_bypass = not args.no_localhost_bypass
-            middlewares.append(create_iam_auth_middleware(
+            self._iam_auth = create_iam_auth_middleware(
                 iam_url=args.iam_url,
                 localhost_bypass=localhost_bypass,
-            ))
+            )
+            middlewares.append(self._iam_auth)
 
         # Rate limiting (after auth so we have org context)
         middlewares.append(create_rate_limit_middleware(rpm=args.rate_limit_rpm))
@@ -249,6 +251,9 @@ class PromptServer():
 
         max_upload_size = round(args.max_upload_size * 1024 * 1024)
         self.app = web.Application(client_max_size=max_upload_size, middlewares=middlewares)
+        # OIDC Authorization Code callback (standard code flow, standalone app).
+        if self._iam_auth is not None:
+            self.app.router.add_get("/callback", self._iam_auth.handle_callback)
         self.sockets = dict()
         self.sockets_metadata = dict()
         self.web_root = (
@@ -1033,6 +1038,7 @@ class PromptServer():
                         if sensitive_val in extra_data:
                             sensitive[sensitive_val] = extra_data.pop(sensitive_val)
                     extra_data["create_time"] = int(time.time() * 1000)  # timestamp in milliseconds
+                    extra_data["org_id"] = self._get_org_id(request)  # tenancy: scope outputs to org
                     self.prompt_queue.put((number, prompt_id, prompt, extra_data, outputs_to_execute, sensitive))
                     response = {"prompt_id": prompt_id, "number": number, "node_errors": valid[3]}
                     return web.json_response(response)
@@ -1143,7 +1149,7 @@ class PromptServer():
 
             return web.json_response(config.to_dict())
 
-        @routes.get("/compute/workers")
+        @routes.get("/v1/workers")
         async def get_compute_workers(request):
             """List workers and their status for the org."""
             org_id = self._get_org_id(request)
@@ -1162,9 +1168,12 @@ class PromptServer():
                 workers.append(wd)
             return web.json_response({"workers": workers})
 
-        @routes.post("/compute/workers/register")
+        @routes.post("/v1/workers/register")
         async def post_worker_register(request):
-            """Worker self-registration / heartbeat endpoint."""
+            """Worker self-registration / heartbeat endpoint (coordinator trust)."""
+            from middleware.worker_client import verify_worker_token
+            if not verify_worker_token(request):
+                return web.json_response({"error": "Unauthorized worker"}, status=401)
             try:
                 data = await request.json()
             except Exception:

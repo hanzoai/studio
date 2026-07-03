@@ -23,6 +23,23 @@ logger = logging.getLogger(__name__)
 # Heartbeat interval in seconds
 HEARTBEAT_INTERVAL = 30
 
+# Shared secret authenticating worker<->coordinator traffic. These endpoints are
+# exempt from user IAM (they carry no user token), so without this a rogue caller
+# could register a worker URL to hijack an org's jobs. Sourced from KMS in cloud;
+# empty in local/dev (single trust domain) where the check is skipped.
+WORKER_TOKEN = os.environ.get("STUDIO_WORKER_TOKEN", "")
+
+
+def verify_worker_token(request) -> bool:
+    """True if the request carries the coordinator shared secret (or none is set)."""
+    if not WORKER_TOKEN:
+        return True
+    return request.headers.get("X-Worker-Token", "") == WORKER_TOKEN
+
+
+def _worker_headers() -> dict:
+    return {"X-Worker-Token": WORKER_TOKEN} if WORKER_TOKEN else {}
+
 
 def get_device_info() -> dict:
     """Detect local device capabilities for worker registration."""
@@ -91,10 +108,10 @@ class WorkerClient:
             **self._device_info,
         }
 
-        url = f"{self.coordinator_url}/api/compute/workers/register"
+        url = f"{self.coordinator_url}/v1/workers/register"
         try:
             session = await self._get_session()
-            async with session.post(url, json=payload) as resp:
+            async with session.post(url, json=payload, headers=_worker_headers()) as resp:
                 if resp.status == 200:
                     logger.debug("Heartbeat sent to %s", url)
                     return True
@@ -136,16 +153,16 @@ class WorkerClient:
 
 def add_worker_routes(routes: web.RouteTableDef, prompt_server):
     """
-    Add the /worker/execute endpoint that receives prompts from the coordinator.
-
-    Note: This is registered as /worker/execute (not /api/worker/execute) because
-    server.py's add_routes() auto-prefixes all RouteTableDef routes with /api.
-    The final path will be /api/worker/execute.
+    Add the /v1/worker/execute endpoint that receives prompts from the coordinator
+    (push model, for in-cluster reachable workers). server.py also serves it under
+    the /api alias. NAT'd workers use the pull model instead (see federation doc).
     """
 
-    @routes.post("/worker/execute")
+    @routes.post("/v1/worker/execute")
     async def worker_execute(request):
         """Execute a prompt forwarded by the coordinator."""
+        if not verify_worker_token(request):
+            return web.json_response({"error": "Unauthorized worker"}, status=401)
         try:
             json_data = await request.json()
         except Exception:

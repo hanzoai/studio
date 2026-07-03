@@ -1,0 +1,16 @@
+# Canonical CI/CD — imports the shared hanzoai/ci reusable workflow, which
+# reads hanzo.yml (images + test + deploy + kms). No per-repo build logic,
+# no GitHub-hosted runners (defaults to the Hanzo cloud arc pool).
+name: CI/CD
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  cicd:
+    uses: hanzoai/ci/.github/workflows/build.yml@v1
+    secrets: inherit

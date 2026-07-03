@@ -58,8 +58,29 @@ input_directory = os.path.join(base_path, "input")
 user_directory = os.path.join(base_path, "user")
 
 # --- Multi-tenant org-scoped storage ---
+import contextvars
+
 _org_id: str | None = args.org_id if hasattr(args, "org_id") else None
 _multi_tenant: bool = getattr(args, "multi_tenant", False)
+
+# Per-execution org, set by the prompt worker thread before a graph runs so that
+# nodes writing outputs (SaveImage -> get_output_directory) land in the org's
+# namespace. A ContextVar isolates the worker thread from concurrent async web
+# handlers, which resolve org explicitly per-request instead. Default None means
+# "no active execution org" -> fall back to the process org (_org_id) or base.
+_execution_org: contextvars.ContextVar[str | None] = contextvars.ContextVar(
+    "studio_execution_org", default=None
+)
+
+
+def set_execution_org(org_id: str | None) -> None:
+    """Bind the org for the current execution context (worker thread)."""
+    _execution_org.set(org_id)
+
+
+def get_execution_org() -> str | None:
+    """Return the org bound to the current execution context, if any."""
+    return _execution_org.get()
 
 
 def set_org_id(org_id: str | None) -> None:
@@ -87,33 +108,33 @@ def get_org_base_path(org_id: str | None = None) -> str:
 
 
 def get_org_output_directory(org_id: str | None = None) -> str:
-    """Get org-scoped output directory."""
+    """Get org-scoped output directory. Falls back to the base output dir."""
     ob = get_org_base_path(org_id)
     if ob != base_path:
         d = os.path.join(ob, "output")
         os.makedirs(d, exist_ok=True)
         return d
-    return get_output_directory()
+    return output_directory
 
 
 def get_org_input_directory(org_id: str | None = None) -> str:
-    """Get org-scoped input directory."""
+    """Get org-scoped input directory. Falls back to the base input dir."""
     ob = get_org_base_path(org_id)
     if ob != base_path:
         d = os.path.join(ob, "input")
         os.makedirs(d, exist_ok=True)
         return d
-    return get_input_directory()
+    return input_directory
 
 
 def get_org_temp_directory(org_id: str | None = None) -> str:
-    """Get org-scoped temp directory."""
+    """Get org-scoped temp directory. Falls back to the base temp dir."""
     ob = get_org_base_path(org_id)
     if ob != base_path:
         d = os.path.join(ob, "temp")
         os.makedirs(d, exist_ok=True)
         return d
-    return get_temp_directory()
+    return temp_directory
 
 
 def get_org_user_directory(org_id: str | None = None) -> str:
@@ -196,16 +217,15 @@ def set_input_directory(input_dir: str) -> None:
     input_directory = input_dir
 
 def get_output_directory() -> str:
-    global output_directory
-    return output_directory
+    # Resolve against the current execution org (worker thread) when set; in
+    # single-tenant mode get_org_output_directory returns the base dir unchanged.
+    return get_org_output_directory(_execution_org.get())
 
 def get_temp_directory() -> str:
-    global temp_directory
-    return temp_directory
+    return get_org_temp_directory(_execution_org.get())
 
 def get_input_directory() -> str:
-    global input_directory
-    return input_directory
+    return get_org_input_directory(_execution_org.get())
 
 def get_user_directory() -> str:
     return user_directory
@@ -252,7 +272,7 @@ def get_system_user_directory(name: str = "system") -> str:
     return os.path.join(get_user_directory(), f"{SYSTEM_USER_PREFIX}{name}")
 
 
-def get_public_user_directory(user_id: str) -> str | None:
+def get_public_user_directory(user_id: str, org_id: str | None = None) -> str | None:
     """
     Get the path to a Public User directory for HTTP endpoint access.
 
@@ -260,8 +280,15 @@ def get_public_user_directory(user_id: str) -> str | None:
     System User (prefixed with '__'). All HTTP endpoints should use this
     function instead of directly constructing user paths.
 
+    In multi-tenant mode the user directory is rooted under the org namespace
+    (user/orgs/{org_id}/user/{user_id}); otherwise it is the flat
+    user/{user_id}. Passing org_id keeps the returned path a child of
+    get_org_user_directory(org_id), which callers rely on for containment
+    checks.
+
     Args:
         user_id: User identifier from HTTP request.
+        org_id: Organization the user belongs to (from the IAM token), or None.
 
     Returns:
         Absolute path to the user directory, or None if user_id is invalid
@@ -277,7 +304,7 @@ def get_public_user_directory(user_id: str) -> str | None:
         return None
     if user_id.startswith(SYSTEM_USER_PREFIX):
         return None
-    return os.path.join(get_user_directory(), user_id)
+    return os.path.join(get_org_user_directory(org_id), user_id)
 
 
 #NOTE: used in http server so don't put folders that should not be accessed remotely
