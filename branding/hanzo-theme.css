@@ -62,3 +62,81 @@ body.litegraph,
 #vue-app {
   background-color: #000000 !important;
 }
+
+/* ── hover/active states: dark surfaces, never light (fix white-on-white) ── */
+:root, :root.dark-theme {
+  --p-content-hover-background: #1f1f23 !important;
+  --p-content-hover-color: #ffffff !important;
+  --p-navigation-item-hover-background: #1f1f23 !important;
+  --p-list-option-focus-background: #26262b !important;
+  --p-select-option-focus-background: #26262b !important;
+  --p-button-text-secondary-hover-background: #1f1f23 !important;
+  --p-button-text-primary-hover-background: rgba(139,92,246,.16) !important;
+  --p-button-secondary-hover-background: #26262b !important;
+  --p-togglebutton-hover-background: #26262b !important;
+  --p-tab-hover-background: #1f1f23 !important;
+  --p-menubar-item-focus-background: #26262b !important;
+  --p-menu-item-focus-background: #26262b !important;
+  --p-tree-node-hover-background: #1f1f23 !important;
+  --p-surface-100: #26262b !important;
+  --p-surface-200: #1f1f23 !important;
+  --p-highlight-background: rgba(139,92,246,.20) !important;
+  --p-highlight-color: #ffffff !important;
+}
+.side-tool-bar-container .p-button:hover,
+.side-bar-button:hover,
+.comfyui-button:hover {
+  background: #1f1f23 !important;
+  color: #fff !important;
+}
+.p-button-text:not(.p-button-danger):hover { background: #1f1f23 !important; color: #fff !important; }
+
+/* ── the H logo menu button: keep the mark visible on hover/open ── */
+button:has(> .comfyui-logo):hover,
+button:has(.comfyui-logo):hover,
+.p-button:has(.comfyui-logo):hover,
+button:has(.comfyui-logo)[aria-expanded="true"],
+.comfyui-logo-menu-trigger:hover {
+  background: #1f1f23 !important;
+}
+button:has(.comfyui-logo):hover .comfyui-logo,
+button:has(.comfyui-logo):hover svg,
+button:has(.comfyui-logo):hover path {
+  color: #ffffff !important;
+  fill: #ffffff !important;
+}
+
+/* ── active/selected/checked states: never white (white-box-under-H fix) ── */
+:root, :root.dark-theme {
+  --p-button-secondary-active-background: #26262b !important;
+  --p-togglebutton-checked-background: #2a2140 !important;
+  --p-togglebutton-checked-color: #c4b5fd !important;
+  --p-navigation-item-active-background: #26262b !important;
+  --p-tab-active-background: #0a0a0a !important;
+  --p-button-text-primary-active-background: rgba(139,92,246,.24) !important;
+}
+.side-tool-bar-container .p-button.p-highlight,
+.side-tool-bar-container .p-togglebutton.p-togglebutton-checked,
+.side-tool-bar-container [aria-pressed="true"],
+.side-tool-bar-container .p-button:active,
+.p-selectbutton .p-button.p-highlight {
+  background: #2a2140 !important;
+  color: #c4b5fd !important;
+}
+.side-tool-bar-container .p-button.p-highlight svg,
+.side-tool-bar-container [aria-pressed="true"] svg { color: #c4b5fd !important; fill: currentColor !important; }
+
+/* ── selected sidebar icon: purple-tinted dark, never white ── */
+:root, :root.dark-theme {
+  --interface-panel-selected-surface: #2a2140 !important;
+  --interface-menu-component-surface-selected: #2a2140 !important;
+}
+.side-bar-button-selected {
+  background-color: #2a2140 !important;
+  color: #c4b5fd !important;
+}
+.side-bar-button-selected svg, .side-bar-button-selected i { color: #c4b5fd !important; }
+.selected:not(.p-galleria-thumbnail-item) {
+  background-color: #2a2140 !important;
+  color: #e5e5e5 !important;
+}
