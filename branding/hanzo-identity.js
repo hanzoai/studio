@@ -16,7 +16,7 @@
   "use strict";
   if (window.__hanzoIdentityLoaded) return;
   window.__hanzoIdentityLoaded = true;
-  var VERSION = "1";
+  var VERSION = "2";
 
   // ------------------------------------------------------------- dom helper
   function el(tag, attrs, kids) {
@@ -43,7 +43,10 @@
   function getSession() {
     return fetch("./v1/session", { headers: { Accept: "application/json" }, credentials: "same-origin" })
       .then(function (r) {
-        if (r.status === 401) return { authenticated: false };
+        // 401 is the real "not signed in" (auth on, no valid token) -> Sign in.
+        // A 200 body is always a usable session (a real IAM user in the cloud, or
+        // the local single-user stub when auth is off) -> render the pill.
+        if (r.status === 401) return { signedOut: true };
         if (!r.ok) throw new Error("HTTP " + r.status);
         return r.json();
       });
@@ -123,7 +126,7 @@
     var s = state.session;
     if (!s) return;
 
-    if (s.authenticated === false) {
+    if (s.signedOut) {
       root.appendChild(el("a", { class: "hzid-pill hzid-signin", href: "/login" }, [
         el("span", { text: "Sign in with Hanzo" }),
       ]));
