@@ -45,6 +45,7 @@ PUBLIC_PATH_PREFIXES = (
 PUBLIC_PATHS_EXACT = {
     "/",
     "/callback",
+    "/login",
     "/health",
     "/ready",
     "/metrics",
@@ -250,7 +251,7 @@ def create_iam_auth_middleware(iam_url: str, localhost_bypass: bool = True):
                 _token_cache.pop(k, None)
         return user
 
-    def _authorize_redirect(request: web.Request) -> web.Response:
+    def _authorize_redirect(request: web.Request, target: str | None = None) -> web.Response:
         base = _external_base(request)
         verifier = _b64url(secrets.token_bytes(32))
         challenge = _b64url(hashlib.sha256(verifier.encode()).digest())
@@ -258,7 +259,7 @@ def create_iam_auth_middleware(iam_url: str, localhost_bypass: bool = True):
         state_payload = {
             "n": nonce,
             "v": verifier,
-            "t": str(request.rel_url),
+            "t": target or str(request.rel_url),
             "exp": int(_time.time()) + _STATE_TTL,
         }
         state = _sign_state(state_payload, client_id)  # HMAC key; secret optional
@@ -277,6 +278,29 @@ def create_iam_auth_middleware(iam_url: str, localhost_bypass: bool = True):
             secure=base.startswith("https"), samesite="Lax", path="/",
         )
         return resp
+
+    async def handle_login(request: web.Request) -> web.Response:
+        """Begin sign-in: the ONE server-owned entry point the login page links to.
+
+        The SPA's "Sign in with Hanzo" button targets this route so the OIDC
+        Authorization Code flow (PKCE + signed state + ``/callback``) is built
+        server-side — there is exactly one way to start a login, and the client
+        never hand-rolls an authorize URL. Already-authenticated callers skip
+        straight to the app; everyone else is bounced to IAM and returns to ``/``.
+        """
+        token = None
+        auth_header = request.headers.get("Authorization", "")
+        if auth_header.startswith("Bearer "):
+            token = auth_header[7:]
+        if not token:
+            token = request.cookies.get(_SESSION_COOKIE) or request.cookies.get("access_token")
+        if token:
+            try:
+                if await _validate(token):
+                    return web.HTTPFound("/")
+            except Exception:
+                pass  # IAM/JWKS hiccup — fall through and re-authenticate cleanly.
+        return _authorize_redirect(request, target="/")
 
     async def handle_callback(request: web.Request) -> web.Response:
         """Exchange the authorization code for a token and set the session cookie."""
@@ -369,6 +393,7 @@ def create_iam_auth_middleware(iam_url: str, localhost_bypass: bool = True):
         request["iam_user"] = user
         return await handler(request)
 
-    # Expose the callback handler so server.py can register the /callback route.
+    # Expose the login + callback handlers so server.py can register the routes.
+    iam_auth_middleware.handle_login = handle_login
     iam_auth_middleware.handle_callback = handle_callback
     return iam_auth_middleware

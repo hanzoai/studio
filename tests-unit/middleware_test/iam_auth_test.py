@@ -142,3 +142,57 @@ def test_public_paths(path):
 @pytest.mark.parametrize("path", ["/prompt", "/api/prompt", "/userdata/x", "/v1/compute/config"])
 def test_protected_paths(path):
     assert m._is_public_path(path) is False
+
+
+# --- server-owned login entry point (/login → OIDC code flow) ---
+
+def test_login_path_is_public():
+    # /login is served by the middleware's own handler, so it must bypass the
+    # token gate (it is the very thing an unauthenticated user clicks).
+    assert m._is_public_path("/login") is True
+
+
+def test_middleware_exposes_login_and_callback_handlers():
+    mw = m.create_iam_auth_middleware("https://hanzo.id/")
+    assert callable(getattr(mw, "handle_login", None))
+    assert callable(getattr(mw, "handle_callback", None))
+
+
+def test_handle_login_unauthenticated_starts_oidc_code_flow():
+    """The SPA button hits /login; the server builds the ONE authorize URL —
+    client_id=hanzo-studio, redirect_uri=<origin>/callback — never a root redirect."""
+    import asyncio
+    from aiohttp.test_utils import make_mocked_request
+
+    mw = m.create_iam_auth_middleware("https://hanzo.id")
+    req = make_mocked_request(
+        "GET", "/login",
+        headers={"X-Forwarded-Proto": "https", "X-Forwarded-Host": "studio.hanzo.ai"},
+    )
+    resp = asyncio.run(mw.handle_login(req))
+    assert resp.status == 302
+    loc = resp.headers["Location"]
+    assert loc.startswith("https://hanzo.id/v1/iam/oauth/authorize?")
+    assert "client_id=hanzo-studio" in loc
+    # aiohttp returns the Location header URL-decoded; the wire value is %-encoded.
+    assert "redirect_uri=https://studio.hanzo.ai/callback" in loc
+    # The pending-login state cookie is set so /callback can verify PKCE + CSRF.
+    assert m._STATE_COOKIE in resp.cookies
+
+
+def test_handle_login_returns_to_app_root_not_the_login_path():
+    """Post-login must land on the app root ('/'), never bounce back to '/login'
+    (which would re-trigger the flow). The signed return path proves it."""
+    import asyncio
+    from aiohttp.test_utils import make_mocked_request
+
+    mw = m.create_iam_auth_middleware("https://hanzo.id")
+    req = make_mocked_request(
+        "GET", "/login",
+        headers={"X-Forwarded-Proto": "https", "X-Forwarded-Host": "studio.hanzo.ai"},
+    )
+    resp = asyncio.run(mw.handle_login(req))
+    cookie = resp.cookies[m._STATE_COOKIE].value
+    # State is HMAC-signed with the client_id key (see _sign_state usage).
+    payload = m._verify_state(cookie, "hanzo-studio")
+    assert payload is not None and payload["t"] == "/"

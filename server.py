@@ -259,8 +259,10 @@ class PromptServer():
 
         max_upload_size = round(args.max_upload_size * 1024 * 1024)
         self.app = web.Application(client_max_size=max_upload_size, middlewares=middlewares)
-        # OIDC Authorization Code callback (standard code flow, standalone app).
+        # OIDC Authorization Code flow (standard code flow, standalone app):
+        # /login begins it (the login page's sole entry point), /callback ends it.
         if self._iam_auth is not None:
+            self.app.router.add_get("/login", self._iam_auth.handle_login)
             self.app.router.add_get("/callback", self._iam_auth.handle_callback)
         self.sockets = dict()
         self.sockets_metadata = dict()
@@ -387,7 +389,6 @@ class PromptServer():
                     if os.path.isfile(login_page):
                         with open(login_page, "r") as f:
                             html = f.read()
-                        html = html.replace("{{IAM_URL}}", args.iam_url.rstrip("/"))
                         return web.Response(
                             text=html,
                             content_type="text/html",

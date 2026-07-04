@@ -186,7 +186,7 @@
       with a node-based editor. Scale to GPU on demand.
     </p>
 
-    <a class="btn" id="login-btn" href="#">
+    <a class="btn" id="login-btn" href="/login">
       Sign in with Hanzo
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
         <path fill-rule="evenodd" d="M3 10a.75.75 0 01.75-.75h10.638L11.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 11-1.04-1.08l3.158-2.96H3.75A.75.75 0 013 10z" clip-rule="evenodd" />
@@ -242,14 +242,5 @@
       <a href="https://discord.gg/hanzoai">Discord</a>
     </p>
   </div>
-
-  <script>
-    (function() {
-      var iamUrl = '{{IAM_URL}}';
-      var redirectUri = encodeURIComponent(window.location.href);
-      document.getElementById('login-btn').href =
-        iamUrl + '/login?redirect_uri=' + redirectUri;
-    })();
-  </script>
 </body>
 </html>
