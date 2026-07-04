@@ -292,23 +292,18 @@ def prompt_worker(q, server_instance):
             if enable_metrics:
                 metrics_middleware.record_prompt_end(execution_time, e.success)
 
-            # Record billing usage (fire-and-forget via event loop)
-            if enable_billing:
-                # Get user/org from extra_data if available
-                client_id = extra_data.get("client_id", "anonymous")
-                node_count = len(item[2]) if item[2] else 0
-                import asyncio
-                loop = server_instance.loop
+            # Billing: emit ONE metered usage event per completed render
+            # (fire-and-forget). org_id is the IAM tenant; prompt_id is the
+            # idempotency key; quantity is the number of artifacts produced.
+            # Never blocks or fails a render; no-op unless STUDIO_BILLING_* is set.
+            if enable_billing and e.success:
                 asyncio.run_coroutine_threadsafe(
-                    billing_middleware.record_usage(
-                        user=client_id,
-                        org_id=os.environ.get("STUDIO_ORG_ID", "default"),
+                    billing_middleware.record_render(
+                        org_id=extra_data.get("org_id") or "default",
                         prompt_id=prompt_id,
-                        execution_time=execution_time,
-                        success=e.success,
-                        node_count=node_count,
+                        n_outputs=billing_middleware.count_outputs(e.history_result),
                     ),
-                    loop,
+                    server_instance.loop,
                 )
 
             # Log Time in a more readable way after 10 minutes

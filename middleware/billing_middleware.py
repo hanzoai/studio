@@ -1,14 +1,23 @@
 """
 Commerce billing integration for Hanzo Studio.
 
-Records prompt execution usage to the Commerce billing API.
-Optionally checks balance before accepting expensive operations.
+record_render — emits ONE metered usage event per completed render to the
+Commerce meter-events API. Fire-and-forget: a billing failure never blocks or
+fails a render. Env-gated (all three required; absent locally = no-op):
 
-Commerce API: POST /api/v1/billing/usage
-Commerce API: GET  /api/v1/billing/balance
+    STUDIO_BILLING_URL     full URL of POST /v1/billing/meter-events
+    STUDIO_COMMERCE_TOKEN  commerce admin bearer (KMS /studio commerce-token)
+    STUDIO_BILLING_METER   id of the "studio render" meter (created in Commerce)
+
+Commerce contract — POST /v1/billing/meter-events:
+    {"events":[{"meterId","userId","value","idempotency","timestamp","dimensions"}]}
+Pricing lives on the meter in Commerce; Studio only reports raw quantity.
+
+check_balance — pre-existing optional pre-flight balance gate.
 """
 import logging
 import os
+from datetime import datetime, timezone
 
 import aiohttp
 
@@ -35,49 +44,76 @@ async def _get_session() -> aiohttp.ClientSession:
     return _shared_session
 
 
-async def record_usage(
-    user: str,
-    org_id: str,
-    prompt_id: str,
-    execution_time: float,
-    success: bool,
-    node_count: int = 0,
-) -> None:
-    """
-    Record prompt execution usage to Commerce billing API.
-    Fire-and-forget — errors are logged but do not block the response.
+def _cfg() -> tuple[str, str, str] | None:
+    """Return (url, token, meter_id) if render billing is fully configured, else None."""
+    url = os.environ.get("STUDIO_BILLING_URL", "").strip()
+    token = os.environ.get("STUDIO_COMMERCE_TOKEN", "").strip()
+    meter = os.environ.get("STUDIO_BILLING_METER", "").strip()
+    if url and token and meter:
+        return url, token, meter
+    return None
 
-    Pricing: 1 credit per prompt execution second (rounded up).
-    Minimum 1 credit per execution.
+
+def count_outputs(history_result: dict | None) -> int:
+    """Count media artifacts (images, gifs, audio, ...) a completed render produced."""
+    n = 0
+    for node_output in (history_result or {}).get("outputs", {}).values():
+        if isinstance(node_output, dict):
+            for v in node_output.values():
+                if isinstance(v, list):
+                    n += len(v)
+    return n
+
+
+async def record_render(org_id: str, prompt_id: str, n_outputs: int) -> None:
     """
-    if not COMMERCE_TOKEN:
+    Emit ONE metered usage event for a completed render to Commerce meter-events.
+
+    Fire-and-forget with a single retry (the idempotency key makes the retry safe
+    against double-counting). Never raises and never blocks: a billing failure
+    only logs, a render is never failed for it. No-op unless STUDIO_BILLING_URL,
+    STUDIO_COMMERCE_TOKEN and STUDIO_BILLING_METER are all set — so local dev is
+    unaffected.
+    """
+    cfg = _cfg()
+    if cfg is None:
         return
+    url, token, meter = cfg
 
-    # Calculate cost: 1 cent per second of execution, min 1 cent
-    amount = max(1, int(execution_time + 0.5))
-
-    url = f"{COMMERCE_URL.rstrip('/')}/api/v1/billing/usage"
     payload = {
-        "user": f"{org_id}/{user}" if org_id else user,
-        "currency": "usd",
-        "amount": amount,
-        "model": "studio",
-        "provider": "hanzo-studio",
-        "requestId": prompt_id,
-        "status": "success" if success else "error",
-        "promptTokens": node_count,
-        "completionTokens": 0,
-        "totalTokens": node_count,
+        "events": [
+            {
+                "meterId": meter,
+                "userId": org_id or "default",
+                "value": max(0, int(n_outputs)),
+                "idempotency": prompt_id,
+                "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                "dimensions": {"service": "studio"},
+            }
+        ]
     }
+    headers = {"Authorization": f"Bearer {token}"}
+    timeout = aiohttp.ClientTimeout(
+        total=float(os.environ.get("STUDIO_BILLING_TIMEOUT", "5"))
+    )
 
-    try:
-        session = await _get_session()
-        async with session.post(url, json=payload) as resp:
-            if resp.status not in (200, 201):
-                body = await resp.text()
-                logging.warning(f"Commerce billing error {resp.status}: {body}")
-    except Exception as e:
-        logging.warning(f"Commerce billing request failed: {e}")
+    for attempt in (1, 2):
+        try:
+            async with aiohttp.ClientSession(timeout=timeout) as session:
+                async with session.post(url, json=payload, headers=headers) as resp:
+                    if resp.status in (200, 201):
+                        return
+                    body = await resp.text()
+                    logging.warning(
+                        "billing: meter-events returned %s: %s", resp.status, body[:200]
+                    )
+                    if resp.status < 500:
+                        return  # deterministic client error — a retry won't help
+        except Exception as e:  # timeout / connection reset — retry once, then drop
+            logging.warning(
+                "billing: render usage post failed (attempt %d/2): %s", attempt, e
+            )
+    # Both attempts failed. Drop it — a render is never failed for billing.
 
 
 async def check_balance(user: str, org_id: str) -> tuple[bool, int]:
