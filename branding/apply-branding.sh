@@ -71,7 +71,14 @@ python3 "$BRANDING_DIR/patch_sidebar_logo.py" "$STATIC_DIR"
 # --- 7. Apply the black + Hanzo-purple theme ---
 # Installs hanzo-theme.css, injects it as the last stylesheet in index.html, and
 # rewrites the "dark" palette's canvas clear color to pure black.
-echo "[7/7] Applying black + purple theme..."
+echo "[7/8] Applying black + purple theme..."
 python3 "$BRANDING_DIR/patch_theme.py" "$STATIC_DIR" "$BRANDING_DIR"
+
+# --- 8. Seed the default 25-tab fashion workspace ---
+# Injects a <head> bootstrap that pre-populates the localStorage keys the
+# frontend reads to restore open workflow tabs. Idempotent; bump SEED_VERSION
+# in patch_workspace_seed.py to force existing profiles to re-seed once.
+echo "[8/8] Seeding default workspace tabs..."
+python3 "$BRANDING_DIR/patch_workspace_seed.py" "$STATIC_DIR"
 
 echo "=== Hanzo Studio branding complete ==="
