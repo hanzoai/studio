@@ -85,7 +85,20 @@ python3 "$BRANDING_DIR/patch_workspace_seed.py" "$STATIC_DIR"
 # Copies hanzo-copilot.{js,css} into static/ and injects them into index.html
 # (CSS link in <head>, deferred <script> before </body>). Pairs with the backend
 # route POST /v1/copilot/chat. Idempotent; bump BUNDLE_VERSION in patch_copilot.py.
-echo "[9/9] Injecting Copilot..."
+echo "[9/11] Injecting Copilot..."
 python3 "$BRANDING_DIR/patch_copilot.py" "$STATIC_DIR" "$BRANDING_DIR"
+
+# --- 10. Inject the Identity user menu (frontend bundle + on-brand CSS) ---
+# Top-right user pill driven by GET /v1/session: login/logout, org switcher,
+# project scope, Console link. Idempotent; bump BUNDLE_VERSION in patch_identity.py.
+echo "[10/11] Injecting Identity menu..."
+python3 "$BRANDING_DIR/patch_identity.py" "$STATIC_DIR" "$BRANDING_DIR"
+
+# --- 11. De-Comfy remaining English display strings ---
+# Sweeps the served English bundle for user-visible 'ComfyUI'/'Comfy' -> Studio
+# that the curated phrase list in patch_frontend.py cannot reach (mid-string),
+# plus the Settings dialog section headers. Runs LAST so it mops up everything.
+echo "[11/11] De-Comfy display strings..."
+python3 "$BRANDING_DIR/patch_destring.py" "$STATIC_DIR"
 
 echo "=== Hanzo Studio branding complete ==="

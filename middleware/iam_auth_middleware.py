@@ -49,6 +49,7 @@ PUBLIC_PATHS_EXACT = {
     "/health",
     "/ready",
     "/metrics",
+    "/logout",
     "/api/health",
     "/api/ready",
     "/api/features",
@@ -66,6 +67,7 @@ PUBLIC_PATHS_EXACT = {
 _OIDC_SCOPES = "openid profile email"
 _STATE_COOKIE = "studio_oauth"
 _SESSION_COOKIE = "hanzo_token"
+_ACTIVE_ORG_COOKIE = "studio_active_org"  # mirrors middleware.session.ACTIVE_ORG_COOKIE
 _STATE_TTL = 600  # seconds a pending login may take
 
 # Decoded-claims cache: hash(token) -> (user_info, expires_at_monotonic)
@@ -170,14 +172,47 @@ def _verify_state(blob: str, secret: str) -> dict | None:
 _ALGS = ["RS256", "RS512", "ES256", "ES384", "ES512"]
 
 
+def _orgs_from_claims(claims: dict) -> list[str]:
+    """Every org the token authorizes, home org first. IAM may carry the set as
+    ``organizations`` / ``orgs`` / ``groups`` (list or comma string); the home
+    org (``owner`` / ``organization``) is always included so the switcher has at
+    least one real entry."""
+    home = claims.get("owner") or claims.get("organization") or "default"
+    out = [home]
+    for key in ("organizations", "orgs", "groups"):
+        val = claims.get(key)
+        if isinstance(val, str):
+            val = [v.strip() for v in val.split(",") if v.strip()]
+        if isinstance(val, list):
+            for v in val:
+                v = v.get("name") if isinstance(v, dict) else v
+                if isinstance(v, str) and v and v not in out:
+                    out.append(v)
+    return out
+
+
 def _claims_to_user(claims: dict) -> dict:
+    orgs = _orgs_from_claims(claims)
     return {
         "sub": claims.get("sub", ""),
         "name": claims.get("name") or claims.get("preferred_username", ""),
         "email": claims.get("email", ""),
-        "org_id": claims.get("owner") or claims.get("organization") or "default",
+        "org_id": orgs[0],
+        "orgs": orgs,
         "avatar": claims.get("picture", ""),
     }
+
+
+def _with_active_org(user: dict, active_org_cookie: str | None) -> dict:
+    """Return a shallow copy of ``user`` whose ``org_id`` reflects a validated
+    active-org selection. A copy (never a mutation) keeps the token cache from
+    being poisoned across requests that carry different selection cookies."""
+    from middleware.session import resolve_org
+    orgs = user.get("orgs") or [user.get("org_id", "default")]
+    resolved = resolve_org(user.get("org_id", "default"), orgs, active_org_cookie)
+    if resolved == user.get("org_id"):
+        return user
+    return {**user, "org_id": resolved}
 
 
 def verify_jwt(token: str, key, issuer: str, audience: str | None) -> dict | None:
@@ -358,10 +393,12 @@ def create_iam_auth_middleware(iam_url: str, localhost_bypass: bool = True):
             return await handler(request)
 
         if localhost_bypass and _is_loopback_request(request):
-            request["iam_user"] = {
+            local_org = os.environ.get("STUDIO_ORG_ID", "default")
+            local_user = {
                 "sub": "local", "name": "Local User", "email": "",
-                "org_id": os.environ.get("STUDIO_ORG_ID", "default"), "avatar": "",
+                "org_id": local_org, "orgs": [local_org], "avatar": "",
             }
+            request["iam_user"] = _with_active_org(local_user, request.cookies.get(_ACTIVE_ORG_COOKIE))
             return await handler(request)
 
         token = None
@@ -390,7 +427,7 @@ def create_iam_auth_middleware(iam_url: str, localhost_bypass: bool = True):
                 return _authorize_redirect(request)
             return web.json_response({"error": "Invalid or expired token"}, status=401)
 
-        request["iam_user"] = user
+        request["iam_user"] = _with_active_org(user, request.cookies.get(_ACTIVE_ORG_COOKIE))
         return await handler(request)
 
     # Expose the login + callback handlers so server.py can register the routes.

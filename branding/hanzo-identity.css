@@ -1,0 +1,104 @@
+/* Hanzo Studio Identity menu — top-right user pill + dropdown.
+ * Matches the black + Hanzo-purple theme (hanzo-theme.css / hanzo-copilot.css). */
+
+.hanzo-identity {
+  position: fixed;
+  top: 6px;
+  right: 12px;
+  z-index: 3000;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-size: 13px;
+  color: #e5e5e5;
+}
+
+.hzid-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 30px;
+  padding: 0 10px 0 4px;
+  background: #1f1f23;
+  border: 1px solid #2a2140;
+  border-radius: 16px;
+  color: #e5e5e5;
+  cursor: pointer;
+  transition: border-color .12s ease, background .12s ease;
+}
+.hzid-pill:hover { border-color: #8b5cf6; background: #26262b; }
+
+.hzid-avatar,
+.hzid-avatar-lg {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, #8b5cf6, #7c3aed);
+  color: #fff;
+  font-weight: 700;
+  border-radius: 50%;
+}
+.hzid-avatar { width: 22px; height: 22px; font-size: 10px; }
+.hzid-avatar-lg { width: 36px; height: 36px; font-size: 14px; flex: 0 0 auto; }
+
+.hzid-pillname { font-weight: 600; max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hzid-org {
+  font-size: 11px;
+  color: #c4b5fd;
+  background: #2a2140;
+  padding: 1px 7px;
+  border-radius: 8px;
+}
+.hzid-caret { color: #a78bfa; font-size: 10px; }
+
+.hzid-signin { text-decoration: none; padding: 0 14px; }
+.hzid-signin:hover { color: #fff; }
+
+/* dropdown panel */
+.hzid-panel {
+  position: absolute;
+  top: 36px;
+  right: 0;
+  min-width: 232px;
+  background: #141414;
+  border: 1px solid #2a2140;
+  border-radius: 12px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, .55);
+  padding: 8px;
+  animation: hzid-in .12s ease;
+}
+@keyframes hzid-in { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
+
+.hzid-id { display: flex; align-items: center; gap: 10px; padding: 6px 8px 10px; }
+.hzid-idtext { min-width: 0; }
+.hzid-name { font-weight: 700; color: #fff; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hzid-email { font-size: 11px; color: #9a9aa0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.hzid-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  color: #7a7a82;
+  padding: 8px 8px 3px;
+}
+
+.hzid-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 7px 8px;
+  background: none;
+  border: 0;
+  border-radius: 8px;
+  color: #e5e5e5;
+  font: inherit;
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+}
+.hzid-item:hover { background: #26262b; }
+.hzid-active { color: #c4b5fd; }
+.hzid-tick { width: 14px; flex: 0 0 auto; color: #8b5cf6; font-size: 12px; }
+.hzid-sep { height: 1px; background: #26262b; margin: 8px 4px; }
+.hzid-logout:hover { background: #2a1414; color: #ff8b8b; }
+.hzid-logout .hzid-tick { color: #ff8b8b; }

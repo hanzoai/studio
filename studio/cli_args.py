@@ -224,6 +224,7 @@ parser.add_argument("--enable-compress-response-body", action="store_true", help
 # --- IAM Authentication ---
 parser.add_argument("--enable-iam-auth", action="store_true", help="Enable IAM authentication via hanzo.id. Requires valid Bearer token for API access. Localhost is exempt by default.")
 parser.add_argument("--iam-url", type=str, default=os.environ.get("STUDIO_IAM_URL", "https://hanzo.id"), help="IAM server URL for token validation (default: https://hanzo.id).")
+parser.add_argument("--console-url", type=str, default=os.environ.get("STUDIO_CONSOLE_URL", "https://console.hanzo.ai"), help="Hanzo Console URL the Studio user menu links back to (default: https://console.hanzo.ai).")
 parser.add_argument("--no-localhost-bypass", action="store_true", help="Disable localhost auth bypass (require IAM tokens even for local connections).")
 
 # --- Multi-tenant ---

@@ -103,10 +103,54 @@ shared Hanzo IAM (standard OIDC code flow). No embedding.
   Tested: `middleware_test/copilot_test.py` (op-validation + mocked tool loop) and
   `branding/copilot_smoke.py` (headless: applier mutates a mock graph + panel
   renders). Live end-to-end needs one server restart to register the route.
+- **Identity user menu + session API** (`middleware/session.py` +
+  `branding/hanzo-identity.{js,css}`): the top-right user menu, driven entirely
+  by the IAM-validated token. Backend (thin, `/v1` house style, registered in
+  `add_routes` so it works auth-on and auth-off): `GET /v1/session` →
+  `{user,email,org,orgs[],project,projects[],console_url,iam_url,authenticated}`
+  read from `request["iam_user"]`; `POST /v1/session/org` sets the active org
+  (validated against membership → `studio_active_org` cookie); `POST
+  /v1/session/project` sets the workflow-workspace project scope; `GET|POST
+  /logout` clears the session + selection cookies and bounces to the IAM
+  end-session → `/login`. **Org switching is real, one hook**: the auth
+  middleware applies `session.resolve_org(...)` to a COPY of the validated user
+  (never the cached dict) so `iam_user["org_id"]` — the id every tenancy/output
+  path already reads — reflects the switch; membership comes from
+  `_orgs_from_claims` (`owner` + `organizations`/`orgs`/`groups`, list or CSV or
+  `{name}` dicts, home first, deduped). Frontend is a SPA-agnostic fixed pill +
+  dropdown (avatar/initials, user, org switcher, project switcher, Console
+  link → `console.hanzo.ai`, Logout); 401 → "Sign in with Hanzo" → `/login`.
+  Injected by `branding/patch_identity.py` (step 10 of `apply-branding.sh`,
+  same seam as the copilot). `window.HanzoIdentity` is exposed for tests.
+  Tested: `middleware_test/session_test.py` (resolve/orgs/routes/logout, real
+  aiohttp app) + `scratchpad/studio-iam/test_identity.py` (headless: pill,
+  dropdown, org switch re-scope, signed-out). The `/v1/session` routes need one
+  server restart to register (static + de-Comfy load without restart).
+- **De-Comfy display strings** (`branding/patch_destring.py`, step 11 —
+  runs LAST): the systematic English brand-word sweep the curated phrase list in
+  `patch_frontend.py` structurally can't reach. Rule 1: whole-word `ComfyUI` →
+  `Hanzo Studio` only where it reads as a display word (preceded by
+  open-quote/space/`>`/`(`, followed by close-quote/space/sentence-punct) — that
+  boundary skips every code use in the bundle (`ComfyUIStarted`, `.ComfyUI`,
+  `=ComfyUI`, the `/^(ComfyUI-.../` regex, dotted i18n keys `.category.ComfyUI`)
+  and hyphenated product names (`ComfyUI-Manager`). Rule 2: curated bare-`Comfy`
+  **values** as exact `key:` value`` pairs so the Settings dialog **keys**
+  (`Comfy`, `Comfy-Desktop`, `Comfy.ColorPalette`) are preserved while the
+  displayed section header becomes **Studio** / **Studio Desktop** (this is the
+  "Settings must not say Comfy" fix) + `Comfy Cloud` → `Hanzo Cloud`. Scope:
+  English only — files above `LOCALE_RATIO` (0.15%) non-ASCII are skipped (all 33
+  locale bundles are ≥0.31%; English bundles ~0.02%) and each match needs a
+  pure-ASCII window, so the non-English `main-*/nodeDefs-*/commands-*` chunks are
+  left as-is (noted, out of scope). Idempotent. Verified: served English display
+  `ComfyUI` 63→0; a few example filesystem paths (`Documents/ComfyUI`) and the
+  external comfy.org service labels (`Comfy API Key`, `Comfy Node Registry`,
+  behind disabled API-nodes) are intentionally left. patch_frontend.py keeps its
+  orthogonal concern (URLs/domains + `Comfy-Org` → `Hanzo AI`).
 
 ## Tests
 `tests-unit/{folder_paths_test,middleware_test,app_test,prompt_server_test}` —
 run `uv run pytest tests-unit/folder_paths_test tests-unit/middleware_test
 tests-unit/app_test tests-unit/prompt_server_test -q`. The auth/tenancy work is
-covered by `middleware_test/iam_auth_test.py` and
+covered by `middleware_test/iam_auth_test.py`,
+`middleware_test/session_test.py` and
 `folder_paths_test/org_scoping_test.py`.
