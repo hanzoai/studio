@@ -1290,6 +1290,8 @@ class PromptServer():
         async def _on_shutdown(app):
             await prompt_router.close_session()
             await visor_client.close_session()
+            from middleware import copilot
+            await copilot.close_session()
             wc = getattr(self, "_worker_client", None)
             if wc:
                 await wc.stop()
@@ -1303,6 +1305,8 @@ class PromptServer():
         self.node_replace_manager.add_routes(self.routes)
         from middleware.engine_selector import add_engine_routes
         add_engine_routes(self.routes, self)
+        from middleware.copilot import add_copilot_routes
+        add_copilot_routes(self.routes, self)
         self.app.add_subapp('/internal', self.internal_routes.get_app())
 
         # Prefix every route with /api for easier matching for delegation.

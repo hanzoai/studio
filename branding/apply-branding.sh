@@ -78,7 +78,14 @@ python3 "$BRANDING_DIR/patch_theme.py" "$STATIC_DIR" "$BRANDING_DIR"
 # Injects a <head> bootstrap that pre-populates the localStorage keys the
 # frontend reads to restore open workflow tabs. Idempotent; bump SEED_VERSION
 # in patch_workspace_seed.py to force existing profiles to re-seed once.
-echo "[8/8] Seeding default workspace tabs..."
+echo "[8/9] Seeding default workspace tabs..."
 python3 "$BRANDING_DIR/patch_workspace_seed.py" "$STATIC_DIR"
+
+# --- 9. Inject the Copilot sidebar chat (frontend bundle + on-brand CSS) ---
+# Copies hanzo-copilot.{js,css} into static/ and injects them into index.html
+# (CSS link in <head>, deferred <script> before </body>). Pairs with the backend
+# route POST /v1/copilot/chat. Idempotent; bump BUNDLE_VERSION in patch_copilot.py.
+echo "[9/9] Injecting Copilot..."
+python3 "$BRANDING_DIR/patch_copilot.py" "$STATIC_DIR" "$BRANDING_DIR"
 
 echo "=== Hanzo Studio branding complete ==="

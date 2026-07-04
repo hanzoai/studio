@@ -83,6 +83,26 @@ shared Hanzo IAM (standard OIDC code flow). No embedding.
   chosen worker; `local` = unchanged. Leased cloud machines (Visor
   `GET /v1/machines`) are a future engine class (interface stubbed, not built).
   Frontend picker is a TODO. Tested: `middleware_test/engine_selector_test.py`.
+- **Chat Copilot** (`middleware/copilot.py` + `branding/hanzo-copilot.{js,css}`):
+  a sidebar chat that reads and MUTATES the workflow graph in natural language.
+  Backend `POST /v1/copilot/chat` proxies one OpenAI tool-calling round to a
+  chat endpoint (`STUDIO_COPILOT_URL`; default = local engine
+  `127.0.0.1:1234` if its port is open, else `api.hanzo.ai`; `STUDIO_COPILOT_MODEL`
+  default `zen`; token from `STUDIO_COPILOT_TOKEN`→`STUDIO_COMMERCE_TOKEN`→request
+  bearer). It returns `{reply, ops}`; `add_node` ops are validated against
+  `nodes.NODE_CLASS_MAPPINGS` server-side so the model can't invent node types.
+  The **frontend** applies ops against `app.graph` (LiteGraph) — op schema:
+  `add_node`(id?/pos?) · `set_widget` · `connect`(slots by name or index) ·
+  `set_prompt` · `move_node` · `delete_node` · `layout` (columnar tidy) ·
+  `queue`. Every op is guarded (unknown type/slot = skip + note, never throw).
+  Injected into the prebuilt frontend by `branding/patch_copilot.py` (copies the
+  bundle into static/, CSS `<link>` in `<head>`, deferred `<script>` before
+  `</body>`; idempotent, wired as step 9 of `apply-branding.sh`) — survives
+  frontend upgrades. `window.HanzoCopilot.applyOps` is exposed for tests. Tab
+  registered via `app.extensionManager.registerSidebarTab` (id `hanzo-copilot`).
+  Tested: `middleware_test/copilot_test.py` (op-validation + mocked tool loop) and
+  `branding/copilot_smoke.py` (headless: applier mutates a mock graph + panel
+  renders). Live end-to-end needs one server restart to register the route.
 
 ## Tests
 `tests-unit/{folder_paths_test,middleware_test,app_test,prompt_server_test}` —
