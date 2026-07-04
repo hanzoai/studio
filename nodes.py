@@ -2258,9 +2258,14 @@ async def load_custom_node(module_path: str, ignore=set(), module_parent="custom
             if hasattr(module, "NODE_DISPLAY_NAME_MAPPINGS") and getattr(module, "NODE_DISPLAY_NAME_MAPPINGS") is not None:
                 NODE_DISPLAY_NAME_MAPPINGS.update(module.NODE_DISPLAY_NAME_MAPPINGS)
             return True
-        # V3 Extension Definition
-        elif hasattr(module, "studio_entrypoint"):
-            entrypoint = getattr(module, "studio_entrypoint")
+        # V3 Extension Definition. Honor the upstream ComfyUI `comfy_entrypoint`
+        # name too, so vendored packs register through the V3 extension API
+        # unmodified (their ComfyExtension/io.ComfyNode are aliased to the
+        # Studio* classes by studio_compat).
+        elif hasattr(module, "studio_entrypoint") or hasattr(module, "comfy_entrypoint"):
+            entrypoint = getattr(module, "studio_entrypoint", None)
+            if entrypoint is None:
+                entrypoint = getattr(module, "comfy_entrypoint")
             if not callable(entrypoint):
                 logging.warning(f"studio_entrypoint in {module_path} is not callable, skipping.")
                 return False

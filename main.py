@@ -1,3 +1,4 @@
+import studio_compat  # noqa: F401  aliases comfy.* -> studio.* for upstream custom nodes
 import studio.options
 studio.options.enable_args_parsing()
 

@@ -1,0 +1,51 @@
+# Hand-resolved Python deps for the vendored custom-node packs (see
+# custom_nodes/hanzo-packs.txt). Install via scripts/install_custom_nodes.sh, which
+# locks the studio cu130 torch stack / NumPy 2.x / Transformers 5.x (derived from
+# the live env) so none of these can downgrade them. Only deps NOT already in
+# requirements.txt are listed; the studio-critical packages are locked, not here.
+# `ultralytics` is intentionally absent -- the installer adds it with --no-deps so
+# it cannot pull the non-headless opencv-python that fights opencv-*-headless.
+
+# --- Impact-Pack / segment_anything: detailer + SAM masks ---
+segment-anything
+timm
+scikit-image
+piexif
+dill
+matplotlib
+
+# --- Impact-Subpack (ultralytics detectors): light deps only; ultralytics itself
+# is installed --no-deps by the installer, then these fill in its runtime needs ---
+py-cpuinfo
+ultralytics-thop
+pandas
+
+# --- comfyui_controlnet_aux: pose/depth/edge preprocessors ---
+opencv-contrib-python-headless
+onnxruntime
+addict
+yapf
+omegaconf
+ftfy
+yacs
+fvcore
+trimesh
+albumentations
+mediapipe
+python-dateutil
+importlib_metadata
+scikit-learn
+
+# --- ComfyUI-KJNodes ---
+color-matcher
+mss
+
+# --- VideoHelperSuite / Frame-Interpolation: video I/O ---
+imageio
+imageio-ffmpeg
+
+# --- misc utils used across packs ---
+gitpython
+joblib
+pilgram
+fairscale

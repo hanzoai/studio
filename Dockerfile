@@ -25,6 +25,11 @@ RUN chmod +x /tmp/branding/apply-branding.sh && /tmp/branding/apply-branding.sh 
 # Copy application code
 COPY . .
 
+# Vendor the Hanzo Studio custom-node packs (segmentation, controlnet, ipadapter,
+# upscaling, video, utils) at their pinned commits and install their deps with the
+# torch/numpy/transformers stack locked. See custom_nodes/hanzo-packs.txt.
+RUN chmod +x scripts/install_custom_nodes.sh && scripts/install_custom_nodes.sh
+
 # Create directories for runtime volumes
 RUN mkdir -p models output input custom_nodes user
 

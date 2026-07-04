@@ -1,7 +1,11 @@
 models/
 output/
 input/
-custom_nodes/
+custom_nodes/*
+# ...but the pack manifest must reach the build context so the image can vendor
+# the packs reproducibly (scripts/install_custom_nodes.sh clones them at build).
+# Local clones stay excluded so the image builds them fresh from the manifest.
+!custom_nodes/hanzo-packs.txt
 user/
 temp/
 orgs/
@@ -19,7 +23,9 @@ venv/
 .ruff_cache/
 tests/
 tests-unit/
-scripts/
+scripts/*
+# ...except the pack installer, which the image build invokes.
+!scripts/install_custom_nodes.sh
 notebooks/
 *.swp
 .env

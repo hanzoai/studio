@@ -5,8 +5,12 @@ __pycache__/
 !/input/example.png
 /models/
 /temp/
-/custom_nodes/
-!custom_nodes/example_node.py.example
+# Ignore vendored pack contents but keep the directory listable so the tracked
+# files below can be re-included (a file under a fully-excluded dir cannot be).
+/custom_nodes/*
+!/custom_nodes/example_node.py.example
+# Pinned pack manifest is tracked; the pack sources it clones are not (vendored at build).
+!/custom_nodes/hanzo-packs.txt
 extra_model_paths.yaml
 /.vs
 .vscode/
@@ -24,3 +28,4 @@ web_custom_versions/
 openapi.yaml
 filtered-openapi.yaml
 uv.lock
+/custom_nodes_quarantine/

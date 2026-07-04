@@ -1,0 +1,35 @@
+# Hanzo Studio custom-node packs -- pinned, reproducible, first-class "hanzo packages".
+#
+# Format:  <dir_name>  <git_url>  <commit_sha>  <spdx_license>   # friendly-ref
+#
+# Installed by scripts/install_custom_nodes.sh (invoked in the Docker image build
+# and runnable locally) so the studio.hanzo.ai image ships the same packs the
+# local GB10 worker runs. Upstream packs import comfy.* / subclass io.ComfyNode /
+# expose comfy_entrypoint -- studio_compat aliases those to the studio.* names at
+# boot and the loader honors comfy_entrypoint, so packs run UNMODIFIED (no fork,
+# no source edits). Python deps: custom_nodes-requirements.txt (+ -constraints.txt).
+#
+# Pinned to immutable commit SHAs. To bump a pack: replace its SHA + re-run the
+# installer (patch-bump; never blind-track HEAD). All licenses are OSI (GPL/AGPL/
+# MIT/Apache) -- none are non-commercial.
+
+ComfyUI-Impact-Pack          https://github.com/ltdrdata/ComfyUI-Impact-Pack.git           429d0159ad429e64d2b3916e6e7be9c22d025c3c  GPL-3.0     # 8.28
+ComfyUI-Impact-Subpack       https://github.com/ltdrdata/ComfyUI-Impact-Subpack.git        50c7b71a6a224734cc9b21963c6d1926816a97f1  AGPL-3.0    # 1.3.4  Ultralytics detectors
+ComfyUI_IPAdapter_plus       https://github.com/cubiq/ComfyUI_IPAdapter_plus.git           a0f451a5113cf9becb0847b92884cb10cbdec0ef  GPL-3.0     # HEAD 2025-04-14
+comfyui_controlnet_aux       https://github.com/Fannovel16/comfyui_controlnet_aux.git      e8b689a513c3e6b63edc44066560ca5919c0576e  Apache-2.0  # HEAD 2026-04-13
+ComfyUI_UltimateSDUpscale    https://github.com/ssitu/ComfyUI_UltimateSDUpscale.git        a5547db9e1d07d3318bb21e9e9c474f4c1e9c8df  GPL-3.0     # HEAD 2026-06-22
+ComfyUI-Frame-Interpolation  https://github.com/Fannovel16/ComfyUI-Frame-Interpolation.git 26545cc2dd95bc3d27f056016300673bdeee78f5  MIT         # HEAD 2026-03-29
+ComfyUI-VideoHelperSuite     https://github.com/Kosinkadink/ComfyUI-VideoHelperSuite.git   4ee72c065db22c9d96c2427954dc69e7b908444b  GPL-3.0     # HEAD 2026-05-14
+rgthree-comfy                https://github.com/rgthree/rgthree-comfy.git                  27b4f4cdcf3b127c29d5d8135ac1536ecbd4c383  MIT         # HEAD 2026-06-20
+ComfyUI-Custom-Scripts       https://github.com/pythongosssss/ComfyUI-Custom-Scripts.git   609f3afaa74b2f88ef9ce8d939626065e3247469  MIT         # HEAD 2026-02-12
+ComfyUI-KJNodes              https://github.com/kijai/ComfyUI-KJNodes.git                  e27a505b3ba6ce42687fe00500deda103d9d6071  GPL-3.0     # HEAD 2026-07-01
+cg-use-everywhere            https://github.com/chrisgoringe/cg-use-everywhere.git         632ed7bb51bb18ceb03ccaefe1f34be8bd416500  Apache-2.0  # HEAD 2026-06-22
+ComfyUI-segment-anything-2   https://github.com/kijai/ComfyUI-segment-anything-2.git       0c35fff5f382803e2310103357b5e985f5437f32  Apache-2.0  # HEAD 2025-09-28  SAM2
+comfyui_segment_anything     https://github.com/storyicon/comfyui_segment_anything.git     ab6395596399d5048639cdab7e44ec9fae857a93  Apache-2.0  # HEAD  GroundingDINO+SAM
+
+# --- QUARANTINED (not installed; kept here as a record) -------------------------
+# was-node-suite-comfyui  https://github.com/WASasquatch/was-node-suite-comfyui.git  ea935d1044ae5a26efa54ebeb18fe9020af49a45  MIT
+#   Reason: hard `from numba import jit` at import; numba has no release supporting
+#   the studio venv's NumPy 2.5 ("Numba needs NumPy 2.4 or less"). Re-enabling would
+#   require downgrading NumPy (forbidden -- breaks the cu130 torch stack) or waiting
+#   for a numba release that supports NumPy 2.5. Revisit then. License (MIT) is fine.
