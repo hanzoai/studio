@@ -38,6 +38,41 @@ studio/
 - `Dockerfile` -- Container build (applies `branding/` then runs `main.py`)
 - `hanzo.yml` + `.github/workflows/cicd.yml` -- canonical CI/CD (hanzoai/ci); builds `ghcr.io/hanzoai/studio`, rolls the `studio` operator Service CR at `studio.hanzo.ai`.
 
+## Custom-node packs ("hanzo packages")
+The popular ComfyUI packs are vendored as first-class hanzo packages, pinned and
+reproducible. One and only one way to add/bump them:
+
+- **Manifest**: `custom_nodes/hanzo-packs.txt` — `<dir> <git_url> <commit_sha>
+  <spdx>` lines (immutable SHAs). This is the tracked source of truth; the cloned
+  pack sources are gitignored (vendored at build).
+- **Deps**: `custom_nodes-requirements.txt` — hand-resolved, only what's not
+  already in `requirements.txt`. Installed with the studio torch(cu130)/NumPy 2.x/
+  Transformers 5.x stack **locked** so packs can never downgrade it.
+- **Installer**: `scripts/install_custom_nodes.sh` clones each pack at its pin and
+  installs deps; the lock is derived from the live env (correct for both the CPU
+  image and the GB10 cu130 venv). `ultralytics` is installed `--no-deps` (else it
+  pulls non-headless opencv). Local (GB10): `STUDIO_PY=.venv/bin/python
+  STUDIO_PIP="uv pip install --python .venv/bin/python" scripts/install_custom_nodes.sh`.
+- **Image**: `Dockerfile` runs the installer after `COPY . .`; `.dockerignore`
+  re-includes only the manifest + installer (`custom_nodes/*` / `scripts/*` form).
+  So `git push origin main` → CI builds `ghcr.io/hanzoai/studio` with the packs →
+  studio.hanzo.ai gets them on the next image build.
+
+**Compat shim — why packs work here at all.** This fork renamed ComfyUI's core
+packages (`comfy`→`studio`, `comfy_extras`→`studio_extras`, `comfy/comfy_types`→
+`studio/node_types`, and the `Comfy*`→`Studio*` API classes; see
+`scripts/rename_modules.py`). `studio_compat/` is one meta-path finder that lazily
+aliases every `comfy*` import to its `studio*` counterpart and mirrors
+`ComfyExtension`/`io.ComfyNode`→`Studio*` — so upstream packs run **unmodified**,
+no forks/renames. It is the phase-4 redirect `rename_modules.py` deferred, done
+with the 3.12 `find_spec` API. Activated by `import studio_compat` at the top of
+`main.py`. `nodes.py` also honors the upstream `comfy_entrypoint` V3 name.
+
+Restart the local worker only when idle: `scripts/studio-service-swap.sh` polls
+`/queue` and restarts on the first empty window. Bad packs are isolated by the
+loader (studio still boots); genuinely-incompatible ones go to
+`custom_nodes_quarantine/` (e.g. was-node-suite: hard `numba` dep vs NumPy 2.5).
+
 ## Multi-tenant + IAM (cloud: studio.hanzo.ai)
 Standalone app; `console.hanzo.ai` link-outs land here already authenticated via
 shared Hanzo IAM (standard OIDC code flow). No embedding.
