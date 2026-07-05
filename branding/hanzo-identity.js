@@ -16,7 +16,7 @@
   "use strict";
   if (window.__hanzoIdentityLoaded) return;
   window.__hanzoIdentityLoaded = true;
-  var VERSION = "2";
+  var VERSION = "3";
 
   // ------------------------------------------------------------- dom helper
   function el(tag, attrs, kids) {

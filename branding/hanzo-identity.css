@@ -1,66 +1,73 @@
 /* Hanzo Studio Identity menu — top-right user pill + dropdown.
- * Matches the black + Hanzo-purple theme (hanzo-theme.css / hanzo-copilot.css). */
+ * Matches console.hanzo.ai's design system: monochrome true-black surfaces,
+ * hairline borders, 9px radii, neutral (non-chromatic) accents. No brand-purple
+ * — console is deliberately monochrome, so the pill reads as the same product
+ * family as console's OrgSwitcher / user menu.
+ *   --color1 #050505 (surface) · --backgroundHover #171717 · --borderColor
+ *   #23262b · --borderColorHover #363b40 · --color12 #eef0f3 (text) ·
+ *   --color11 #cdd2da · --color9 #848a93 (muted) · red10 #e5484d (destructive) */
 
 .hanzo-identity {
   position: fixed;
-  top: 6px;
+  top: 8px;
   right: 12px;
   z-index: 3000;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-family: 'Basel', system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   font-size: 13px;
-  color: #e5e5e5;
+  color: #eef0f3;
 }
 
 .hzid-pill {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  height: 30px;
+  height: 32px;
   padding: 0 10px 0 4px;
-  background: #1f1f23;
-  border: 1px solid #2a2140;
-  border-radius: 16px;
-  color: #e5e5e5;
+  background: #0a0a0a;
+  border: 1px solid #23262b;
+  border-radius: 9px;
+  color: #eef0f3;
   cursor: pointer;
   transition: border-color .12s ease, background .12s ease;
 }
-.hzid-pill:hover { border-color: #8b5cf6; background: #26262b; }
+.hzid-pill:hover { border-color: #363b40; background: #171717; }
 
 .hzid-avatar,
 .hzid-avatar-lg {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(135deg, #8b5cf6, #7c3aed);
-  color: #fff;
-  font-weight: 700;
+  background: #26292b;
+  color: #eef0f3;
+  font-weight: 500;
   border-radius: 50%;
 }
-.hzid-avatar { width: 22px; height: 22px; font-size: 10px; }
+.hzid-avatar { width: 24px; height: 24px; font-size: 10px; }
 .hzid-avatar-lg { width: 36px; height: 36px; font-size: 14px; flex: 0 0 auto; }
 
-.hzid-pillname { font-weight: 600; max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hzid-pillname { font-weight: 500; max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .hzid-org {
   font-size: 11px;
-  color: #c4b5fd;
-  background: #2a2140;
+  color: #a4abb4;
+  background: #171717;
+  border: 1px solid #23262b;
   padding: 1px 7px;
-  border-radius: 8px;
+  border-radius: 5px;
 }
-.hzid-caret { color: #a78bfa; font-size: 10px; }
+.hzid-caret { color: #848a93; font-size: 10px; }
 
-.hzid-signin { text-decoration: none; padding: 0 14px; }
+.hzid-signin { text-decoration: none; padding: 0 14px; color: #eef0f3; }
 .hzid-signin:hover { color: #fff; }
 
 /* dropdown panel */
 .hzid-panel {
   position: absolute;
-  top: 36px;
+  top: 40px;
   right: 0;
-  min-width: 232px;
-  background: #141414;
-  border: 1px solid #2a2140;
-  border-radius: 12px;
+  min-width: 236px;
+  background: #050505;
+  border: 1px solid #23262b;
+  border-radius: 9px;
   box-shadow: 0 12px 40px rgba(0, 0, 0, .55);
   padding: 8px;
   animation: hzid-in .12s ease;
@@ -69,14 +76,14 @@
 
 .hzid-id { display: flex; align-items: center; gap: 10px; padding: 6px 8px 10px; }
 .hzid-idtext { min-width: 0; }
-.hzid-name { font-weight: 700; color: #fff; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.hzid-email { font-size: 11px; color: #9a9aa0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hzid-name { font-weight: 500; color: #eef0f3; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hzid-email { font-size: 11px; color: #848a93; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 .hzid-label {
   font-size: 10px;
   text-transform: uppercase;
   letter-spacing: .06em;
-  color: #7a7a82;
+  color: #6b727e;
   padding: 8px 8px 3px;
 }
 
@@ -89,16 +96,16 @@
   padding: 7px 8px;
   background: none;
   border: 0;
-  border-radius: 8px;
-  color: #e5e5e5;
+  border-radius: 7px;
+  color: #cdd2da;
   font: inherit;
   text-align: left;
   text-decoration: none;
   cursor: pointer;
 }
-.hzid-item:hover { background: #26262b; }
-.hzid-active { color: #c4b5fd; }
-.hzid-tick { width: 14px; flex: 0 0 auto; color: #8b5cf6; font-size: 12px; }
-.hzid-sep { height: 1px; background: #26262b; margin: 8px 4px; }
-.hzid-logout:hover { background: #2a1414; color: #ff8b8b; }
-.hzid-logout .hzid-tick { color: #ff8b8b; }
+.hzid-item:hover { background: #171717; color: #eef0f3; }
+.hzid-active { color: #eef0f3; }
+.hzid-tick { width: 14px; flex: 0 0 auto; color: #eef0f3; font-size: 12px; }
+.hzid-sep { height: 1px; background: #23262b; margin: 8px 4px; }
+.hzid-logout:hover { background: rgba(229, 72, 77, .12); color: #e5484d; }
+.hzid-logout .hzid-tick { color: #e5484d; }

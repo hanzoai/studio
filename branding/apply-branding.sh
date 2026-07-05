@@ -98,7 +98,14 @@ python3 "$BRANDING_DIR/patch_identity.py" "$STATIC_DIR" "$BRANDING_DIR"
 # Sweeps the served English bundle for user-visible 'ComfyUI'/'Comfy' -> Studio
 # that the curated phrase list in patch_frontend.py cannot reach (mid-string),
 # plus the Settings dialog section headers. Runs LAST so it mops up everything.
-echo "[11/11] De-Comfy display strings..."
+echo "[11/12] De-Comfy display strings..."
 python3 "$BRANDING_DIR/patch_destring.py" "$STATIC_DIR"
+
+# --- 12. Force "Nodes 2.0" (Comfy.VueNodes.Enabled) on, remove the toggles ---
+# studio.hanzo.ai ships the modern DOM node renderer as the only node design:
+# default the setting on, hide it from the Settings dialog (type:hidden), and
+# drop the logo-menu switch. Idempotent; see patch_vuenodes.py.
+echo "[12/12] Forcing Nodes 2.0 on (no toggle)..."
+python3 "$BRANDING_DIR/patch_vuenodes.py" "$STATIC_DIR"
 
 echo "=== Hanzo Studio branding complete ==="

@@ -1,246 +1,148 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" class="dark">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Hanzo Studio</title>
+  <title>Sign in · Hanzo Studio</title>
+  <meta name="color-scheme" content="dark">
   <link rel="icon" type="image/svg+xml" href="/favicon.svg">
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="alternate icon" href="/favicon.ico">
   <style>
+    /* Hanzo Studio sign-in — matches console.hanzo.ai's design system:
+     * monochrome true-black surfaces, hairline borders, 9px radii, a white
+     * primary action, and the 5-path Hanzo "H" mark in currentColor. Basel is
+     * console's UI face; it is a licensed font we do not redistribute in this
+     * GPL-3 repo, so we use console's own system-grotesk fallback stack here. */
+    :root {
+      --bg: #000000;
+      --surface: #050505;      /* console --color1: card / panel */
+      --surface-hover: #171717;/* console --backgroundHover */
+      --border: #23262b;       /* console --borderColor */
+      --border-hover: #363b40; /* console --borderColorHover */
+      --text: #eef0f3;         /* console --color12 */
+      --text-2: #cdd2da;       /* console --color11 */
+      --muted: #848a93;        /* console --color9 */
+      --primary: #fbfcfd;      /* console light --background (white fill) */
+      --primary-text: #181d25; /* console light --color12 (near-black) */
+      --radius: 9px;           /* console radius $4 / $true */
+    }
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
     body {
-      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-      background: #000;
-      color: #f5f5f5;
+      font-family: 'Basel', system-ui, -apple-system, BlinkMacSystemFont,
+        'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
       min-height: 100vh;
       display: flex;
       flex-direction: column;
       align-items: center;
       justify-content: center;
+      padding: 24px;
       -webkit-font-smoothing: antialiased;
       -moz-osx-font-smoothing: grayscale;
+      text-rendering: optimizeLegibility;
+      line-height: 1.5;
     }
 
-    .container {
+    .card {
+      width: 100%;
+      max-width: 380px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+    }
+
+    .head {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 13px;
       text-align: center;
-      max-width: 560px;
-      padding: 2rem;
     }
 
-    .logo {
-      width: 72px;
-      height: 72px;
-      margin-bottom: 2.5rem;
-    }
+    .mark { width: 40px; height: 40px; color: var(--text); }
+    .mark path { fill: currentColor; }
 
-    .badge {
-      display: inline-block;
-      padding: 0.375rem 1rem;
-      border-radius: 9999px;
-      background: rgba(255, 255, 255, 0.08);
-      border: 1px solid rgba(255, 255, 255, 0.15);
-      color: rgba(245, 245, 245, 0.7);
-      font-size: 0.8rem;
-      font-weight: 500;
-      letter-spacing: 0.02em;
-      margin-bottom: 1.5rem;
-    }
-
-    h1 {
-      font-size: 2.618rem;
-      font-weight: 700;
-      letter-spacing: -0.03em;
-      line-height: 1.15;
-      margin-bottom: 1rem;
-      color: #f5f5f5;
-    }
-
-    .subtitle {
-      color: rgba(245, 245, 245, 0.6);
-      font-size: 1.125rem;
-      line-height: 1.618;
-      margin-bottom: 2.5rem;
-      max-width: 440px;
-      margin-left: auto;
-      margin-right: auto;
-    }
+    .titles { display: flex; flex-direction: column; align-items: center; gap: 4px; }
+    .title { font-size: 22px; font-weight: 500; letter-spacing: -0.01em; color: var(--text); }
+    .subtitle { font-size: 14px; font-weight: 400; color: var(--text-2); max-width: 300px; }
 
     .btn {
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      gap: 0.5rem;
-      background: #f5f5f5;
-      color: #000;
-      border: none;
-      border-radius: 9999px;
-      padding: 0.875rem 2.5rem;
+      gap: 8px;
+      width: 100%;
+      height: 44px;
+      padding: 0 18px;
+      border: 1px solid transparent;
+      border-radius: var(--radius);
       font-family: inherit;
-      font-size: 0.95rem;
-      font-weight: 600;
+      font-size: 15px;
+      font-weight: 500;
       cursor: pointer;
       text-decoration: none;
-      transition: background 0.2s, transform 0.1s;
+      transition: background 0.15s ease, border-color 0.15s ease, opacity 0.15s ease;
     }
+    .btn-primary { background: var(--primary); color: var(--primary-text); }
+    .btn-primary:hover { opacity: 0.9; }
+    .btn-primary svg { width: 16px; height: 16px; }
 
-    .btn:hover { background: #ccc; }
-    .btn:active { transform: scale(0.98); }
+    .footnote { font-size: 12px; color: var(--muted); text-align: center; }
+    .footnote a { color: var(--text-2); text-decoration: none; transition: color 0.15s; }
+    .footnote a:hover { color: var(--text); }
 
-    .btn svg {
-      width: 16px;
-      height: 16px;
-      transition: transform 0.2s;
+    .product {
+      margin-top: 16px;
+      font-size: 12px;
+      color: var(--muted);
+      text-align: center;
     }
-
-    .btn:hover svg { transform: translateX(2px); }
-
-    .features {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 1rem;
-      margin-top: 3.5rem;
-      text-align: left;
-    }
-
-    .feature {
-      background: rgba(255, 255, 255, 0.05);
-      border: 1px solid rgba(255, 255, 255, 0.1);
-      border-radius: 12px;
-      padding: 1.25rem;
-      transition: background 0.2s, border-color 0.2s;
-    }
-
-    .feature:hover {
-      background: rgba(255, 255, 255, 0.08);
-      border-color: rgba(255, 255, 255, 0.2);
-    }
-
-    .feature-icon {
-      width: 32px;
-      height: 32px;
-      border-radius: 8px;
-      background: rgba(255, 255, 255, 0.1);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      margin-bottom: 0.75rem;
-    }
-
-    .feature-icon svg {
-      width: 16px;
-      height: 16px;
-      color: rgba(245, 245, 245, 0.7);
-    }
-
-    .feature h3 {
-      font-size: 0.875rem;
-      font-weight: 600;
-      margin-bottom: 0.375rem;
-      color: #f5f5f5;
-    }
-
-    .feature p {
-      color: rgba(245, 245, 245, 0.5);
-      font-size: 0.8rem;
-      line-height: 1.5;
-    }
-
-    .footer {
-      margin-top: 3.5rem;
-      color: rgba(245, 245, 245, 0.4);
-      font-size: 0.8rem;
-    }
-
-    .footer a {
-      color: rgba(245, 245, 245, 0.5);
-      text-decoration: none;
-      transition: color 0.15s;
-    }
-
-    .footer a:hover { color: #f5f5f5; }
-
-    @media (max-width: 480px) {
-      h1 { font-size: 2rem; }
-      .features { grid-template-columns: 1fr; }
-    }
+    .product .sep { opacity: 0.5; padding: 0 8px; }
   </style>
 </head>
 <body>
-  <div class="container">
-    <svg class="logo" viewBox="0 0 67 67" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <path d="M22.21 67V44.6369H0V67H22.21Z" fill="#f5f5f5"/>
-      <path d="M66.7038 22.3184H22.2534L0.0878906 44.6367H44.4634L66.7038 22.3184Z" fill="#f5f5f5"/>
-      <path d="M22.21 0H0V22.3184H22.21V0Z" fill="#f5f5f5"/>
-      <path d="M66.7198 0H44.5098V22.3184H66.7198V0Z" fill="#f5f5f5"/>
-      <path d="M66.7198 67V44.6369H44.5098V67H66.7198Z" fill="#f5f5f5"/>
-    </svg>
-
-    <div class="badge">Visual AI Engine</div>
-
-    <h1>Hanzo Studio</h1>
-    <p class="subtitle">
-      Build AI workflows visually. Generate images, video, 3D, and audio
-      with a node-based editor. Scale to GPU on demand.
-    </p>
-
-    <a class="btn" id="login-btn" href="/login">
-      Sign in with Hanzo
-      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
-        <path fill-rule="evenodd" d="M3 10a.75.75 0 01.75-.75h10.638L11.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 11-1.04-1.08l3.158-2.96H3.75A.75.75 0 013 10z" clip-rule="evenodd" />
+  <div class="card">
+    <div class="head">
+      <svg class="mark" viewBox="0 0 67 67" role="img" aria-label="Hanzo" xmlns="http://www.w3.org/2000/svg">
+        <path d="M22.21 67V44.6369H0V67H22.21Z"/>
+        <path d="M66.7038 22.3184H22.2534L0.0878906 44.6367H44.4634L66.7038 22.3184Z"/>
+        <path d="M22.21 0H0V22.3184H22.21V0Z"/>
+        <path d="M66.7198 0H44.5098V22.3184H66.7198V0Z"/>
+        <path d="M66.7198 67V44.6369H44.5098V67H66.7198Z"/>
       </svg>
-    </a>
-
-    <div class="features">
-      <div class="feature">
-        <div class="feature-icon">
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
-            <path fill-rule="evenodd" d="M4.25 2A2.25 2.25 0 002 4.25v2.5A2.25 2.25 0 004.25 9h2.5A2.25 2.25 0 009 6.75v-2.5A2.25 2.25 0 006.75 2h-2.5zm0 9A2.25 2.25 0 002 13.25v2.5A2.25 2.25 0 004.25 18h2.5A2.25 2.25 0 009 15.75v-2.5A2.25 2.25 0 006.75 11h-2.5zm9-9A2.25 2.25 0 0011 4.25v2.5A2.25 2.25 0 0013.25 9h2.5A2.25 2.25 0 0018 6.75v-2.5A2.25 2.25 0 0015.75 2h-2.5zm0 9A2.25 2.25 0 0011 13.25v2.5A2.25 2.25 0 0013.25 18h2.5A2.25 2.25 0 0018 15.75v-2.5A2.25 2.25 0 0015.75 11h-2.5z" clip-rule="evenodd" />
-          </svg>
-        </div>
-        <h3>Visual Workflows</h3>
-        <p>Drag-and-drop node editor for building multi-step AI pipelines</p>
-      </div>
-      <div class="feature">
-        <div class="feature-icon">
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
-            <path d="M15.98 1.804a1 1 0 00-1.96 0l-.24 1.192a1 1 0 01-.784.785l-1.192.238a1 1 0 000 1.962l1.192.238a1 1 0 01.785.785l.238 1.192a1 1 0 001.962 0l.238-1.192a1 1 0 01.785-.785l1.192-.238a1 1 0 000-1.962l-1.192-.238a1 1 0 01-.785-.785l-.238-1.192zM6.949 5.684a1 1 0 00-1.898 0l-.683 2.051a1 1 0 01-.633.633l-2.051.683a1 1 0 000 1.898l2.051.684a1 1 0 01.633.632l.683 2.051a1 1 0 001.898 0l.683-2.051a1 1 0 01.633-.633l2.051-.683a1 1 0 000-1.898l-2.051-.683a1 1 0 01-.633-.633L6.95 5.684zM13.949 13.684a1 1 0 00-1.898 0l-.184.551a1 1 0 01-.632.633l-.551.183a1 1 0 000 1.898l.551.183a1 1 0 01.633.633l.183.551a1 1 0 001.898 0l.184-.551a1 1 0 01.632-.633l.551-.183a1 1 0 000-1.898l-.551-.184a1 1 0 01-.633-.632l-.183-.551z" />
-          </svg>
-        </div>
-        <h3>GPU on Demand</h3>
-        <p>Scale from CPU to T4, A100, or H100 with a single API call</p>
-      </div>
-      <div class="feature">
-        <div class="feature-icon">
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
-            <path d="M10 1a.75.75 0 01.75.75v1.5a.75.75 0 01-1.5 0v-1.5A.75.75 0 0110 1zM5.05 3.05a.75.75 0 011.06 0l1.062 1.06A.75.75 0 116.11 5.173L5.05 4.11a.75.75 0 010-1.06zm9.9 0a.75.75 0 010 1.06l-1.06 1.062a.75.75 0 01-1.062-1.061l1.061-1.06a.75.75 0 011.06 0zM10 7.5a2.5 2.5 0 100 5 2.5 2.5 0 000-5zm-7.25 2a.75.75 0 01.75-.75h1.5a.75.75 0 010 1.5h-1.5a.75.75 0 01-.75-.75zm14 0a.75.75 0 01.75-.75h1.5a.75.75 0 010 1.5h-1.5a.75.75 0 01-.75-.75zm-11.89 4.89a.75.75 0 011.06 0l1.06 1.06a.75.75 0 01-1.06 1.061l-1.06-1.06a.75.75 0 010-1.06zm8.84 0a.75.75 0 010 1.06l-1.06 1.06a.75.75 0 11-1.061-1.06l1.06-1.06a.75.75 0 011.06 0zM10 16.25a.75.75 0 01.75.75v1.5a.75.75 0 01-1.5 0v-1.5a.75.75 0 01.75-.75z" />
-          </svg>
-        </div>
-        <h3>Multi-Tenant</h3>
-        <p>Per-org isolation with IAM auth and metered usage billing</p>
-      </div>
-      <div class="feature">
-        <div class="feature-icon">
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
-            <path fill-rule="evenodd" d="M4.5 2A2.5 2.5 0 002 4.5v3.879a2.5 2.5 0 00.732 1.767l7.5 7.5a2.5 2.5 0 003.536 0l3.878-3.878a2.5 2.5 0 000-3.536l-7.5-7.5A2.5 2.5 0 008.38 2H4.5zM5 6a1 1 0 100-2 1 1 0 000 2z" clip-rule="evenodd" />
-          </svg>
-        </div>
-        <h3>Open Source</h3>
-        <p>Full ComfyUI compatibility. Self-host or use Hanzo Cloud</p>
+      <div class="titles">
+        <div class="title">Hanzo Studio</div>
+        <div class="subtitle">Sign in to build visual AI workflows — image, video, 3D, and audio.</div>
       </div>
     </div>
 
-    <p class="footer">
-      <a href="https://docs.hanzo.ai/docs/studio">Docs</a>
-      &nbsp;&nbsp;&middot;&nbsp;&nbsp;
-      <a href="https://github.com/hanzoai/studio">GitHub</a>
-      &nbsp;&nbsp;&middot;&nbsp;&nbsp;
-      <a href="https://console.hanzo.ai">Console</a>
-      &nbsp;&nbsp;&middot;&nbsp;&nbsp;
-      <a href="https://discord.gg/hanzoai">Discord</a>
+    <a class="btn btn-primary" id="login-btn" href="/login">
+      Sign in with Hanzo
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+        <path fill-rule="evenodd" d="M3 10a.75.75 0 01.75-.75h10.638L11.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 11-1.04-1.08l3.158-2.96H3.75A.75.75 0 013 10z" clip-rule="evenodd"/>
+      </svg>
+    </a>
+
+    <p class="footnote">
+      Powered by Hanzo IAM. New here?
+      <a href="https://console.hanzo.ai">Create an account</a>.
     </p>
   </div>
+
+  <p class="product">
+    <a href="https://docs.hanzo.ai/docs/studio">Docs</a>
+    <span class="sep">·</span>
+    <a href="https://github.com/hanzoai/studio">GitHub</a>
+    <span class="sep">·</span>
+    <a href="https://console.hanzo.ai">Console</a>
+    <span class="sep">·</span>
+    <a href="https://discord.gg/hanzoai">Discord</a>
+  </p>
 </body>
 </html>
