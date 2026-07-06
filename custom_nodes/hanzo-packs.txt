@@ -60,3 +60,17 @@ ComfyUI-Hunyuan3DWrapper     https://github.com/kijai/ComfyUI-Hunyuan3DWrapper.g
 # where non-open. ACE-Step = the commercial-clean pick (Apache weights). LeVo (Tencent AI
 # Lab, best-quality per its paper) has an unsettled weights license -> noted, bring your own.
 ComfyUI_ACE-Step            https://github.com/billwuhao/ComfyUI_ACE-Step.git             d4c2dc104a6977c83c9406b62464102c757a879c  Apache-2.0  # ACE-Step 3.5B text->music foundation model; node Apache + weights Apache-2.0 (commercial-clean)
+
+# --- video generation (text/image -> video) ---
+ComfyUI-WanVideoWrapper     https://github.com/kijai/ComfyUI-WanVideoWrapper.git          088128b224242e110d3906c6750e9a3a348a659b  Apache-2.0  # WAN 2.1/2.2 t2v+i2v; node Apache + WAN weights Apache-2.0 (commercial-clean)
+ComfyUI-LTXVideo            https://github.com/Lightricks/ComfyUI-LTXVideo.git            aceeae9635f6d493f2893ba3c411a1c36031788a  Apache-2.0  # LTX-Video fast t2v/i2v; node Apache, weights OpenRAIL-M (open, use-restrictions apply)
+ComfyUI-CogVideoXWrapper    https://github.com/kijai/ComfyUI-CogVideoXWrapper.git         fdb8abd2790b5459ddc7066c31861bb0b62e988b  Apache-2.0  # CogVideoX t2v/i2v; node Apache, CogVideoX-2b Apache (5b = custom CogVideoX license, check)
+ComfyUI-HunyuanVideoWrapper https://github.com/kijai/ComfyUI-HunyuanVideoWrapper.git      fcbd6729a9b0b8ff6037c598bbada4a6bdc6d967  Apache-2.0  # node Apache; NOTICE: HunyuanVideo *weights* = Tencent Community License (no commercial EU/UK/KR) -- bring your own license
+
+# --- voice / TTS (text -> speech, voice clone) ---
+comfyui-kokoro              https://github.com/stavsap/comfyui-kokoro.git                 cfb59b5605b351e196182c836f0b48c1a784e52f  MIT         # Kokoro-82M TTS; node MIT + weights Apache-2.0 (commercial-clean, fast)
+ComfyUI_ChatterBox_Voice    https://github.com/ShmuelRonen/ComfyUI_ChatterBox_Voice.git   6e5fc4e268656235c50e1e791f6b5d7afe615677  MIT         # Resemble Chatterbox TTS + voice clone; node MIT + weights MIT (commercial-clean)
+ComfyUI-F5-TTS              https://github.com/niknah/ComfyUI-F5-TTS.git                  da9776ac5ba04f2d0b837f7dc6d5684499f3ba0b  MIT         # node MIT; NOTICE: F5-TTS *weights* = CC-BY-NC-4.0 (NON-COMMERCIAL) -- bring your own license for commercial
+
+# --- infra: run GGUF-quantized diffusion/LLM models in-workflow (memory-efficient) ---
+ComfyUI-GGUF               https://github.com/city96/ComfyUI-GGUF.git                    6ea2651e7df66d7585f6ffee804b20e92fb38b8a  Apache-2.0  # GGUF-quantized model loader (Flux/SD/video in low VRAM); Apache
