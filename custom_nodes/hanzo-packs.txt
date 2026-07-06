@@ -42,3 +42,15 @@ ComfyUI-Inpaint-CropAndStitch https://github.com/lquesada/ComfyUI-Inpaint-CropAn
 #   the studio venv's NumPy 2.5 ("Numba needs NumPy 2.4 or less"). Re-enabling would
 #   require downgrading NumPy (forbidden -- breaks the cu130 torch stack) or waiting
 #   for a numba release that supports NumPy 2.5. Revisit then. License (MIT) is fine.
+
+# --- 3D generation + texturing (image->3D mesh / gaussian-splat, PBR texture bake) ---
+# Packs install NODE/MODEL CODE ONLY -- all permissive (MIT/Apache). Model WEIGHTS are
+# NOT shipped here: each downloads its own weights at runtime from the model's source.
+# Where those weights are non-open, the friendly-ref NOTES it -- bring your own license.
+# The software runs whatever you point it at; it just tells you the terms. No gate.
+ComfyUI-3D-Pack              https://github.com/MrForExample/ComfyUI-3D-Pack.git           9e8096e50c5bcf35e1f3e34c6ae06216101f8a11  MIT         # TripoSR+InstantMesh+gaussian-splat+mesh/texture export (weights per-model, mostly MIT/Apache)
+Comfy3D_Pre_Builds           https://github.com/MrForExample/Comfy3D_Pre_Builds.git        d31ef4c84dfa47d789cc5e4af04992763e4e9fbd  MIT         # prebuilt native deps for ComfyUI-3D-Pack (nvdiffrast/pytorch3d)
+ComfyUI-Flowty-TripoSR       https://github.com/flowtyone/ComfyUI-Flowty-TripoSR.git       a0c94ac60a7cc062604f61aeeea6d0d493521de3  MIT         # fast image->3D mesh; TripoSR weights MIT
+TRELLIS.2                    https://github.com/microsoft/TRELLIS.2.git                    75fbf0183001ed9876c8dbb35de6b68552ee08bd  MIT         # Microsoft TRELLIS.2 image->3D (SLAT + RFT), best-in-class; weights MIT
+Pixal3D                      https://github.com/TencentARC/Pixal3D.git                     cdbb2bbffbf4e6f298b5f2af3d1d76a8d823d2af  MIT         # TencentARC Pixal3D pixel-aligned image->3D (TRELLIS.2 core + DinoV3 + MoGe); MIT weights, commercial-clean
+ComfyUI-Hunyuan3DWrapper     https://github.com/kijai/ComfyUI-Hunyuan3DWrapper.git         2609efa38f6a98292476f714839b7c1e5f9b699a  Apache-2.0  # node code Apache; NOTICE: Hunyuan3D *weights* = Tencent Community License (no commercial EU/UK/KR, 100M-MAU cap) -- bring your own license
