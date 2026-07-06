@@ -54,3 +54,9 @@ ComfyUI-Flowty-TripoSR       https://github.com/flowtyone/ComfyUI-Flowty-TripoSR
 TRELLIS.2                    https://github.com/microsoft/TRELLIS.2.git                    75fbf0183001ed9876c8dbb35de6b68552ee08bd  MIT         # Microsoft TRELLIS.2 image->3D (SLAT + RFT), best-in-class; weights MIT
 Pixal3D                      https://github.com/TencentARC/Pixal3D.git                     cdbb2bbffbf4e6f298b5f2af3d1d76a8d823d2af  MIT         # TencentARC Pixal3D pixel-aligned image->3D (TRELLIS.2 core + DinoV3 + MoGe); MIT weights, commercial-clean
 ComfyUI-Hunyuan3DWrapper     https://github.com/kijai/ComfyUI-Hunyuan3DWrapper.git         2609efa38f6a98292476f714839b7c1e5f9b699a  Apache-2.0  # node code Apache; NOTICE: Hunyuan3D *weights* = Tencent Community License (no commercial EU/UK/KR, 100M-MAU cap) -- bring your own license
+
+# --- music + song generation (text/lyrics -> full song w/ vocals + accompaniment) ---
+# Same rule: NODE CODE ONLY (permissive); model WEIGHTS download at runtime, BYO-license
+# where non-open. ACE-Step = the commercial-clean pick (Apache weights). LeVo (Tencent AI
+# Lab, best-quality per its paper) has an unsettled weights license -> noted, bring your own.
+ComfyUI_ACE-Step            https://github.com/billwuhao/ComfyUI_ACE-Step.git             d4c2dc104a6977c83c9406b62464102c757a879c  Apache-2.0  # ACE-Step 3.5B text->music foundation model; node Apache + weights Apache-2.0 (commercial-clean)
