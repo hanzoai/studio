@@ -15,8 +15,13 @@ JOBS_NS = os.environ.get("STUDIO_GPU_JOBS_NS", "gpu-jobs")
 
 
 def _bearer(request) -> str:
+    """The caller's IAM token, exactly as iam_auth_middleware accepts it:
+    Authorization header first, then the browser session cookies."""
     h = request.headers.get("Authorization", "")
-    return h if h.lower().startswith("bearer ") else ""
+    if h.lower().startswith("bearer "):
+        return h
+    tok = request.cookies.get("hanzo_token") or request.cookies.get("access_token")
+    return f"Bearer {tok}" if tok else ""
 
 
 def _has_online_gpu(tok: str) -> bool:
