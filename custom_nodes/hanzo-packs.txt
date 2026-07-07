@@ -74,3 +74,13 @@ ComfyUI-F5-TTS              https://github.com/niknah/ComfyUI-F5-TTS.git        
 
 # --- infra: run GGUF-quantized diffusion/LLM models in-workflow (memory-efficient) ---
 ComfyUI-GGUF               https://github.com/city96/ComfyUI-GGUF.git                    6ea2651e7df66d7585f6ffee804b20e92fb38b8a  Apache-2.0  # GGUF-quantized model loader (Flux/SD/video in low VRAM); Apache
+
+# --- foley / sound-effects (text->SFX, video->audio) — the named gap ---
+ComfyUI-MMAudio             https://github.com/kijai/ComfyUI-MMAudio.git                  8eaeb72edc3aaf2059b57f2d96a1f6f689f19ae2  Apache-2.0  # MMAudio video->audio / text->SFX (Sony, CVPR2025); node Apache, NOTICE: weights CC-BY-NC-4.0 -- BYO-license for commercial
+ComfyUI-AudioLDM            https://github.com/sanbuphy/ComfyUI-AudioLDM.git              d1edf02527f1cdc5c037842ffed1a2b564aa52fc  MIT         # AudioLDM2 text->audio/SFX; node MIT, NOTICE: weights CC-BY-NC-SA-4.0 -- BYO-license for commercial
+
+# --- audio source separation (music -> stems: vocals/drums/bass) ---
+audio-separation-nodes      https://github.com/christian-byrne/audio-separation-nodes-comfyui.git  ac339561973f0c1e56db2f9d40f11b0fddda6763  MIT  # Demucs-based stem separation (vocals/drums/bass/other); node MIT + Demucs weights MIT (commercial-clean)
+
+# --- voice/TTS (production, commercial-clean additions) ---
+ComfyUI-VibeVoice           https://github.com/wildminder/ComfyUI-VibeVoice.git           99a98031d79e07f279a7aa6d01ce89042e8bba26  MIT         # Microsoft VibeVoice long-form conversational TTS; node + weights MIT (commercial-clean)
