@@ -1047,8 +1047,11 @@ class PromptServer():
                         if sensitive_val in extra_data:
                             sensitive[sensitive_val] = extra_data.pop(sensitive_val)
                     extra_data["create_time"] = int(time.time() * 1000)  # timestamp in milliseconds
-                    extra_data["org_id"] = self._get_org_id(request)  # tenancy: scope outputs to org
-                    self.prompt_queue.put((number, prompt_id, prompt, extra_data, outputs_to_execute, sensitive))
+                    org_id = self._get_org_id(request)  # IAM org — scopes outputs + billing
+                    extra_data["org_id"] = org_id
+                    from .middleware.gpu_dispatch import dispatch_if_worker
+                    if not dispatch_if_worker(request, org_id, prompt_id, prompt):
+                        self.prompt_queue.put((number, prompt_id, prompt, extra_data, outputs_to_execute, sensitive))
                     response = {"prompt_id": prompt_id, "number": number, "node_errors": valid[3]}
                     return web.json_response(response)
                 else:
