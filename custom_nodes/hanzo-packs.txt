@@ -84,3 +84,16 @@ audio-separation-nodes      https://github.com/christian-byrne/audio-separation-
 
 # --- voice/TTS (production, commercial-clean additions) ---
 ComfyUI-VibeVoice           https://github.com/wildminder/ComfyUI-VibeVoice.git           99a98031d79e07f279a7aa6d01ce89042e8bba26  MIT         # Microsoft VibeVoice long-form conversational TTS; node + weights MIT (commercial-clean)
+
+# --- image gen: text-render + photorealism (permissive alternatives to FLUX) ---
+ComfyUI-KwaiKolorsWrapper    https://github.com/kijai/ComfyUI-KwaiKolorsWrapper.git        6fc1cd9d20bb7537facf180e5494b486b9710e24  Apache-2.0  # Kwai Kolors t2i photorealism; node + weights Apache-2.0 (commercial-clean)
+
+# --- video gen: permissive Apache alternatives ---
+ComfyUI-MochiWrapper         https://github.com/kijai/ComfyUI-MochiWrapper.git             e1bd05240ac31b72166e9d952c75dd5735352311  Apache-2.0  # Genmo Mochi-1 t2v high-quality; node + weights Apache-2.0 (commercial-clean)
+ComfyUI-PyramidFlowWrapper   https://github.com/kijai/ComfyUI-PyramidFlowWrapper.git       426e3653048575dd1d1d49763a1e02fcfccf5078  Apache-2.0  # Pyramid-Flow t2v transformer-flow; node Apache, NOTICE: weights custom license -- verify for commercial
+
+# --- music: long-form lyrics->song (Apache) ---
+ComfyUI_DiffRhythm           https://github.com/billwuhao/ComfyUI_DiffRhythm.git           2601a33e58fd49c63451f82db6a1c70b7b1f09fe  Apache-2.0  # DiffRhythm full-length lyrics->song (non-autoregressive, fast); node + weights Apache-2.0
+
+# --- voice: streaming + emotional TTS (Apache) ---
+CosyVoice-ComfyUI            https://github.com/AIFSH/CosyVoice-ComfyUI.git                67e650c761cd5306a4a06bc050196b84ab592aa3  Apache-2.0  # Alibaba CosyVoice2 real-time streaming + emotional TTS + zero-shot clone; node + weights Apache-2.0
