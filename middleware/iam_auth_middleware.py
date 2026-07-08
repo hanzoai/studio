@@ -215,10 +215,18 @@ def _with_active_org(user: dict, active_org_cookie: str | None) -> dict:
     return {**user, "org_id": resolved}
 
 
-def verify_jwt(token: str, key, issuer: str, audience: str | None) -> dict | None:
+def verify_jwt(token: str, key, issuer: str, audience: "str | list[str] | None") -> dict | None:
     """
     Pure JWT verification: signature (via the resolved JWKS key), exp, iss and
     aud. Returns normalized user info or None if the token is invalid. No I/O.
+
+    ``audience`` may be a single string or a list of accepted audiences. A list
+    passes if the token's ``aud`` intersects it — this is how a first-party
+    Hanzo user token (minted for e.g. hanzo-console / hanzo-desktop) is accepted
+    by studio without being re-minted specifically for hanzo-studio. Org is
+    always derived from the ``owner``/``groups`` claims, independent of aud, so
+    widening the accepted audience set to the trusted first-party clients does
+    not change who can act as which org.
     """
     import jwt
     try:
@@ -247,6 +255,16 @@ def create_iam_auth_middleware(iam_url: str, localhost_bypass: bool = True):
     iam_url = iam_url.rstrip("/")
     client_id = os.environ.get("STUDIO_IAM_CLIENT_ID", "hanzo-studio")
     issuer = os.environ.get("STUDIO_IAM_ISSUER", iam_url)
+    # Accept the studio client_id plus any other first-party audiences (comma-
+    # separated STUDIO_IAM_ALLOWED_AUDIENCES). Lets a Hanzo user token minted for
+    # the console / desktop / CLI authorize an org-scoped upload here without a
+    # per-service re-mint. client_id is always included.
+    _extra_aud = [
+        a.strip()
+        for a in os.environ.get("STUDIO_IAM_ALLOWED_AUDIENCES", "").split(",")
+        if a.strip()
+    ]
+    allowed_audiences = list(dict.fromkeys([client_id, *_extra_aud]))
     jwks_uri = f"{iam_url}/v1/iam/.well-known/jwks"
     jwks = _JwksCache(jwks_uri)
 
@@ -273,7 +291,7 @@ def create_iam_auth_middleware(iam_url: str, localhost_bypass: bool = True):
         if key is None:
             return None
 
-        user = verify_jwt(token, key, issuer, client_id)
+        user = verify_jwt(token, key, issuer, allowed_audiences)
         if user is None:
             _token_cache.pop(ck, None)
             return None

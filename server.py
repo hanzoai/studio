@@ -472,13 +472,15 @@ class PromptServer():
                 return a.hexdigest() == b.hexdigest()
             return False
 
-        def image_upload(post, image_save_function=None):
+        def image_upload(post, image_save_function=None, request=None):
             image = post.get("image")
             overwrite = post.get("overwrite")
             image_is_duplicate = False
 
             image_upload_type = post.get("type")
-            upload_dir, image_upload_type = get_dir_by_type(image_upload_type)
+            # Forward the request so uploads land in the caller's org-scoped
+            # directory (orgs/{org}/output) in multi-tenant mode.
+            upload_dir, image_upload_type = get_dir_by_type(image_upload_type, request)
 
             if image and image.file:
                 filename = image.filename
@@ -523,8 +525,23 @@ class PromptServer():
         @routes.post("/upload/image")
         async def upload_image(request):
             post = await request.post()
-            return image_upload(post)
+            return image_upload(post, request=request)
 
+        @routes.post("/upload/output")
+        async def upload_output(request):
+            # Token-authorized gallery ingest for BYO-GPU workers. A remote worker
+            # (hanzod's gpu-fleet loop) renders a studio.render job on its own GPU
+            # and POSTs each finished image here with the user's IAM bearer. The IAM
+            # middleware validates the token and sets request["iam_user"]; org is
+            # derived from that (owner/groups), so the file lands in this org's
+            # orgs/{org}/output — which the PVC + S3 mirror persist into the gallery.
+            # No S3/rclone credentials ever touch the worker box: the user's session
+            # token is the only credential. Replaces the old rclone/S3 sidecar sync.
+            post = await request.post()
+            # Force type=output regardless of what the client sent.
+            forced = dict(post)
+            forced["type"] = "output"
+            return image_upload(forced, request=request)
 
         @routes.post("/upload/mask")
         async def upload_mask(request):
@@ -570,7 +587,7 @@ class PromptServer():
                         original_pil.putalpha(new_alpha)
                         original_pil.save(filepath, compress_level=4, pnginfo=metadata)
 
-            return image_upload(post, image_save_function)
+            return image_upload(post, image_save_function, request=request)
 
         @routes.get("/view")
         async def view_image(request):
