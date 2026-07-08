@@ -12,6 +12,10 @@ import urllib.request
 
 CLOUD = os.environ.get("STUDIO_CLOUD_API_URL", "https://api.hanzo.ai").rstrip("/")
 JOBS_NS = os.environ.get("STUDIO_GPU_JOBS_NS", "gpu-jobs")
+# Public base of THIS studio deployment — where the BYO-GPU worker returns finished
+# outputs (POST /upload/output → orgs/{org}/output → gallery). The worker uploads
+# here with the user's IAM token; no S3/rclone credentials ever touch the box.
+STUDIO_PUBLIC_URL = os.environ.get("STUDIO_PUBLIC_URL", "https://studio.hanzo.ai").rstrip("/")
 
 
 def _bearer(request) -> str:
@@ -45,7 +49,7 @@ def dispatch_if_worker(request, org_id: str, prompt_id: str, prompt: dict) -> bo
             "activityType": {"name": "studio.render"},
             "taskQueue": JOBS_NS,
             "heartbeatTimeout": "600s",
-            "input": {"prompt": prompt, "org": org_id},
+            "input": {"prompt": prompt, "org": org_id, "uploadUrl": STUDIO_PUBLIC_URL},
         }).encode()
         req = urllib.request.Request(
             f"{CLOUD}/v1/tasks/namespaces/{JOBS_NS}/activities",
