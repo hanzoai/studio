@@ -6,9 +6,12 @@ of in this GPU-less pod. The user's own IAM bearer token is forwarded, so the
 cloud derives org + project + linked billing account from it — one auth path, no
 shared keys. Falls back to the in-pod queue when there is no live worker.
 """
+import base64
 import json
 import os
 import urllib.request
+
+import folder_paths
 
 CLOUD = os.environ.get("STUDIO_CLOUD_API_URL", "https://api.hanzo.ai").rstrip("/")
 JOBS_NS = os.environ.get("STUDIO_GPU_JOBS_NS", "gpu-jobs")
@@ -16,6 +19,51 @@ JOBS_NS = os.environ.get("STUDIO_GPU_JOBS_NS", "gpu-jobs")
 # outputs (POST /upload/output → orgs/{org}/output → gallery). The worker uploads
 # here with the user's IAM token; no S3/rclone credentials ever touch the box.
 STUDIO_PUBLIC_URL = os.environ.get("STUDIO_PUBLIC_URL", "https://studio.hanzo.ai").rstrip("/")
+
+# Node classes whose `image`/`mask` widget names a file in the org input dir. The
+# render runs on the worker's LOCAL disk, so any file a user UPLOADED here (it lands
+# in orgs/{org}/input, which the worker cannot read) must travel WITH the job.
+_IMAGE_INPUT_CLASSES = ("LoadImage", "LoadImageMask", "LoadImageOutput")
+# Cap the inlined payload so a pathological graph can't blow the tasks-API body.
+_MAX_INLINE_BYTES = 48 * 1024 * 1024
+
+
+def _collect_input_images(prompt: dict, org_id: str) -> list[dict]:
+    """Read every LoadImage-referenced file that exists under this org's input
+    directory and return them base64-encoded for transport to the worker. Files
+    already resident on the worker (e.g. staged garment refs) are harmless to
+    resend — the worker overwrites byte-identical copies. Best-effort: an absent
+    or oversized file is skipped, never fatal."""
+    in_dir = folder_paths.get_org_input_directory(org_id)
+    seen: set[str] = set()
+    out: list[dict] = []
+    total = 0
+    for node in prompt.values():
+        if not isinstance(node, dict) or node.get("class_type") not in _IMAGE_INPUT_CLASSES:
+            continue
+        name = (node.get("inputs") or {}).get("image")
+        if not isinstance(name, str) or name in seen:
+            continue
+        seen.add(name)
+        # Honor a "sub/dir/file.png" reference; reject traversal.
+        rel = os.path.normpath(name)
+        if rel.startswith("..") or os.path.isabs(rel):
+            continue
+        path = os.path.join(in_dir, rel)
+        try:
+            if not os.path.isfile(path):
+                continue
+            size = os.path.getsize(path)
+            if size == 0 or total + size > _MAX_INLINE_BYTES:
+                continue
+            with open(path, "rb") as f:
+                data = f.read()
+        except OSError:
+            continue
+        total += len(data)
+        sub, base = os.path.split(rel)
+        out.append({"name": base, "subfolder": sub, "data": base64.b64encode(data).decode()})
+    return out
 
 
 def _bearer(request) -> str:
@@ -49,7 +97,15 @@ def dispatch_if_worker(request, org_id: str, prompt_id: str, prompt: dict) -> bo
             "activityType": {"name": "studio.render"},
             "taskQueue": JOBS_NS,
             "heartbeatTimeout": "600s",
-            "input": {"prompt": prompt, "org": org_id, "uploadUrl": STUDIO_PUBLIC_URL},
+            "input": {
+                "prompt": prompt,
+                "org": org_id,
+                "uploadUrl": STUDIO_PUBLIC_URL,
+                # Uploaded inputs live in orgs/{org}/input on THIS pod; the worker
+                # renders on its own disk and cannot read them — ship them along so
+                # LoadImage resolves there.
+                "inputs": _collect_input_images(prompt, org_id),
+            },
         }).encode()
         req = urllib.request.Request(
             f"{CLOUD}/v1/tasks/namespaces/{JOBS_NS}/activities",
