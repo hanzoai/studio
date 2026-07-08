@@ -1066,8 +1066,16 @@ class PromptServer():
                     extra_data["create_time"] = int(time.time() * 1000)  # timestamp in milliseconds
                     org_id = self._get_org_id(request)  # IAM org — scopes outputs + billing
                     extra_data["org_id"] = org_id
-                    from .middleware.gpu_dispatch import dispatch_if_worker
-                    if not dispatch_if_worker(request, org_id, prompt_id, prompt):
+                    # BYO-GPU dispatch: cloud pods only. A worker-mode node IS the
+                    # render backend — it must queue locally, never re-dispatch.
+                    dispatched = False
+                    if not args.worker_mode:
+                        try:
+                            from middleware.gpu_dispatch import dispatch_if_worker
+                        except ImportError:  # package-style checkout
+                            from .middleware.gpu_dispatch import dispatch_if_worker
+                        dispatched = dispatch_if_worker(request, org_id, prompt_id, prompt)
+                    if not dispatched:
                         self.prompt_queue.put((number, prompt_id, prompt, extra_data, outputs_to_execute, sensitive))
                     response = {"prompt_id": prompt_id, "number": number, "node_errors": valid[3]}
                     return web.json_response(response)
