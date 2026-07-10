@@ -293,12 +293,26 @@ def audio_bytes_to_studio(data: bytes) -> dict:
 
 
 def studio_audio_to_wav_bytes(audio: dict) -> bytes:
-    """Encode a Studio AUDIO dict to WAV bytes for multipart upload (ASR)."""
-    import torchaudio
+    """Encode a Studio AUDIO dict ({waveform:[B,C,T], sample_rate}) to 16-bit PCM
+    WAV bytes for multipart upload (ASR) or a data URL (dub). Stdlib `wave` only."""
+    import wave
 
     wav = audio["waveform"]
     if wav.dim() == 3:  # [B,C,T] -> [C,T]
         wav = wav[0]
+    arr = wav.detach().cpu().float().clamp_(-1.0, 1.0).numpy()  # [C,T]
+    pcm16 = (arr * 32767.0).astype(np.int16)
+    interleaved = pcm16.T.reshape(-1).tobytes()  # [T,C] interleaved
     buf = io.BytesIO()
-    torchaudio.save(buf, wav.cpu(), int(audio["sample_rate"]), format="wav")
+    with wave.open(buf, "wb") as w:
+        w.setnchannels(arr.shape[0])
+        w.setsampwidth(2)
+        w.setframerate(int(audio["sample_rate"]))
+        w.writeframes(interleaved)
     return buf.getvalue()
+
+
+def studio_audio_to_data_url(audio: dict) -> str:
+    """Encode a Studio AUDIO dict to a `data:audio/wav` URL (driving audio for
+    /v1/animate, which takes audio as an http/file/data URL)."""
+    return "data:audio/wav;base64," + base64.b64encode(studio_audio_to_wav_bytes(audio)).decode("ascii")

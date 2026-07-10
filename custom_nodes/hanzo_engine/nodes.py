@@ -8,11 +8,13 @@ http://127.0.0.1:1234, override with HANZO_ENGINE_URL). Paths are always
   HanzoChat          -> POST /v1/chat/completions           (prompt -> text)
   HanzoImageGen      -> POST /v1/images/generations         (prompt -> IMAGE)
   HanzoTTS           -> POST /v1/audio/speech               (text -> AUDIO)
+  HanzoMusic         -> POST /v1/audio/music                (prompt -> AUDIO)
   HanzoASR           -> POST /v1/audio/transcriptions       (AUDIO -> text)
   HanzoEngineRequest -> POST|GET <any /v1 path>             (JSON -> response)
   HanzoVisionCaption -> POST /v1/chat/completions (vision)  (IMAGE -> text)
   HanzoTextToVideo   -> async /v1/videos                    (prompt -> frames)
   HanzoImageTo3D     -> async /v1/3d                        (IMAGE -> mesh path)
+  HanzoDub           -> POST /v1/animate                    (IMAGE+AUDIO -> frames)
   HanzoSaveText      -> writes a STRING to output/*.txt
 
 The generic HanzoEngineRequest is the forward-compatible escape hatch: a new
@@ -129,7 +131,7 @@ class HanzoTTS:
             },
             "optional": {
                 "model": (_model_combo(),),
-                "response_format": (["wav", "flac", "mp3", "opus", "aac"], {"default": "wav"}),
+                "response_format": (["wav", "pcm"], {"default": "wav"}),
             },
         }
 
@@ -302,15 +304,17 @@ class HanzoTextToVideo:
 
 
 class HanzoImageTo3D:
-    """Image-to-3D via the async job /v1/3d (native Rust). Saves the GLB/PLY to
-    the output dir and returns its path for a 3D-viewer node."""
+    """Image-to-3D via the async job /v1/3d (native Rust TRELLIS/Pixal3D). Saves
+    the mesh to the output dir and returns its path for a 3D-viewer node. Enable
+    `texture` for the full SLAT + FlexiCubes stage (textured GLB vs coarse mesh)."""
 
     @classmethod
     def INPUT_TYPES(cls):
         return {
             "required": {
                 "image": ("IMAGE",),
-                "format": (["glb", "ply"], {"default": "glb"}),
+                "format": (["glb", "ply", "obj"], {"default": "glb"}),
+                "texture": ("BOOLEAN", {"default": True}),
                 "seed": ("INT", {"default": 0, "min": 0, "max": 0xFFFFFFFFFFFFFFFF}),
                 "steps": ("INT", {"default": 30, "min": 1, "max": 150}),
             },
@@ -322,10 +326,11 @@ class HanzoImageTo3D:
     CATEGORY = CATEGORY
     OUTPUT_NODE = True
 
-    def generate(self, image, format, seed, steps):
+    def generate(self, image, format, texture, seed, steps):
         raw = client.run_job(
             "3d",
-            {"image": client.tensor_to_data_url(image), "format": format, "seed": seed, "steps": steps},
+            {"image": client.tensor_to_data_url(image), "format": format,
+             "texture": texture, "seed": seed, "steps": steps},
             job_timeout=900,
         )
         full_output_folder, filename, counter, _sub, _pre = folder_paths.get_save_image_path(
@@ -335,6 +340,72 @@ class HanzoImageTo3D:
         with open(path, "wb") as fh:
             fh.write(raw)
         return {"ui": {"text": [path]}, "result": (path,)}
+
+
+class HanzoMusic:
+    """Text/tag/lyric prompt -> music via /v1/audio/music (native Rust ACE-Step).
+    Returns a Studio AUDIO you can save/preview with the built-in audio nodes."""
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "prompt": ("STRING", {"multiline": True,
+                                      "default": "epic cinematic orchestral, driving percussion, brass swells"}),
+            },
+            "optional": {
+                "model": (_model_combo(),),
+                "response_format": (["wav", "pcm"], {"default": "wav"}),
+            },
+        }
+
+    RETURN_TYPES = ("AUDIO",)
+    RETURN_NAMES = ("audio",)
+    FUNCTION = "compose"
+    CATEGORY = CATEGORY
+
+    def compose(self, prompt, model="default", response_format="wav"):
+        raw = client.post_bytes(
+            "/v1/audio/music",
+            {"model": model, "input": prompt, "response_format": response_format},
+            timeout=900,
+        )
+        return (client.audio_bytes_to_studio(raw),)
+
+
+class HanzoDub:
+    """Lip-sync / avatar dub via /v1/animate (native Rust MuseTalk). Drives a
+    portrait IMAGE (or the first video frame) with an AUDIO track and returns the
+    animated frames as an IMAGE batch plus the driving audio, so a video-combine
+    node can mux them."""
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "image": ("IMAGE",),
+                "audio": ("AUDIO",),
+            },
+            "optional": {
+                "model": (_model_combo(),),
+                "fps": ("FLOAT", {"default": 25.0, "min": 1.0, "max": 60.0, "step": 1.0}),
+            },
+        }
+
+    RETURN_TYPES = ("IMAGE", "AUDIO")
+    RETURN_NAMES = ("frames", "audio")
+    FUNCTION = "dub"
+    CATEGORY = CATEGORY
+
+    def dub(self, image, audio, model="default", fps=25.0):
+        payload = {
+            "model": model,
+            "audio": client.studio_audio_to_data_url(audio),
+            "visual": client.tensor_to_data_url(image),
+            "fps": fps,
+        }
+        raw = client.post_bytes("/v1/animate", payload, timeout=1800)
+        return (client.mp4_bytes_to_image_batch(raw), audio)
 
 
 class HanzoSaveText:
@@ -372,11 +443,13 @@ NODE_CLASS_MAPPINGS = {
     "HanzoChat": HanzoChat,
     "HanzoImageGen": HanzoImageGen,
     "HanzoTTS": HanzoTTS,
+    "HanzoMusic": HanzoMusic,
     "HanzoASR": HanzoASR,
     "HanzoEngineRequest": HanzoEngineRequest,
     "HanzoVisionCaption": HanzoVisionCaption,
     "HanzoTextToVideo": HanzoTextToVideo,
     "HanzoImageTo3D": HanzoImageTo3D,
+    "HanzoDub": HanzoDub,
     "HanzoSaveText": HanzoSaveText,
 }
 
@@ -384,10 +457,12 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "HanzoChat": "Hanzo Chat (Engine)",
     "HanzoImageGen": "Hanzo Image Gen (Engine)",
     "HanzoTTS": "Hanzo TTS (Engine)",
+    "HanzoMusic": "Hanzo Music (Engine)",
     "HanzoASR": "Hanzo ASR (Engine)",
     "HanzoEngineRequest": "Hanzo Engine Request",
     "HanzoVisionCaption": "Hanzo Vision Caption (Engine)",
     "HanzoTextToVideo": "Hanzo Text to Video (Engine)",
     "HanzoImageTo3D": "Hanzo Image to 3D (Engine)",
+    "HanzoDub": "Hanzo Dub / Lip-Sync (Engine)",
     "HanzoSaveText": "Hanzo Save Text",
 }
