@@ -1,197 +1,234 @@
 """Hanzo Engine nodes for Hanzo Studio.
 
-These nodes call a local Hanzo Engine — the native-Rust, all-modality inference
-and training backend — over its OpenAI-compatible HTTP API. The base URL comes
-from the HANZO_ENGINE_URL environment variable (default http://127.0.0.1:1234/v1).
+Each node is one endpoint of the native-Rust Hanzo Engine, over the shared
+client in `client.py`. Config is one way: the engine base URL (default
+http://127.0.0.1:1234, override with HANZO_ENGINE_URL). Paths are always
+`/v1/*` — never `/api/*`.
 
-Connection and protocol errors surface as clear node errors (raised
-RuntimeError), which Hanzo Studio reports on the failing node rather than
-crashing the server.
+  HanzoChat          -> POST /v1/chat/completions           (prompt -> text)
+  HanzoImageGen      -> POST /v1/images/generations         (prompt -> IMAGE)
+  HanzoTTS           -> POST /v1/audio/speech               (text -> AUDIO)
+  HanzoASR           -> POST /v1/audio/transcriptions       (AUDIO -> text)
+  HanzoEngineRequest -> POST|GET <any /v1 path>             (JSON -> response)
+  HanzoVisionCaption -> POST /v1/chat/completions (vision)  (IMAGE -> text)
+  HanzoTextToVideo   -> async /v1/videos                    (prompt -> frames)
+  HanzoImageTo3D     -> async /v1/3d                        (IMAGE -> mesh path)
+  HanzoSaveText      -> writes a STRING to output/*.txt
+
+The generic HanzoEngineRequest is the forward-compatible escape hatch: a new
+engine endpoint (music, dub, ...) is reachable the day it ships, and promoting
+it to a first-class node is a few lines here.
 """
-import base64
-import io
 import json
 import os
 
-import numpy as np
-import requests
-import torch
-from PIL import Image
-
 import folder_paths
 
-DEFAULT_BASE_URL = "http://127.0.0.1:1234/v1"
+from . import client
+
+CATEGORY = "Hanzo/Engine"
 
 
-def _base_url() -> str:
-    return os.environ.get("HANZO_ENGINE_URL", DEFAULT_BASE_URL).rstrip("/")
-
-
-def _post(path: str, payload: dict, timeout: int = 120) -> dict:
-    url = f"{_base_url()}{path}"
-    try:
-        resp = requests.post(url, json=payload, timeout=timeout)
-    except requests.exceptions.RequestException as exc:
-        raise RuntimeError(
-            f"Hanzo Engine request to {url} failed: {exc}. Is the engine running? "
-            f"Set HANZO_ENGINE_URL (default {DEFAULT_BASE_URL})."
-        ) from exc
-    if resp.status_code != 200:
-        raise RuntimeError(
-            f"Hanzo Engine {url} returned HTTP {resp.status_code}: {resp.text[:500]}"
-        )
-    try:
-        return resp.json()
-    except ValueError as exc:
-        raise RuntimeError(
-            f"Hanzo Engine {url} returned a non-JSON response: {resp.text[:200]}"
-        ) from exc
-
-
-def _get_bytes(url: str, timeout: int = 120) -> bytes:
-    try:
-        resp = requests.get(url, timeout=timeout)
-    except requests.exceptions.RequestException as exc:
-        raise RuntimeError(f"Hanzo Engine image fetch from {url} failed: {exc}.") from exc
-    if resp.status_code != 200:
-        raise RuntimeError(f"Hanzo Engine image fetch {url} returned HTTP {resp.status_code}.")
-    return resp.content
-
-
-def _extract_message_text(data: dict) -> str:
-    try:
-        content = (data["choices"][0].get("message") or {}).get("content")
-    except (KeyError, IndexError, TypeError) as exc:
-        raise RuntimeError(
-            f"Unexpected Hanzo Engine response shape: {json.dumps(data)[:300]}"
-        ) from exc
-    if isinstance(content, list):  # OpenAI structured content parts
-        parts = [p.get("text", "") for p in content if isinstance(p, dict) and p.get("type") == "text"]
-        return "".join(parts).strip()
-    return (content or "").strip()
-
-
-def _tensor_to_pil(image: torch.Tensor) -> Image.Image:
-    if image.dim() == 4:  # [B,H,W,C] -> first frame
-        image = image[0]
-    arr = (image.cpu().numpy() * 255.0).clip(0, 255).astype(np.uint8)
-    return Image.fromarray(arr)
-
-
-def _pil_to_tensor(img: Image.Image) -> torch.Tensor:
-    arr = np.array(img.convert("RGB")).astype(np.float32) / 255.0
-    return torch.from_numpy(arr)[None,]  # [1,H,W,C]
-
-
-def _pil_to_data_url(img: Image.Image) -> str:
-    buf = io.BytesIO()
-    img.save(buf, format="PNG")
-    b64 = base64.b64encode(buf.getvalue()).decode("ascii")
-    return f"data:image/png;base64,{b64}"
-
-
-def _decode_image_item(item: dict) -> Image.Image:
-    b64 = item.get("b64_json")
-    if b64:
-        return Image.open(io.BytesIO(base64.b64decode(b64))).convert("RGB")
-    url = item.get("url")
-    if url:
-        if url.startswith("data:"):
-            raw = base64.b64decode(url.split(",", 1)[1])
-        else:
-            raw = _get_bytes(url)
-        return Image.open(io.BytesIO(raw)).convert("RGB")
-    raise RuntimeError("Hanzo Engine image item has neither 'b64_json' nor 'url'.")
+def _model_combo() -> list:
+    """["default", <ids from /v1/models>] — 'default' always routes to the
+    loaded model, so saved graphs stay portable across engines."""
+    combo, seen = [], set()
+    for name in ["default", *client.list_models()]:
+        if name not in seen:
+            seen.add(name)
+            combo.append(name)
+    return combo
 
 
 class HanzoChat:
-    """Text chat via Hanzo Engine /v1/chat/completions. Use for prompt
-    engineering, caption cleanup, and text chains inside a graph."""
+    """LLM chat/completion. Streams tokens (live progress) and returns the
+    full text; feeds prompt chains and image prompts inside a graph."""
 
     @classmethod
     def INPUT_TYPES(cls):
         return {
             "required": {
-                "model": ("STRING", {"default": "default"}),
+                "model": (_model_combo(),),
                 "prompt": ("STRING", {"multiline": True, "default": ""}),
             },
             "optional": {
                 "system": ("STRING", {"multiline": True, "default": ""}),
                 "temperature": ("FLOAT", {"default": 0.7, "min": 0.0, "max": 2.0, "step": 0.05}),
                 "max_tokens": ("INT", {"default": 512, "min": 1, "max": 32768}),
+                "stream": ("BOOLEAN", {"default": True}),
             },
         }
 
     RETURN_TYPES = ("STRING",)
     RETURN_NAMES = ("text",)
     FUNCTION = "generate"
-    CATEGORY = "Hanzo/Engine"
+    CATEGORY = CATEGORY
+    OUTPUT_NODE = True
 
-    def generate(self, model, prompt, system="", temperature=0.7, max_tokens=512):
+    def generate(self, model, prompt, system="", temperature=0.7, max_tokens=512, stream=True):
         messages = []
         if system.strip():
             messages.append({"role": "system", "content": system})
         messages.append({"role": "user", "content": prompt})
-        data = _post(
-            "/chat/completions",
-            {"model": model, "messages": messages, "temperature": temperature, "max_tokens": max_tokens},
-        )
-        return (_extract_message_text(data),)
+        payload = {"model": model, "messages": messages,
+                   "temperature": temperature, "max_tokens": max_tokens}
+        if stream:
+            pbar = client.progress_bar(max_tokens)
+            parts = []
+            for i, delta in enumerate(client.stream_chat(payload)):
+                parts.append(delta)
+                if pbar:
+                    pbar.update_absolute(min(i + 1, max_tokens))
+            text = "".join(parts).strip()
+        else:
+            text = client.extract_message_text(client.post_json("/v1/chat/completions", payload))
+        return {"ui": {"text": [text]}, "result": (text,)}
 
 
 class HanzoImageGen:
-    """Text-to-image via Hanzo Engine /v1/images/generations. Returns a
-    Hanzo Studio IMAGE tensor."""
+    """Text-to-image via /v1/images/generations (native Rust). Returns a
+    Studio IMAGE tensor."""
 
     @classmethod
     def INPUT_TYPES(cls):
         return {
             "required": {
                 "prompt": ("STRING", {"multiline": True, "default": ""}),
-                "size": (["1024x1024", "1024x1536", "1536x1024", "768x768", "512x512"], {"default": "1024x1024"}),
+                "width": ("INT", {"default": 1024, "min": 64, "max": 4096, "step": 8}),
+                "height": ("INT", {"default": 1024, "min": 64, "max": 4096, "step": 8}),
             },
             "optional": {
-                "model": ("STRING", {"default": "default"}),
-                "steps": ("INT", {"default": 20, "min": 1, "max": 150}),
+                "model": (_model_combo(),),
                 "n": ("INT", {"default": 1, "min": 1, "max": 8}),
             },
         }
 
     RETURN_TYPES = ("IMAGE",)
     FUNCTION = "generate"
-    CATEGORY = "Hanzo/Engine"
+    CATEGORY = CATEGORY
 
-    def generate(self, prompt, size, model="default", steps=20, n=1):
-        data = _post(
-            "/images/generations",
-            {"model": model, "prompt": prompt, "size": size, "n": n, "steps": steps, "response_format": "b64_json"},
+    def generate(self, prompt, width, height, model="default", n=1):
+        data = client.post_json(
+            "/v1/images/generations",
+            {"model": model, "prompt": prompt, "width": width, "height": height,
+             "n": n, "response_format": "b64_json"},
             timeout=600,
         )
-        items = data.get("data") or []
-        if not items:
-            raise RuntimeError("Hanzo Engine /images/generations returned no image data.")
-        tensors = [_pil_to_tensor(_decode_image_item(it)) for it in items]
-        if len(tensors) == 1:
-            batch = tensors[0]
+        return (client.images_to_batch(data.get("data") or []),)
+
+
+class HanzoTTS:
+    """Text-to-speech via /v1/audio/speech (native Rust). Returns a Studio
+    AUDIO you can save/preview with the built-in audio nodes."""
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "text": ("STRING", {"multiline": True, "default": ""}),
+            },
+            "optional": {
+                "model": (_model_combo(),),
+                "response_format": (["wav", "flac", "mp3", "opus", "aac"], {"default": "wav"}),
+            },
+        }
+
+    RETURN_TYPES = ("AUDIO",)
+    RETURN_NAMES = ("audio",)
+    FUNCTION = "speak"
+    CATEGORY = CATEGORY
+
+    def speak(self, text, model="default", response_format="wav"):
+        raw = client.post_bytes(
+            "/v1/audio/speech",
+            {"model": model, "input": text, "response_format": response_format},
+        )
+        return (client.audio_bytes_to_studio(raw),)
+
+
+class HanzoASR:
+    """Speech-to-text via /v1/audio/transcriptions (OpenAI multipart). Returns
+    the transcript text."""
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "audio": ("AUDIO",),
+            },
+            "optional": {
+                "model": (_model_combo(),),
+                "language": ("STRING", {"default": ""}),
+            },
+        }
+
+    RETURN_TYPES = ("STRING",)
+    RETURN_NAMES = ("text",)
+    FUNCTION = "transcribe"
+    CATEGORY = CATEGORY
+
+    def transcribe(self, audio, model="default", language=""):
+        wav = client.studio_audio_to_wav_bytes(audio)
+        data = {"model": model, "response_format": "json"}
+        if language.strip():
+            data["language"] = language.strip()
+        resp = client.post_multipart(
+            "/v1/audio/transcriptions",
+            files={"file": ("audio.wav", wav, "audio/wav")},
+            data=data,
+        )
+        return ((resp.get("text") or "").strip(),)
+
+
+class HanzoEngineRequest:
+    """Generic engine call: any `/v1` path with a JSON body -> the raw JSON
+    response as STRING. The forward-compatible escape hatch for endpoints that
+    do not have a dedicated node yet (music, dub, ...)."""
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "method": (["POST", "GET"], {"default": "POST"}),
+                "path": ("STRING", {"default": "/v1/chat/completions"}),
+                "json_body": ("STRING", {"multiline": True, "default": "{}"}),
+            },
+            "optional": {
+                "timeout": ("INT", {"default": 120, "min": 1, "max": 3600}),
+            },
+        }
+
+    RETURN_TYPES = ("STRING",)
+    RETURN_NAMES = ("response",)
+    FUNCTION = "call"
+    CATEGORY = CATEGORY
+
+    def call(self, method, path, json_body, timeout=120):
+        try:
+            payload = json.loads(json_body or "{}")
+        except ValueError as exc:
+            raise client.EngineError(f"HanzoEngineRequest json_body is not valid JSON: {exc}") from exc
+        if method == "GET":
+            data = client.get_json(path, timeout=timeout)
         else:
-            same = len({t.shape for t in tensors}) == 1
-            batch = torch.cat(tensors, dim=0) if same else tensors[0]
-        return (batch,)
+            data = client.post_json(path, payload, timeout=timeout)
+        return (json.dumps(data, indent=2),)
 
 
 class HanzoVisionCaption:
-    """Caption an IMAGE via Hanzo Engine vision chat (OpenAI image_url format).
-    Feeds LoRA/dataset prep loops; pair with a vision model such as Qwen3-VL."""
+    """Caption an IMAGE via vision chat (OpenAI image_url). Pair with a vision
+    model (e.g. Qwen3-VL) for LoRA/dataset prep."""
 
     @classmethod
     def INPUT_TYPES(cls):
         return {
             "required": {
                 "image": ("IMAGE",),
-                "prompt": ("STRING", {"multiline": True, "default": "Describe this image in detail for a training caption."}),
+                "prompt": ("STRING", {"multiline": True,
+                                      "default": "Describe this image in detail for a training caption."}),
             },
             "optional": {
-                "model": ("STRING", {"default": "default"}),
+                "model": (_model_combo(),),
                 "system": ("STRING", {"multiline": True, "default": ""}),
                 "max_tokens": ("INT", {"default": 512, "min": 1, "max": 32768}),
             },
@@ -200,27 +237,109 @@ class HanzoVisionCaption:
     RETURN_TYPES = ("STRING",)
     RETURN_NAMES = ("caption",)
     FUNCTION = "caption"
-    CATEGORY = "Hanzo/Engine"
+    CATEGORY = CATEGORY
 
     def caption(self, image, prompt, model="default", system="", max_tokens=512):
-        data_url = _pil_to_data_url(_tensor_to_pil(image))
+        content = [
+            {"type": "text", "text": prompt},
+            {"type": "image_url", "image_url": {"url": client.tensor_to_data_url(image)}},
+        ]
         messages = []
         if system.strip():
             messages.append({"role": "system", "content": system})
-        messages.append({
-            "role": "user",
-            "content": [
-                {"type": "text", "text": prompt},
-                {"type": "image_url", "image_url": {"url": data_url}},
-            ],
-        })
-        data = _post("/chat/completions", {"model": model, "messages": messages, "max_tokens": max_tokens}, timeout=300)
-        return (_extract_message_text(data),)
+        messages.append({"role": "user", "content": content})
+        data = client.post_json(
+            "/v1/chat/completions",
+            {"model": model, "messages": messages, "max_tokens": max_tokens},
+            timeout=300,
+        )
+        return (client.extract_message_text(data),)
+
+
+class HanzoTextToVideo:
+    """Text-to-video via the async job /v1/videos (native Rust). Returns the
+    decoded frames as an IMAGE batch so it composes with video-save nodes."""
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "prompt": ("STRING", {"multiline": True, "default": ""}),
+                "num_frames": ("INT", {"default": 81, "min": 1, "max": 1024}),
+                "width": ("INT", {"default": 832, "min": 64, "max": 2048, "step": 8}),
+                "height": ("INT", {"default": 480, "min": 64, "max": 2048, "step": 8}),
+                "steps": ("INT", {"default": 30, "min": 1, "max": 150}),
+            },
+            "optional": {
+                "model": (_model_combo(),),
+            },
+        }
+
+    RETURN_TYPES = ("IMAGE",)
+    RETURN_NAMES = ("frames",)
+    FUNCTION = "generate"
+    CATEGORY = CATEGORY
+
+    def generate(self, prompt, num_frames, width, height, steps, model="default"):
+        pbar = client.progress_bar(100)
+
+        def report(p):
+            if pbar is not None and p is not None:
+                try:
+                    pct = float(p)
+                    pbar.update_absolute(max(0, min(100, int(pct * (100 if pct <= 1.0 else 1)))))
+                except (TypeError, ValueError):
+                    pass
+
+        raw = client.run_job(
+            "videos",
+            {"model": model, "prompt": prompt, "num_frames": num_frames,
+             "width": width, "height": height, "steps": steps},
+            job_timeout=1800,
+            progress=report,
+        )
+        return (client.mp4_bytes_to_image_batch(raw),)
+
+
+class HanzoImageTo3D:
+    """Image-to-3D via the async job /v1/3d (native Rust). Saves the GLB/PLY to
+    the output dir and returns its path for a 3D-viewer node."""
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "image": ("IMAGE",),
+                "format": (["glb", "ply"], {"default": "glb"}),
+                "seed": ("INT", {"default": 0, "min": 0, "max": 0xFFFFFFFFFFFFFFFF}),
+                "steps": ("INT", {"default": 30, "min": 1, "max": 150}),
+            },
+        }
+
+    RETURN_TYPES = ("STRING",)
+    RETURN_NAMES = ("mesh_path",)
+    FUNCTION = "generate"
+    CATEGORY = CATEGORY
+    OUTPUT_NODE = True
+
+    def generate(self, image, format, seed, steps):
+        raw = client.run_job(
+            "3d",
+            {"image": client.tensor_to_data_url(image), "format": format, "seed": seed, "steps": steps},
+            job_timeout=900,
+        )
+        full_output_folder, filename, counter, _sub, _pre = folder_paths.get_save_image_path(
+            "hanzo3d", folder_paths.get_output_directory()
+        )
+        path = os.path.join(full_output_folder, f"{filename}_{counter:05}_.{format}")
+        with open(path, "wb") as fh:
+            fh.write(raw)
+        return {"ui": {"text": [path]}, "result": (path,)}
 
 
 class HanzoSaveText:
-    """Write a STRING to a .txt file in the output directory (image/caption
-    pairs for dataset prep) and preview it in the node."""
+    """Write a STRING to output/*.txt (image/caption pairs for dataset prep)
+    and preview it in the node."""
 
     def __init__(self):
         self.output_dir = folder_paths.get_output_directory()
@@ -230,17 +349,17 @@ class HanzoSaveText:
         return {
             "required": {
                 "text": ("STRING", {"forceInput": True}),
-                "filename_prefix": ("STRING", {"default": "caption"}),
+                "filename_prefix": ("STRING", {"default": "hanzo"}),
             },
         }
 
     RETURN_TYPES = ()
     FUNCTION = "save"
     OUTPUT_NODE = True
-    CATEGORY = "Hanzo/Engine"
+    CATEGORY = CATEGORY
 
-    def save(self, text, filename_prefix="caption"):
-        full_output_folder, filename, counter, _subfolder, _prefix = folder_paths.get_save_image_path(
+    def save(self, text, filename_prefix="hanzo"):
+        full_output_folder, filename, counter, _sub, _pre = folder_paths.get_save_image_path(
             filename_prefix, self.output_dir
         )
         path = os.path.join(full_output_folder, f"{filename}_{counter:05}_.txt")
@@ -252,13 +371,23 @@ class HanzoSaveText:
 NODE_CLASS_MAPPINGS = {
     "HanzoChat": HanzoChat,
     "HanzoImageGen": HanzoImageGen,
+    "HanzoTTS": HanzoTTS,
+    "HanzoASR": HanzoASR,
+    "HanzoEngineRequest": HanzoEngineRequest,
     "HanzoVisionCaption": HanzoVisionCaption,
+    "HanzoTextToVideo": HanzoTextToVideo,
+    "HanzoImageTo3D": HanzoImageTo3D,
     "HanzoSaveText": HanzoSaveText,
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
     "HanzoChat": "Hanzo Chat (Engine)",
     "HanzoImageGen": "Hanzo Image Gen (Engine)",
+    "HanzoTTS": "Hanzo TTS (Engine)",
+    "HanzoASR": "Hanzo ASR (Engine)",
+    "HanzoEngineRequest": "Hanzo Engine Request",
     "HanzoVisionCaption": "Hanzo Vision Caption (Engine)",
+    "HanzoTextToVideo": "Hanzo Text to Video (Engine)",
+    "HanzoImageTo3D": "Hanzo Image to 3D (Engine)",
     "HanzoSaveText": "Hanzo Save Text",
 }

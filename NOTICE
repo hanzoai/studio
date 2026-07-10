@@ -22,10 +22,13 @@ Modifications made in this fork
   branding/. Backend Python packages are namespaced under studio_* and the
   server reports itself as "Hanzo Studio".
 
-- Hanzo Engine integration nodes (custom_nodes/hanzo_engine/): custom nodes
-  that call a local Hanzo Engine OpenAI-compatible server — HanzoChat
-  (chat/completions), HanzoImageGen (images/generations), and
-  HanzoVisionCaption (vision chat/completions). Hanzo Engine is the native-Rust,
+- Hanzo Engine integration nodes (custom_nodes/hanzo_engine/): first-party
+  nodes that run AI workloads on a local Hanzo Engine OpenAI-compatible server
+  over a shared client — HanzoChat (chat/completions, streaming), HanzoImageGen
+  (images/generations), HanzoTTS (audio/speech), HanzoASR
+  (audio/transcriptions), HanzoEngineRequest (generic /v1 escape hatch),
+  HanzoVisionCaption (vision chat/completions), HanzoTextToVideo (videos),
+  HanzoImageTo3D (3d), and HanzoSaveText. Hanzo Engine is the native-Rust,
   all-modality inference and training backend.
 
 - Fashion/swimwear starter workflows (user/default/workflows/fashion/):
