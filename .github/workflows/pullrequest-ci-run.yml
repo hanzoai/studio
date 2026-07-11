@@ -38,7 +38,7 @@ jobs:
           use_prior_commit: 'true'
   comment:
     if: ${{ github.event.label.name == 'Run-CI-Test' }}
-    runs-on: ubuntu-latest
+    runs-on: hanzo-build-linux-amd64
     permissions:
       pull-requests: write
     steps:

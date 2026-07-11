@@ -6,7 +6,7 @@ on:
 
 jobs:
   check-line-endings:
-    runs-on: ubuntu-latest
+    runs-on: hanzo-build-linux-amd64
 
     steps:
       - name: Checkout code

@@ -6,7 +6,7 @@ on:
 
 jobs:
   send-webhook:
-    runs-on: ubuntu-latest
+    runs-on: hanzo-build-linux-amd64
     env:
       DESKTOP_REPO_DISPATCH_TOKEN: ${{ secrets.DESKTOP_REPO_DISPATCH_TOKEN }}
     steps:

@@ -8,7 +8,7 @@ on:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    runs-on: hanzo-build-linux-amd64
     steps:
     - name: Checkout Hanzo Studio
       uses: actions/checkout@v4

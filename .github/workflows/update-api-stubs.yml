@@ -7,7 +7,7 @@ on:
 
 jobs:
   generate-models:
-    runs-on: ubuntu-latest
+    runs-on: hanzo-build-linux-amd64
 
     steps:
       - name: Checkout repository
