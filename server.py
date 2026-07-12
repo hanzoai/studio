@@ -1066,6 +1066,13 @@ class PromptServer():
                     extra_data["create_time"] = int(time.time() * 1000)  # timestamp in milliseconds
                     org_id = self._get_org_id(request)  # IAM org — scopes outputs + billing
                     extra_data["org_id"] = org_id
+                    # Carry the requester's verified IAM token to the worker so the
+                    # finished render is recorded in the content lane as this user,
+                    # into this user's org. `sensitive` is stripped from history (see
+                    # SENSITIVE_EXTRA_DATA_KEYS) — the token is never persisted.
+                    iam_token = request.get("iam_token")
+                    if iam_token:
+                        sensitive["iam_token"] = iam_token
                     # BYO-GPU dispatch: cloud pods only. A worker-mode node IS the
                     # render backend — it must queue locally, never re-dispatch.
                     dispatched = False

@@ -446,6 +446,12 @@ def create_iam_auth_middleware(iam_url: str, localhost_bypass: bool = True):
             return web.json_response({"error": "Invalid or expired token"}, status=401)
 
         request["iam_user"] = _with_active_org(user, request.cookies.get(_ACTIVE_ORG_COOKIE))
+        # The verified raw access token. Studio records a completed render in the
+        # content lane AS THE REQUESTING USER (middleware/content_publish.py), so it
+        # lands in that user's org with that user's rights — no service account, no
+        # impersonation. Carried to the worker over the queue's `sensitive` channel,
+        # so it is never persisted into history.
+        request["iam_token"] = token
         return await handler(request)
 
     # Expose the login + callback handlers so server.py can register the routes.

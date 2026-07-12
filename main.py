@@ -245,6 +245,7 @@ def prompt_worker(q, server_instance):
     # Import metrics + billing for prompt tracking
     from middleware import metrics_middleware
     from middleware import billing_middleware
+    from middleware import content_publish
     enable_billing = getattr(args, "enable_billing", False)
     enable_metrics = getattr(args, "enable_metrics", False)
 
@@ -303,6 +304,26 @@ def prompt_worker(q, server_instance):
                         org_id=extra_data.get("org_id") or "default",
                         prompt_id=prompt_id,
                         n_outputs=billing_middleware.count_outputs(e.history_result),
+                    ),
+                    server_instance.loop,
+                )
+
+            # Content: record each output artifact as a draft Asset in the content
+            # lane (clients/content, module "marketing") — the SAME DocType that
+            # lane writes when it drives a render, so a studio-initiated render lands
+            # in the same place. Written as the requesting user via their IAM token
+            # from `sensitive`, so it lands in their org. Assets land draft; a human
+            # moves them through the lifecycle, and published is what a storefront
+            # shows. Fire-and-forget: a render is never failed if the lane is down.
+            if content_publish.enabled() and e.success:
+                asyncio.run_coroutine_threadsafe(
+                    content_publish.publish_render(
+                        org_id=extra_data.get("org_id") or "default",
+                        prompt_id=prompt_id,
+                        workflow=item[2],
+                        history_result=e.history_result,
+                        iam_token=extra_data.get("iam_token"),
+                        extra_data=extra_data,
                     ),
                     server_instance.loop,
                 )

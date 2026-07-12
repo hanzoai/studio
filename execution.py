@@ -149,7 +149,11 @@ class CacheSet:
         }
         return result
 
-SENSITIVE_EXTRA_DATA_KEYS = ("auth_token_hanzo", "api_key_hanzo")
+# Secrets that ride with a queued prompt but must never be persisted into history.
+# `iam_token` is the requesting user's own verified IAM access token: the prompt
+# worker records the finished render in the content lane as that user
+# (middleware/content_publish.py).
+SENSITIVE_EXTRA_DATA_KEYS = ("auth_token_hanzo", "api_key_hanzo", "iam_token")
 
 def get_input_data(inputs, class_def, unique_id, execution_list=None, dynprompt=None, extra_data={}):
     is_v3 = issubclass(class_def, _StudioNodeInternal)
