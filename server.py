@@ -1050,6 +1050,21 @@ class PromptServer():
 
                 self.node_replace_manager.apply_replacements(prompt)
 
+                org_id = self._get_org_id(request)  # IAM org — scopes outputs + billing
+                # BYO-GPU dispatch: cloud pods only. A worker-mode node IS the
+                # render backend — it must queue locally, never re-dispatch.
+                # Runs BEFORE local validation: the job executes on the org's GPU
+                # box, which validates against ITS node classes and model files. A
+                # GPU-less pod has an empty model list and would wrongly reject
+                # every checkpoint-referencing graph ("not in []").
+                if not args.worker_mode:
+                    try:
+                        from middleware.gpu_dispatch import dispatch_if_worker
+                    except ImportError:  # package-style checkout
+                        from .middleware.gpu_dispatch import dispatch_if_worker
+                    if dispatch_if_worker(request, org_id, prompt_id, prompt):
+                        return web.json_response({"prompt_id": prompt_id, "number": number, "node_errors": {}})
+
                 valid = await execution.validate_prompt(prompt_id, prompt, partial_execution_targets)
                 extra_data = {}
                 if "extra_data" in json_data:
@@ -1064,7 +1079,6 @@ class PromptServer():
                         if sensitive_val in extra_data:
                             sensitive[sensitive_val] = extra_data.pop(sensitive_val)
                     extra_data["create_time"] = int(time.time() * 1000)  # timestamp in milliseconds
-                    org_id = self._get_org_id(request)  # IAM org — scopes outputs + billing
                     extra_data["org_id"] = org_id
                     # Carry the requester's verified IAM token to the worker so the
                     # finished render is recorded in the content lane as this user,
@@ -1073,17 +1087,7 @@ class PromptServer():
                     iam_token = request.get("iam_token")
                     if iam_token:
                         sensitive["iam_token"] = iam_token
-                    # BYO-GPU dispatch: cloud pods only. A worker-mode node IS the
-                    # render backend — it must queue locally, never re-dispatch.
-                    dispatched = False
-                    if not args.worker_mode:
-                        try:
-                            from middleware.gpu_dispatch import dispatch_if_worker
-                        except ImportError:  # package-style checkout
-                            from .middleware.gpu_dispatch import dispatch_if_worker
-                        dispatched = dispatch_if_worker(request, org_id, prompt_id, prompt)
-                    if not dispatched:
-                        self.prompt_queue.put((number, prompt_id, prompt, extra_data, outputs_to_execute, sensitive))
+                    self.prompt_queue.put((number, prompt_id, prompt, extra_data, outputs_to_execute, sensitive))
                     response = {"prompt_id": prompt_id, "number": number, "node_errors": valid[3]}
                     return web.json_response(response)
                 else:
