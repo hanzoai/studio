@@ -33,6 +33,35 @@ RUN chmod +x scripts/install_custom_nodes.sh && scripts/install_custom_nodes.sh
 # Create directories for runtime volumes
 RUN mkdir -p models output input custom_nodes user
 
+# /app/orgs is the tenant-data PVC; /app/models is ephemeral overlay. Register
+# .models on the PVC as the default model store (main.py auto-loads this file)
+# so models survive pod restarts and downloads land durable.
+RUN printf '%s\n' \
+    'hanzo:' \
+    '  base_path: /app/orgs/.models' \
+    '  is_default: true' \
+    '  checkpoints: checkpoints' \
+    '  configs: configs' \
+    '  loras: loras' \
+    '  vae: vae' \
+    '  text_encoders: text_encoders' \
+    '  diffusion_models: diffusion_models' \
+    '  clip_vision: clip_vision' \
+    '  style_models: style_models' \
+    '  embeddings: embeddings' \
+    '  diffusers: diffusers' \
+    '  vae_approx: vae_approx' \
+    '  controlnet: controlnet' \
+    '  gligen: gligen' \
+    '  upscale_models: upscale_models' \
+    '  latent_upscale_models: latent_upscale_models' \
+    '  hypernetworks: hypernetworks' \
+    '  photomaker: photomaker' \
+    '  classifiers: classifiers' \
+    '  model_patches: model_patches' \
+    '  audio_encoders: audio_encoders' \
+    > extra_model_paths.yaml
+
 EXPOSE 8188
 
 # Default: listen on all interfaces, CPU mode
