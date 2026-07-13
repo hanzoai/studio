@@ -1,0 +1,29 @@
+[Unit]
+Description=Zen Video - headless text-to-video queue (GB10) fronting Hanzo Studio
+Documentation=https://github.com/hanzoai/studio
+After=network-online.target studio.service
+Wants=network-online.target
+Requires=studio.service
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+User=z
+Group=z
+WorkingDirectory=/home/z/work/hanzo/studio/zen-video
+EnvironmentFile=/etc/zen-video.env
+Environment=ZEN_COMFY_URL=http://127.0.0.1:8188
+Environment=ZEN_VIDEO_PORT=8189
+Environment=ZEN_OUTPUT_DIR=/home/z/work/hanzo/studio/output
+Environment=ZEN_DB_PATH=/home/z/work/hanzo/studio/zen-video/jobs.db
+Environment=ZEN_PUBLIC_BASE=https://spark-video.hanzo.ai
+Environment=ZEN_ALLOW_ANON=0
+ExecStart=/home/z/work/hanzo/studio/.venv/bin/python zen_video_service.py
+Restart=on-failure
+RestartSec=5
+KillMode=mixed
+TimeoutStopSec=15
+Nice=5
+
+[Install]
+WantedBy=multi-user.target
