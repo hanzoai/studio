@@ -85,7 +85,8 @@ def build_prompt(
 
 
 if __name__ == "__main__":
-    import json, sys
+    import json
+    import sys
     p, s = build_prompt(positive=sys.argv[1] if len(sys.argv) > 1 else "a cat",
                         width=640, height=640, length=41, steps=20)
-    print(json.dumps({"prompt": p}, ensure_ascii=False))
+    sys.stdout.write(json.dumps({"prompt": p}, ensure_ascii=False) + "\n")
