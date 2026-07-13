@@ -1,19 +1,21 @@
 Hanzo Studio
 ============
 
+Forked from https://github.com/comfyanonymous/ComfyUI (GPL-3.0).
+
 Hanzo Studio is a fork of ComfyUI (https://github.com/comfyanonymous/ComfyUI),
 Copyright (c) ComfyUI contributors, licensed under the GNU General Public
 License v3.0 (GPL-3.0).
 
-Modifications Copyright (c) 2026 Hanzo Industries Inc, also released under the
+Modifications Copyright (c) 2026 Hanzo AI, Inc., also released under the
 GNU General Public License v3.0 (GPL-3.0). See the LICENSE file for the full
 license text.
 
 As required by the GPL-3.0, this fork remains under the same license as the
 upstream project. The original ComfyUI copyright notices are retained.
 
-Modifications made in this fork
--------------------------------
+Modifications made in this fork (DEVIATIONS)
+--------------------------------------------
 
 - Branding: user-visible name changed from "ComfyUI" to "Hanzo Studio",
   including the served page <title>, favicon, in-app logos, and display
