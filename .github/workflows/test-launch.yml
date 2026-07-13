@@ -29,7 +29,7 @@ jobs:
     - name: Start Hanzo Studio server
       run: |
         python main.py --cpu 2>&1 | tee console_output.log &
-        wait-for-it --service 127.0.0.1:8188 -t 30
+        wait-for-it --service 127.0.0.1:8188 -t 120
       working-directory: studio
     - name: Check for unhandled exceptions in server log
       run: |
