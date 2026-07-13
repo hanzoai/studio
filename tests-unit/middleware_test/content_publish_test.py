@@ -181,5 +181,9 @@ async def test_empty_render_writes_nothing(aiohttp_client, monkeypatch):
 # --- the token never leaks into history ----------------------------------
 
 async def test_iam_token_is_a_sensitive_key_so_it_is_stripped_from_history():
+    # Force the CPU device path before the heavy import: model_management probes
+    # CUDA at import time and a GPU-less CI runner has no NVIDIA driver.
+    from studio.cli_args import args
+    args.cpu = True
     import execution
     assert "iam_token" in execution.SENSITIVE_EXTRA_DATA_KEYS
