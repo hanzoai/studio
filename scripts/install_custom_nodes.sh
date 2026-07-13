@@ -44,7 +44,10 @@ for name in CRIT:
 PY
 log "locked stack:"; sed 's/^/[packs]   /' "$CGEN"
 
-# 1. Clone / pin every pack from the manifest (comment + blank lines skipped).
+# 1. Clone / pin every pack from the manifest (comment + blank lines skipped),
+#    then apply any local compat patches (scripts/patches/<pack>-*.patch). The
+#    forced checkout discards previously-applied patches so the pin stays
+#    authoritative and re-runs are idempotent.
 log "reconciling packs from $MANIFEST"
 while read -r name url sha _rest; do
   case "$name" in ''|\#*) continue ;; esac
@@ -54,8 +57,13 @@ while read -r name url sha _rest; do
   else
     git clone -q --filter=blob:none "$url" "$dir"
   fi
-  git -C "$dir" checkout -q "$sha"
+  git -C "$dir" checkout -qf "$sha"
   log "pinned $name @ $(git -C "$dir" rev-parse --short HEAD)"
+  for p in "$REPO/scripts/patches/$name"-*.patch; do
+    [ -f "$p" ] || continue
+    git -C "$dir" apply "$p"
+    log "applied $(basename "$p")"
+  done
 done < "$MANIFEST"
 
 # 2. Install pack dependencies with the derived stack lock.
