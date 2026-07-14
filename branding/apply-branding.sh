@@ -105,7 +105,13 @@ python3 "$BRANDING_DIR/patch_destring.py" "$STATIC_DIR"
 # studio.hanzo.ai ships the modern DOM node renderer as the only node design:
 # default the setting on, hide it from the Settings dialog (type:hidden), and
 # drop the logo-menu switch. Idempotent; see patch_vuenodes.py.
-echo "[12/12] Forcing Nodes 2.0 on (no toggle)..."
+echo "[12/13] Forcing Nodes 2.0 on (no toggle)..."
 python3 "$BRANDING_DIR/patch_vuenodes.py" "$STATIC_DIR"
+
+# --- 13. Inject the deep-link opener (open + optionally run a workflow by URL) ---
+# ?org=<org>&workflow=<path>&run=1 sets the session org, loads the saved workflow,
+# and queues it (dispatching to the org's BYO-GPU). Idempotent; see patch_deeplink.py.
+echo "[13/13] Injecting deep-link opener..."
+python3 "$BRANDING_DIR/patch_deeplink.py" "$STATIC_DIR" "$BRANDING_DIR"
 
 echo "=== Hanzo Studio branding complete ==="
