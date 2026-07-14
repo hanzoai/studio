@@ -1,0 +1,163 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Hanzo Studio</title>
+<style>
+:root{--bg:#0b0b0d;--panel:#131317;--line:#232329;--txt:#ececf1;--dim:#9a9aa5;
+--brand:#e8ff47;--ok:#3ddc84;--warn:#ffb648;--pub:#6aa5ff;--bad:#ff5d5d;font-size:15px}
+*{box-sizing:border-box;margin:0}
+body{background:var(--bg);color:var(--txt);font:400 1rem/1.45 Inter,system-ui,-apple-system,sans-serif}
+header{display:flex;align-items:center;gap:16px;padding:14px 22px;border-bottom:1px solid var(--line);
+position:sticky;top:0;background:rgba(11,11,13,.92);backdrop-filter:blur(8px);z-index:5}
+header h1{font-size:1.05rem;font-weight:600;letter-spacing:.2px}
+header .org{color:var(--dim);font-size:.85rem;border:1px solid var(--line);border-radius:99px;padding:3px 10px}
+header .sp{flex:1}
+.btn{border:1px solid var(--line);background:var(--panel);color:var(--txt);border-radius:8px;
+padding:7px 13px;font-size:.85rem;cursor:pointer;transition:.15s}
+.btn:hover{border-color:var(--dim)}
+.btn.brand{background:var(--brand);border-color:var(--brand);color:#111;font-weight:600}
+nav{display:flex;gap:4px;padding:12px 22px 0}
+nav button{background:none;border:none;color:var(--dim);font-size:.92rem;padding:8px 14px;cursor:pointer;
+border-radius:8px 8px 0 0;border-bottom:2px solid transparent}
+nav button.on{color:var(--txt);border-bottom-color:var(--brand)}
+main{padding:18px 22px 60px;max-width:1500px;margin:0 auto}
+.chips{display:flex;gap:8px;flex-wrap:wrap;margin:6px 0 18px}
+.chip{border:1px solid var(--line);border-radius:99px;padding:4px 12px;font-size:.82rem;color:var(--dim);cursor:pointer}
+.chip.on{color:#111;background:var(--brand);border-color:var(--brand);font-weight:600}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:16px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;overflow:hidden;display:flex;flex-direction:column}
+.card .im{aspect-ratio:2/3;background:#0f0f12 center/cover no-repeat;cursor:zoom-in}
+.card .doc{aspect-ratio:2/3;display:flex;align-items:center;justify-content:center;color:var(--dim);font-size:.8rem}
+.card .meta{padding:10px 12px;display:flex;flex-direction:column;gap:8px}
+.card .t{font-size:.83rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--txt)}
+.card .sub{font-size:.72rem;color:var(--dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.row{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.st{font-size:.7rem;font-weight:600;border-radius:99px;padding:2px 9px;text-transform:uppercase;letter-spacing:.4px}
+.st.draft{background:#2a2a31;color:var(--dim)}.st.approved{background:rgba(61,220,132,.15);color:var(--ok)}
+.st.queued{background:rgba(255,182,72,.15);color:var(--warn)}.st.published{background:rgba(106,165,255,.18);color:var(--pub)}
+.mini{border:1px solid var(--line);background:none;color:var(--dim);border-radius:7px;padding:4px 9px;font-size:.74rem;cursor:pointer}
+.mini:hover{color:var(--txt);border-color:var(--dim)}
+.mini.hot{color:#111;background:var(--brand);border-color:var(--brand);font-weight:600}
+.list{display:flex;flex-direction:column;gap:10px}
+.wf{display:flex;align-items:center;gap:12px;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px 16px}
+.wf .name{font-size:.9rem;flex:1}
+.empty{color:var(--dim);padding:40px;text-align:center}
+#toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%);background:#1c1c22;border:1px solid var(--line);
+border-radius:10px;padding:10px 18px;font-size:.85rem;opacity:0;transition:.25s;pointer-events:none;max-width:80vw}
+#toast.show{opacity:1}
+#zoom{position:fixed;inset:0;background:rgba(0,0,0,.88);display:none;align-items:center;justify-content:center;z-index:20;cursor:zoom-out}
+#zoom img{max-width:94vw;max-height:94vh;border-radius:8px}
+dialog{background:var(--panel);color:var(--txt);border:1px solid var(--line);border-radius:14px;padding:22px;max-width:460px;width:92vw}
+dialog::backdrop{background:rgba(0,0,0,.6)}
+dialog textarea{width:100%;background:#0f0f12;color:var(--txt);border:1px solid var(--line);border-radius:8px;
+padding:10px;font:inherit;font-size:.9rem;min-height:90px;margin:12px 0}
+</style>
+<header>
+  <h1>Hanzo Studio</h1><span class="org" id="org">…</span><span class="sp"></span>
+  <button class="btn" onclick="load()">Refresh</button>
+  <a class="btn brand" href="/?advanced=1" style="text-decoration:none">Advanced mode</a>
+</header>
+<nav>
+  <button class="on" data-tab="assets" onclick="tab('assets')">Assets</button>
+  <button data-tab="pipelines" onclick="tab('pipelines')">Pipelines</button>
+  <button data-tab="runs" onclick="tab('runs')">Runs</button>
+</nav>
+<main>
+  <section id="assets"><div class="chips" id="filters"></div><div class="grid" id="agrid"></div></section>
+  <section id="pipelines" hidden><div class="list" id="wflist"></div></section>
+  <section id="runs" hidden><div class="grid" id="rgrid"></div></section>
+</main>
+<div id="toast"></div>
+<div id="zoom" onclick="this.style.display='none'"><img id="zoomimg"></div>
+<dialog id="fixdlg">
+  <h3 style="font-size:1rem">Fix with chat</h3>
+  <p style="color:var(--dim);font-size:.83rem;margin-top:6px">Describe the change — a new render of this exact shot is queued with only that change applied.</p>
+  <textarea id="fixtext" placeholder="e.g. make the straps thicker and remove the blotchy skin texture"></textarea>
+  <div class="row" style="justify-content:flex-end">
+    <button class="mini" onclick="fixdlg.close()">Cancel</button>
+    <button class="mini hot" onclick="sendFix()">Queue fix</button>
+  </div>
+</dialog>
+<script>
+let DATA={assets:[],workflows:[]},FILTER='all',FIXPATH=null;
+const $=id=>document.getElementById(id);
+const toast=m=>{const t=$('toast');t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),3200)};
+const viewURL=v=>`/view?filename=${encodeURIComponent(v.filename)}&subfolder=${encodeURIComponent(v.subfolder)}&type=${v.type}`;
+function tab(name){document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('on',b.dataset.tab===name));
+  for(const s of ['assets','pipelines','runs'])$(s).hidden=s!==name; if(name==='runs')runs();}
+async function load(){
+  const r=await fetch('/v1/library');DATA=await r.json();
+  $('org').textContent=DATA.org||'';
+  const groups=[...new Set(DATA.assets.map(a=>a.design).filter(Boolean))].sort();
+  $('filters').innerHTML=['all','marketing',...groups].map(g=>`<span class="chip ${g===FILTER?'on':''}" onclick="FILTER='${g}';render()">${g}</span>`).join('');
+  render();pipes();
+}
+function render(){
+  const rows=DATA.assets.filter(a=>FILTER==='all'?true:FILTER==='marketing'?(a.path||'').startsWith('marketing/'):a.design===FILTER);
+  $('agrid').innerHTML=rows.map((a,i)=>{
+    const img=a.view&&/\.(png|jpe?g|webp)$/i.test(a.view.filename);
+    const prov=a.prov&&a.prov.workflow?`· ${a.prov.workflow}${a.prov.cfg?` · cfg ${a.prov.cfg}`:''}`:'';
+    return `<div class="card">
+      ${img?`<div class="im" style="background-image:url('${viewURL(a.view)}')" onclick="zoom('${viewURL(a.view)}')"></div>`
+           :`<div class="doc">${(a.path||'').split('/').pop()}</div>`}
+      <div class="meta">
+        <span class="t">${(a.path||'').split('/').pop()}</span>
+        <span class="sub">${a.design||a.kind||''} ${prov}</span>
+        <div class="row"><span class="st ${a.status}">${a.status}</span></div>
+        <div class="row">
+          ${a.status!=='approved'?`<button class="mini" onclick="setSt(${i},'approved')">Approve</button>`:''}
+          ${a.status!=='queued'?`<button class="mini" onclick="setSt(${i},'queued')">Queue</button>`:''}
+          ${a.status!=='published'?`<button class="mini" onclick="setSt(${i},'published')">Publish</button>`:''}
+          ${a.status!=='draft'?`<button class="mini" onclick="setSt(${i},'draft')">Draft</button>`:''}
+        </div>
+        ${img?`<div class="row">
+          <button class="mini" onclick="rerun(${i})">Re-run</button>
+          <button class="mini hot" onclick="openFix(${i})">Fix with chat</button>
+        </div>`:''}
+      </div></div>`;}).join('')||'<div class="empty">No assets yet — run a pipeline.</div>';
+}
+function pipes(){
+  $('wflist').innerHTML=(DATA.workflows||[]).map(w=>`<div class="wf"><span class="name">${w}</span>
+    <a class="mini" style="text-decoration:none" href="/?advanced=1&workflow=${encodeURIComponent(w)}">Edit</a>
+    <a class="mini hot" style="text-decoration:none" href="/?advanced=1&workflow=${encodeURIComponent(w)}&run=1">Run</a></div>`).join('')
+    ||'<div class="empty">No saved workflows for this org.</div>';
+}
+async function runs(){
+  const h=await (await fetch('/history?max_items=24')).json();
+  const items=Object.entries(h).reverse().map(([id,v])=>{
+    const ims=[];for(const o of Object.values(v.outputs||{}))for(const im of (o.images||[]))ims.push(im);
+    const ok=(v.status||{}).status_str||'?';
+    return {id,ok,im:ims[0]};
+  });
+  $('rgrid').innerHTML=items.map(r=>`<div class="card">
+    ${r.im?`<div class="im" style="background-image:url('${viewURL(r.im)}')" onclick="zoom('${viewURL(r.im)}')"></div>`:`<div class="doc">no output</div>`}
+    <div class="meta"><span class="t">${r.im?r.im.filename:r.id.slice(0,8)}</span>
+    <div class="row"><span class="st ${r.ok==='success'?'approved':'draft'}">${r.ok}</span></div></div></div>`).join('')
+    ||'<div class="empty">No runs yet.</div>';
+}
+async function setSt(i,status){
+  const a=DATA.assets[i];
+  const r=await fetch('/v1/library/status',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({path:a.path,status})});
+  if(r.ok){a.status=status;render();toast(`${a.path.split('/').pop()} → ${status}`);}
+  else toast('Failed: '+(await r.json()).error);
+}
+async function rerun(i){
+  const a=DATA.assets[i];toast('Queueing re-run…');
+  const r=await fetch('/v1/library/rerun',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({path:a.path})});
+  const j=await r.json();
+  toast(r.ok?`Re-run queued (${(j.prompt_ids||[]).length}) — watch Runs tab`:'Failed: '+j.error);
+}
+function openFix(i){FIXPATH=DATA.assets[i].path;$('fixtext').value='';$('fixdlg').showModal();}
+async function sendFix(){
+  const txt=$('fixtext').value.trim();if(!txt)return;
+  $('fixdlg').close();toast('Queueing fix…');
+  const r=await fetch('/v1/library/fix',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({path:FIXPATH,instruction:txt})});
+  const j=await r.json();
+  toast(r.ok?`Fix queued → ${j.output_prefix} — watch Runs tab`:'Failed: '+j.error);
+}
+function zoom(u){$('zoomimg').src=u;$('zoom').style.display='flex';}
+load();
+</script>

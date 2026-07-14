@@ -229,7 +229,8 @@ class PromptServer():
         self.client_session:Optional[aiohttp.ClientSession] = None
         self.number = 0
 
-        middlewares = [cache_control, deprecation_warning]
+        from middleware.studio_home import home_redirect
+        middlewares = [cache_control, deprecation_warning, home_redirect]
 
         self._iam_auth = None
         if args.enable_iam_auth:
@@ -1348,6 +1349,8 @@ class PromptServer():
         add_copilot_routes(self.routes, self)
         from middleware.session import add_session_routes
         add_session_routes(self.routes, self)
+        from middleware.studio_home import add_studio_home_routes
+        add_studio_home_routes(self.routes, self)
         self.app.add_subapp('/internal', self.internal_routes.get_app())
 
         # Prefix every route with /api for easier matching for delegation.
