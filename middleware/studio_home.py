@@ -14,7 +14,7 @@ storage or lifecycle:
     POST /v1/library/fix         {path, instruction}  chat-fix: Qwen edit pass on that output
 
 One source of truth per concern, all pre-existing:
-  * assets + curation state  -> orgs/<org>/output/library.json (karma_manifest.py)
+  * assets + curation state  -> orgs/<org>/output/library.json (library_manifest.py)
   * what made an image       -> the API graph ComfyUI embeds in the PNG itself
   * running work             -> the ONE /prompt path (self-POST, so gpu_dispatch,
                                 billing and content_publish all apply unchanged)

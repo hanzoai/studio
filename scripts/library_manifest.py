@@ -2,7 +2,7 @@
 """library_manifest.py — regenerate the ONE canonical asset-library index.
 
 The Karma content pipeline has a single source of truth: a `library.json`
-manifest that sits at the root of the karma org's studio-output subtree and
+manifest that sits at the root of an org's studio-output subtree (any tenant; pass --root) and
 indexes every asset Antje has rendered. The storefront (karma.style) and the
 socials/blog queue both read THIS file — there is no second index.
 
