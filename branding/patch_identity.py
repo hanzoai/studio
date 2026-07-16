@@ -21,7 +21,7 @@ import sys
 STATIC_DIR = sys.argv[1]
 BRANDING_DIR = sys.argv[2]
 
-BUNDLE_VERSION = "3"
+BUNDLE_VERSION = "4"
 JS = "hanzo-identity.js"
 CSS = "hanzo-identity.css"
 LINK_TAG = f'<link rel="stylesheet" href="{CSS}?v={BUNDLE_VERSION}"/>'

@@ -110,6 +110,12 @@
     }
 
     rows.push(el("div", { class: "hzid-sep" }));
+    // Exit the advanced node editor back to the content-forward Studio Home.
+    // Without this there is NO way out of Advanced mode (the node editor is the
+    // full-screen ComfyUI SPA) — the user gets stuck.
+    rows.push(el("a", { class: "hzid-item hzid-link", href: "/studio" }, [
+      el("span", { class: "hzid-tick", text: "←" }), el("span", { text: "Exit to Studio Home" }),
+    ]));
     rows.push(el("a", { class: "hzid-item hzid-link", href: s.console_url || "https://console.hanzo.ai", target: "_blank", rel: "noopener" }, [
       el("span", { class: "hzid-tick", text: "↗" }), el("span", { text: "Console" }),
     ]));
@@ -151,6 +157,17 @@
   // ------------------------------------------------------------- boot
   function mount() {
     if (document.getElementById("hanzo-identity")) return;
+    // Always-visible "Exit to Studio" button so Advanced mode is never a trap.
+    // Fixed top-left, above the node editor; independent of the user menu.
+    if (!document.getElementById("hanzo-exit-advanced")) {
+      var exit = el("a", {
+        id: "hanzo-exit-advanced", href: "/studio", title: "Exit Advanced — back to Studio Home",
+        style: "position:fixed;top:10px;left:12px;z-index:100000;display:flex;align-items:center;gap:6px;" +
+               "background:rgba(20,20,24,.92);color:#ececf1;border:1px solid #33333c;border-radius:8px;" +
+               "padding:6px 11px;font:600 12px/1 Inter,system-ui,sans-serif;text-decoration:none;cursor:pointer;backdrop-filter:blur(8px)"
+      }, [el("span", { text: "←" }), el("span", { text: "Studio" })]);
+      document.body.appendChild(exit);
+    }
     var root = el("div", { id: "hanzo-identity", class: "hanzo-identity" });
     document.body.appendChild(root);
     getSession().then(function (s) {
