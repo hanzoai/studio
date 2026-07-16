@@ -52,14 +52,17 @@ dialog{background:var(--panel);color:var(--txt);border:1px solid var(--line);bor
 dialog::backdrop{background:rgba(0,0,0,.6)}
 dialog textarea{width:100%;background:#0f0f12;color:var(--txt);border:1px solid var(--line);border-radius:8px;
 padding:10px;font:inherit;font-size:.9rem;min-height:90px;margin:12px 0}
+header .logo{width:26px;height:26px;border-radius:7px;display:block;flex:0 0 auto}
+header .user{display:flex;align-items:center;gap:8px;border:1px solid var(--line);border-radius:99px;padding:3px 10px 3px 4px;cursor:pointer}
+header .user .av{width:24px;height:24px;border-radius:50%;background:#26262e;color:var(--txt);display:flex;align-items:center;justify-content:center;font-size:.72rem;font-weight:600}
+header .user .nm{font-size:.82rem;color:var(--dim)}
 </style>
-<!-- Hanzo identity pill: org switcher · user · wallet · Console · Logout (same component as advanced mode; served from static root in the built image) -->
-<link rel="stylesheet" href="/hanzo-identity.css">
-<script src="/hanzo-identity.js" defer></script>
 <header>
-  <h1>Hanzo Studio</h1><span class="org" id="org">…</span><span class="sp"></span>
+  <svg class="logo" viewBox="0 0 520 520" xmlns="http://www.w3.org/2000/svg"><rect width="520" height="520" rx="120" fill="#111"/><g transform="translate(100,100) scale(4.78)" fill="#fff"><path d="M22.21 67V44.6369H0V67H22.21Z"/><path d="M66.7038 22.3184H22.2534L0.0878906 44.6367H44.4634L66.7038 22.3184Z"/><path d="M22.21 0H0V22.3184H22.21V0Z"/><path d="M66.7198 0H44.5098V22.3184H66.7198V0Z"/><path d="M66.7198 67V44.6369H44.5098V67H66.7198Z"/></g></svg>
+  <h1>Hanzo Studio</h1><span class="sp"></span>
   <button class="btn" onclick="load()">Refresh</button>
   <a class="btn brand" href="/?advanced=1" style="text-decoration:none">Advanced mode</a>
+  <div class="user" id="user" title="Account"><span class="av" id="av">·</span><span class="nm" id="org">…</span></div>
 </header>
 <nav>
   <button class="on" data-tab="assets" onclick="tab('assets')">Assets</button>
@@ -163,5 +166,23 @@ async function sendFix(){
   toast(r.ok?`Fix queued → ${j.output_prefix} — watch Runs tab`:'Failed: '+j.error);
 }
 function zoom(u){$('zoomimg').src=u;$('zoom').style.display='flex';}
-load();
+async function loadSession(){
+  let s={}; try{ s=await (await fetch('/v1/session')).json(); }catch(e){ return; }
+  const nm=(s.user||s.email||'').trim(); $('av').textContent=(nm[0]||'·').toUpperCase();
+  if(s.org)$('org').textContent=s.org;
+  $('user').onclick=()=>{
+    const ex=$('omenu'); if(ex){ex.remove();return;}
+    const orgs=(s.orgs&&s.orgs.length?s.orgs:[s.org]).filter(Boolean);
+    const m=document.createElement('div'); m.id='omenu';
+    m.style.cssText='position:fixed;top:54px;right:22px;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:6px;min-width:190px;z-index:30;box-shadow:0 12px 34px #000b';
+    m.innerHTML=orgs.map(o=>`<div class="omi" data-o="${o}" style="padding:8px 11px;border-radius:8px;cursor:pointer;font-size:.85rem;color:${o===s.org?'var(--txt)':'var(--dim)'}">${o===s.org?'● ':'○ '}${o}</div>`).join('')
+      +`<div style="height:1px;background:var(--line);margin:5px 4px"></div>`
+      +(s.console_url?`<a href="${s.console_url}" style="display:block;padding:8px 11px;color:var(--dim);text-decoration:none;font-size:.85rem">Console ↗</a>`:'')
+      +`<a href="/logout" style="display:block;padding:8px 11px;color:var(--dim);text-decoration:none;font-size:.85rem">Sign out</a>`;
+    document.body.appendChild(m);
+    m.querySelectorAll('.omi').forEach(el=>el.onclick=async()=>{try{await fetch('/v1/session/org',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({org:el.dataset.o})});}catch(e){} location.reload();});
+    setTimeout(()=>document.addEventListener('click',function h(e){if(!m.contains(e.target)&&e.target.id!=='user'&&!$('user').contains(e.target)){m.remove();document.removeEventListener('click',h);}}),0);
+  };
+}
+load(); loadSession();
 </script>
