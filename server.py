@@ -1418,6 +1418,8 @@ class PromptServer():
         add_session_routes(self.routes, self)
         from middleware.studio_home import add_studio_home_routes
         add_studio_home_routes(self.routes, self)
+        from middleware.mcp import add_mcp_routes
+        add_mcp_routes(self.routes, self)
         self.app.add_subapp('/internal', self.internal_routes.get_app())
 
         # Prefix every route with /api for easier matching for delegation.

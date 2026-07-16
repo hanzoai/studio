@@ -227,6 +227,54 @@ async def _queue_prompt(request: web.Request, server, graph: dict) -> str:
             return body.get("prompt_id", "")
 
 
+class DispatchError(ValueError):
+    """A create/fix/compose request that can't be honored (bad input / unknown asset)."""
+
+
+async def dispatch_fix(request: web.Request, server, org: str, rel: str, instruction: str) -> dict:
+    """Stage one library asset as a reference and run the proven Qwen edit graph.
+    The ONE fix path — the /v1/library/fix route and the chat `create` capability
+    both call this, so instruction-edits behave identically however they're invoked."""
+    instruction = (instruction or "").strip()
+    if not 3 <= len(instruction) <= 500:
+        raise DispatchError("instruction required (3-500 chars)")
+    root = _library_root(org)
+    p = _safe_asset(root, rel) if root else None
+    if p is None or p.suffix.lower() != ".png":
+        raise DispatchError(f"unknown asset: {rel}")
+    in_dir = Path(folder_paths.get_org_input_directory(org))
+    in_dir.mkdir(parents=True, exist_ok=True)
+    ref_name = f"fix_src_{abs(hash((str(p), p.stat().st_mtime))) % 10**10}.png"
+    (in_dir / ref_name).write_bytes(p.read_bytes())
+    stem = re.sub(r"[^a-zA-Z0-9_-]", "_", p.stem)[:48]
+    pid = await _queue_prompt(request, server, _fix_graph(ref_name, instruction, f"fixes/{stem}"))
+    return {"ok": True, "prompt_id": pid, "output_prefix": f"fixes/{stem}"}
+
+
+async def dispatch_compose(request: web.Request, server, org: str, paths: list, instruction: str) -> dict:
+    """Stage 2-5 library assets as references and run the multi-input Qwen graph.
+    Shared by the /v1/library/compose route and the chat `create` capability."""
+    instruction = (instruction or "").strip()
+    if not 3 <= len(instruction) <= 500:
+        raise DispatchError("instruction required (3-500 chars)")
+    if not 2 <= len(paths or []) <= 5:
+        raise DispatchError("select 2-5 assets to compose")
+    root = _library_root(org)
+    in_dir = Path(folder_paths.get_org_input_directory(org))
+    in_dir.mkdir(parents=True, exist_ok=True)
+    ref_names = []
+    for rel in paths:
+        p = _safe_asset(root, rel) if root else None
+        if p is None or p.suffix.lower() != ".png":
+            raise DispatchError(f"unknown asset: {rel}")
+        nm = f"compose_src_{abs(hash((str(p), p.stat().st_mtime))) % 10**10}.png"
+        (in_dir / nm).write_bytes(p.read_bytes())
+        ref_names.append(nm)
+    stem = "compose_" + "_".join(re.sub(r"[^a-zA-Z0-9]", "", Path(x).stem)[:12] for x in paths[:2])
+    pid = await _queue_prompt(request, server, _compose_graph(ref_names, instruction, f"composes/{stem}"))
+    return {"ok": True, "prompt_id": pid, "output_prefix": f"composes/{stem}", "refs": len(ref_names)}
+
+
 def _workflows(org: str) -> list[str]:
     """Saved workflow files for the org (any user), for the Pipelines tab."""
     base = Path(folder_paths.get_user_directory())
@@ -425,49 +473,22 @@ def add_studio_home_routes(routes: web.RouteTableDef, server) -> None:
     @routes.post("/v1/library/fix")
     async def fix(request: web.Request):
         body = await request.json()
-        instruction = (body.get("instruction") or "").strip()
-        if not 3 <= len(instruction) <= 500:
-            return web.json_response({"error": "instruction required (3-500 chars)"}, status=400)
-        org = _org_of(request)
-        root = _library_root(org)
-        p = _safe_asset(root, body.get("path", "")) if root else None
-        if p is None or p.suffix.lower() != ".png":
-            return web.json_response({"error": "unknown asset"}, status=404)
-        # LoadImage reads from the input dir: stage the chosen output there.
-        in_dir = Path(folder_paths.get_org_input_directory(org))
-        in_dir.mkdir(parents=True, exist_ok=True)
-        ref_name = f"fix_src_{abs(hash((str(p), p.stat().st_mtime))) % 10**10}.png"
-        (in_dir / ref_name).write_bytes(p.read_bytes())
-        stem = re.sub(r"[^a-zA-Z0-9_-]", "_", p.stem)[:48]
-        pid = await _queue_prompt(request, server, _fix_graph(ref_name, instruction, f"fixes/{stem}"))
-        return web.json_response({"ok": True, "prompt_id": pid, "output_prefix": f"fixes/{stem}"})
+        try:
+            return web.json_response(await dispatch_fix(
+                request, server, _org_of(request), body.get("path", ""), body.get("instruction", "")))
+        except DispatchError as e:
+            return web.json_response({"error": str(e)}, status=400)
 
     @routes.post("/v1/library/compose")
     async def compose(request: web.Request):
         """Select N assets + say HOW to combine them → a new generated output.
         The multi-input case of the proven Qwen reference-conditioned graph."""
         body = await request.json()
-        instruction = (body.get("instruction") or "").strip()
-        paths = body.get("paths") or []
-        if not 3 <= len(instruction) <= 500:
-            return web.json_response({"error": "instruction required (3-500 chars)"}, status=400)
-        if not 2 <= len(paths) <= 5:
-            return web.json_response({"error": "select 2-5 assets to compose"}, status=400)
-        org = _org_of(request)
-        root = _library_root(org)
-        in_dir = Path(folder_paths.get_org_input_directory(org))
-        in_dir.mkdir(parents=True, exist_ok=True)
-        ref_names = []
-        for rel in paths:
-            p = _safe_asset(root, rel) if root else None
-            if p is None or p.suffix.lower() != ".png":
-                return web.json_response({"error": f"unknown asset: {rel}"}, status=404)
-            nm = f"compose_src_{abs(hash((str(p), p.stat().st_mtime))) % 10**10}.png"
-            (in_dir / nm).write_bytes(p.read_bytes())
-            ref_names.append(nm)
-        stem = "compose_" + "_".join(re.sub(r"[^a-zA-Z0-9]", "", Path(x).stem)[:12] for x in paths[:2])
-        pid = await _queue_prompt(request, server, _compose_graph(ref_names, instruction, f"composes/{stem}"))
-        return web.json_response({"ok": True, "prompt_id": pid, "output_prefix": f"composes/{stem}", "refs": len(ref_names)})
+        try:
+            return web.json_response(await dispatch_compose(
+                request, server, _org_of(request), body.get("paths") or [], body.get("instruction", "")))
+        except DispatchError as e:
+            return web.json_response({"error": str(e)}, status=400)
 
     # ── Ratings + notes: the curation feedback loop (HIP-0506 §5) ──────────────
     # Stored per-org in orgs/<org>/output/ratings.json keyed by asset path OR run
