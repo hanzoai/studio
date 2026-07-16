@@ -46,7 +46,7 @@ import folder_paths
 log = logging.getLogger("studio.home")
 
 _HTML = Path(__file__).with_name("studio_home.html")
-_STATUSES = ("draft", "approved", "queued", "published")
+_STATUSES = ("draft", "approved", "queued", "published", "deleted")
 _PROV_CACHE: dict[str, tuple[float, dict]] = {}  # abspath -> (mtime, provenance)
 
 _NEG = ("ghosting, double exposure, duplicated body, transparent fabric, sheer "
@@ -248,9 +248,9 @@ def add_studio_home_routes(routes: web.RouteTableDef, server) -> None:
 
     @routes.get("/v1/library/file")
     async def get_asset_file(request: web.Request):
-        # Org-scoped asset serving. ComfyUI's core /view serves the GLOBAL output
-        # dir, so org assets (orgs/<org>/output/…) 404 there → blank thumbnails.
-        # This resolves the caller's org and serves from that org's library root.
+        # Org-scoped asset serving. The Studio engine's core /view serves the
+        # GLOBAL output dir, so org assets (orgs/<org>/output/…) 404 there → blank
+        # thumbnails. This resolves the caller's org and serves from its library root.
         org = _org_of(request)
         root = _library_root(org)
         p = _safe_asset(root, request.query.get("path", "")) if root else None

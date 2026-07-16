@@ -70,6 +70,15 @@ main{max-width:1120px;margin:0 auto;padding:0 24px 80px}
 #zoom img{max-width:94vw;max-height:94vh;border-radius:8px}
 dialog{background:var(--panel);color:var(--txt);border:1px solid var(--line);border-radius:14px;padding:22px;max-width:460px;width:92vw}
 dialog::backdrop{background:rgba(0,0,0,.6)} dialog textarea{width:100%;background:#0f0f12;color:var(--txt);border:1px solid var(--line);border-radius:8px;padding:10px;font:inherit;font-size:.9rem;min-height:90px;margin:12px 0}
+#bulkbar{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#1a1a24;border:1px solid #34344a;border-radius:12px;padding:9px 14px;display:none;gap:9px;align-items:center;z-index:45;box-shadow:0 10px 32px #000a}
+#bulkbar.on{display:flex} #bulkn{font-size:.82rem;color:#cfcfe0;margin-right:4px}
+.card.sel-mode{cursor:pointer} .card.picked{outline:2px solid var(--brand);outline-offset:-2px}
+/* cleaner grid: tools hidden until hover */
+.card .tools{max-height:0;overflow:hidden;opacity:0;transition:.15s}
+.card:hover .tools{max-height:60px;opacity:1;margin-top:2px}
+.card .meta{gap:5px}
+.card .pick{position:absolute;top:8px;left:9px;width:20px;height:20px;border-radius:5px;border:1.5px solid #fff;background:rgba(0,0,0,.5);display:none;align-items:center;justify-content:center;font-size:.8rem;color:#111;z-index:3}
+.card{position:relative} .sel-mode .pick{display:flex} .picked .pick{background:var(--brand)}
 </style>
 <header>
   <svg class="logo" viewBox="0 0 520 520" xmlns="http://www.w3.org/2000/svg"><rect width="520" height="520" rx="120" fill="#111"/><g transform="translate(100,100) scale(4.78)" fill="#fff"><path d="M22.21 67V44.6369H0V67H22.21Z"/><path d="M66.7038 22.3184H22.2534L0.0878906 44.6367H44.4634L66.7038 22.3184Z"/><path d="M22.21 0H0V22.3184H22.21V0Z"/><path d="M66.7198 0H44.5098V22.3184H66.7198V0Z"/><path d="M66.7198 67V44.6369H44.5098V67H66.7198Z"/></g></svg>
@@ -101,9 +110,17 @@ dialog::backdrop{background:rgba(0,0,0,.6)} dialog textarea{width:100%;backgroun
     <button data-tab="pipelines" onclick="tab('pipelines')">Workflows</button>
     <button data-tab="runs" onclick="tab('runs')">Runs</button>
     <span class="sp"></span>
+    <button class="btn" id="selbtn" onclick="toggleSel()" style="padding:6px 12px">Select</button>
     <input class="search" id="q" placeholder="Search…" oninput="render()">
   </div>
   <section id="assets"><div class="chips" id="filters"></div><div class="grid" id="agrid"></div></section>
+  <div id="bulkbar"><span id="bulkn">0 selected</span>
+    <button class="mini" onclick="bulk('approved')">Approve</button>
+    <button class="mini" onclick="bulk('published')">Publish</button>
+    <button class="mini" onclick="bulkFork()">Fork / redo</button>
+    <button class="mini" onclick="bulk('deleted')">Delete</button>
+    <button class="mini" onclick="clearSel()">Cancel</button>
+  </div>
   <section id="templates" hidden><div class="grid" id="tgall"></div></section>
   <section id="pipelines" hidden><div class="grid" id="wfgrid"></div></section>
   <section id="runs" hidden><div class="grid" id="rgrid"></div></section>
@@ -119,20 +136,27 @@ dialog::backdrop{background:rgba(0,0,0,.6)} dialog textarea{width:100%;backgroun
 <script>
 // ── Template / KIND catalog — everything Studio supports ─────────────────────
 const TEMPLATES=[
- {k:'product',   t:'Product photo',   d:'Ecom front·side·back',      ic:'🛍', wf:'product'},
- {k:'ghost',     t:'Ghost mannequin', d:'On invisible form',          ic:'👕', wf:'ghost'},
- {k:'tryon',     t:'CAD → mockup',    d:'Fashion / packaging',        ic:'✳️', wf:'tryon'},
- {k:'3d',        t:'CAD → 3D',        d:'Multi-view → 3D + drape',    ic:'🧊', wf:'3d'},
- {k:'video',     t:'Video',           d:'Wan · LTX · Hunyuan',        ic:'🎬', wf:'video'},
- {k:'music',     t:'Music',           d:'ACE-Step · song',            ic:'🎵', wf:'music'},
- {k:'voice',     t:'Voice',           d:'Narration · TTS',            ic:'🎙', wf:'voice'},
- {k:'social',    t:'Social / Ad',     d:'Posts · ads · campaigns',    ic:'📣', wf:'social'},
- {k:'email',     t:'Marketing email', d:'HTML / MJML',                ic:'✉️', wf:'email'},
- {k:'deck',      t:'Deck',            d:'Sales · investor',           ic:'📊', wf:'deck'},
- {k:'doc',       t:'Document',        d:'Word · guide',               ic:'📄', wf:'doc'},
- {k:'sheet',     t:'Spreadsheet',     d:'xlsx · data',                ic:'🧮', wf:'sheet'},
- {k:'paper',     t:'Paper (LaTeX)',   d:'Academic · PDF',             ic:'📐', wf:'paper'},
- {k:'site',      t:'Website',         d:'Prototype · app',            ic:'🖥', wf:'site'},
+ // ── Fashion / commerce (the proven karma workflows, systematized) ──
+ {k:'cad_ghost', t:'CAD → Ghost mannequin', d:'Real fabric, invisible form', ic:'👕', wf:'cad_ghost', grp:'Fashion'},
+ {k:'outfit',    t:'Outfit switcher',       d:'Swap clothes, keep model+light', ic:'🔁', wf:'outfit', grp:'Fashion'},
+ {k:'product',   t:'Product photography',   d:'Ecom front·side·back',        ic:'🛍', wf:'product', grp:'Fashion'},
+ {k:'lifestyle', t:'Lifestyle photography', d:'Same model/3D, in scene',     ic:'🌅', wf:'lifestyle', grp:'Fashion'},
+ {k:'cad_mockup',t:'CAD → mockup',          d:'Fashion / packaging',         ic:'✳️', wf:'cad_mockup', grp:'Fashion'},
+ {k:'cad_3d',    t:'CAD → 3D + drape',      d:'Multi-view → 3D, fabric drape',ic:'🧊', wf:'cad_3d', grp:'Fashion'},
+ // ── Media ──
+ {k:'video',     t:'Video',           d:'Wan · LTX · Hunyuan',        ic:'🎬', wf:'video', grp:'Media'},
+ {k:'music',     t:'Music',           d:'ACE-Step · song',            ic:'🎵', wf:'music', grp:'Media'},
+ {k:'voice',     t:'Voice',           d:'Narration · TTS',            ic:'🎙', wf:'voice', grp:'Media'},
+ // ── Marketing ──
+ {k:'social',    t:'Social / Ad',     d:'Posts · ads · campaigns',    ic:'📣', wf:'social', grp:'Marketing'},
+ {k:'email',     t:'Marketing email', d:'HTML / MJML',                ic:'✉️', wf:'email', grp:'Marketing'},
+ {k:'deck',      t:'Deck',            d:'Sales · investor',           ic:'📊', wf:'deck', grp:'Marketing'},
+ // ── Documents ──
+ {k:'doc',       t:'Document',        d:'Word · guide',               ic:'📄', wf:'doc', grp:'Documents'},
+ {k:'sheet',     t:'Spreadsheet',     d:'xlsx · data',                ic:'🧮', wf:'sheet', grp:'Documents'},
+ {k:'paper',     t:'Paper (LaTeX)',   d:'Academic · PDF',             ic:'📐', wf:'paper', grp:'Documents'},
+ // ── Web ──
+ {k:'site',      t:'Website / App',   d:'From hanzo.app templates',   ic:'🖥', wf:'site', grp:'Web'},
 ];
 let DATA={assets:[],workflows:[]},FILTER='all';
 const $=id=>document.getElementById(id);
@@ -152,32 +176,65 @@ function create(){const p=$('pin').value.trim(); const t=$('tmpl').textContent;
 async function load(){
   const r=await fetch('/v1/library'); DATA=await r.json(); $('org').textContent=DATA.org||'';
   $('tcards').innerHTML=TEMPLATES.slice(0,7).map(tcard).join('');
-  $('tgall').innerHTML=TEMPLATES.map(tcard).join('');
+  // Templates tab: grouped by category
+  const grps=[...new Set(TEMPLATES.map(t=>t.grp))];
+  $('tgall').innerHTML=grps.map(g=>`<div style="grid-column:1/-1;color:var(--dim);font-size:.8rem;margin:8px 0 2px">${g}</div>`+
+    TEMPLATES.filter(t=>t.grp===g).map(tcard).join('')).join('');
   const groups=[...new Set(DATA.assets.map(a=>a.design).filter(Boolean))].sort();
-  $('filters').innerHTML=['all','marketing',...groups].map(g=>`<span class="chip ${g===FILTER?'on':''}" onclick="FILTER='${g}';render()">${g}</span>`).join('');
+  const delN=DATA.assets.filter(a=>a.status==='deleted').length;
+  const chips=['all','marketing',...groups];
+  $('filters').innerHTML=chips.map(g=>`<span class="chip ${g===FILTER?'on':''}" onclick="FILTER='${g}';render()">${g}</span>`).join('')
+    +`<span class="chip ${FILTER==='deleted'?'on':''}" onclick="FILTER='deleted';render()" style="margin-left:auto">🗑 Deleted${delN?' ('+delN+')':''}</span>`;
   render();
 }
+let SELMODE=false; const SEL=new Set();
+function toggleSel(){SELMODE=!SELMODE;$('selbtn').classList.toggle('brand',SELMODE);if(!SELMODE)SEL.clear();updateBulk();render();}
+function clearSel(){SEL.clear();SELMODE=false;$('selbtn').classList.remove('brand');updateBulk();render();}
+function updateBulk(){$('bulkbar').classList.toggle('on',SELMODE&&SEL.size>0);$('bulkn').textContent=SEL.size+' selected';}
+function pick(ev,path){ev.stopPropagation();if(SEL.has(path))SEL.delete(path);else SEL.add(path);updateBulk();render();}
 function render(){
   const q=($('q').value||'').toLowerCase();
-  let rows=DATA.assets.filter(a=>FILTER==='all'?true:FILTER==='marketing'?(a.path||'').startsWith('marketing/'):a.design===FILTER);
+  const showDel=FILTER==='deleted';
+  let rows=DATA.assets.filter(a=>{
+    if(showDel)return a.status==='deleted';
+    if(a.status==='deleted')return false;               // hide trashed from normal views
+    return FILTER==='all'?true:FILTER==='marketing'?(a.path||'').startsWith('marketing/'):a.design===FILTER;
+  });
   if(q)rows=rows.filter(a=>(a.path||'').toLowerCase().includes(q));
-  $('agrid').innerHTML=rows.map((a,i)=>{
+  $('agrid').innerHTML=rows.map(a=>{
+    const i=DATA.assets.indexOf(a);
     const img=/\.(png|jpe?g|webp)$/i.test(a.path||'');
     const prov=a.prov&&a.prov.workflow?` · ${a.prov.workflow}`:'';
-    return `<div class="card">
-      ${img?`<div class="im" style="background-image:url('${imgURL(a)}')" onclick="zoom('${imgURL(a)}')"></div>`
+    const picked=SEL.has(a.path);
+    const cardClick=SELMODE?`onclick="pick(event,'${a.path.replace(/'/g,"\\'")}')"`:'';
+    return `<div class="card ${SELMODE?'sel-mode':''} ${picked?'picked':''}" ${cardClick}>
+      <div class="pick">${picked?'✓':''}</div>
+      ${img?`<div class="im" style="background-image:url('${imgURL(a)}')" ${SELMODE?'':`onclick="zoom('${imgURL(a)}')"`}></div>`
            :`<div class="doc">${(a.path||'').split('/').pop()}</div>`}
       <div class="meta">
         <span class="t">${(a.path||'').split('/').pop()}</span>
         <span class="sub">${a.design||a.kind||''}${prov}</span>
         <div class="row"><span class="st ${a.status}">${a.status}</span></div>
-        <div class="row">
+        ${SELMODE?'':`<div class="row tools">
+          ${showDel?`<button class="mini" onclick="setSt(${i},'draft')">Recover</button>`:`
           ${a.status!=='approved'?`<button class="mini" onclick="setSt(${i},'approved')">Approve</button>`:''}
           ${a.status!=='published'?`<button class="mini" onclick="setSt(${i},'published')">Publish</button>`:''}
-          ${img?`<button class="mini" onclick="rerun(${i})">Re-run</button><button class="mini hot" onclick="openFix(${i})">Fix with chat</button>`:''}
-        </div>
-      </div></div>`;}).join('')||'<div class="empty">No assets in this view yet.</div>';
+          ${img?`<button class="mini" onclick="rerun(${i})">Re-run</button><button class="mini hot" onclick="openFix(${i})">Fix</button>`:''}
+          <button class="mini" onclick="setSt(${i},'deleted')" title="Move to Deleted (recoverable)">🗑</button>`}
+        </div>`}
+      </div></div>`;}).join('')||`<div class="empty">${showDel?'Deleted is empty.':'No assets in this view yet.'}</div>`;
 }
+async function bulk(status){
+  if(!SEL.size)return;
+  if(status==='deleted'&&!confirm('Move '+SEL.size+' asset(s) to Deleted? (recoverable)'))return;
+  const paths=[...SEL];
+  for(const p of paths){await fetch('/v1/library/status',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({path:p,status})});
+    const a=DATA.assets.find(x=>x.path===p);if(a)a.status=status;}
+  toast(paths.length+' → '+status); clearSel();
+}
+async function bulkFork(){ if(!SEL.size)return; toast('Fork/redo '+SEL.size+' — re-running each with a fresh seed');
+  for(const p of [...SEL]){await fetch('/v1/library/rerun',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({path:p})});}
+  clearSel(); }
 function pipes(){ $('wfgrid').innerHTML=(DATA.workflows||[]).map(w=>`<div class="card"><div class="doc">⚙︎ ${w}</div><div class="meta"><div class="row"><a class="mini" href="/?advanced=1&workflow=${encodeURIComponent(w)}">Edit</a><a class="mini hot" href="/?advanced=1&workflow=${encodeURIComponent(w)}&run=1">Run</a></div></div></div>`).join('')||'<div class="empty">No saved workflows for this org yet.</div>'; }
 async function runs(){ const h=await (await fetch('/history?max_items=24')).json();
   const items=Object.entries(h).reverse().map(([id,v])=>{const ims=[];for(const o of Object.values(v.outputs||{}))for(const im of (o.images||[]))ims.push(im);return {id,ok:(v.status||{}).status_str||'?',im:ims[0]};});
