@@ -98,6 +98,103 @@ async def test_compose_accepts_uploaded_references(tmp_path, monkeypatch):
     assert any(n.startswith("compose_src_") for n in load_names)  # library asset staged
 
 
+def test_prompt_error_message_extracts_real_reason():
+    # model-less pod: /prompt returns a validation error — the user must SEE it.
+    body = {"error": {"type": "prompt_outputs_failed_validation",
+                      "message": "Prompt outputs failed validation",
+                      "details": "UNETLoader: unet_name 'qwen-image-edit-2511.safetensors' not in []"}}
+    msg = sh._prompt_error_message(body)
+    assert "Prompt outputs failed validation" in msg and "not in []" in msg
+    assert sh._prompt_error_message({}) and "silent" not in sh._prompt_error_message({}).lower()
+    assert sh._prompt_error_message({"error": "no GPU worker"}) == "no GPU worker"
+
+
+@pytest.mark.asyncio
+async def test_text_only_fix_dispatches_single_image(tmp_path, monkeypatch):
+    """REGRESSION LOCK: click Fix, type text, no references → the single-image
+    /v1/library/fix path (base library asset staged, proven Qwen edit graph)."""
+    org = "acme"
+    root = tmp_path / "orgs" / org / "output"
+    root.mkdir(parents=True)
+    (root / "library.json").write_text(json.dumps({"assets": [{"path": "a.png"}]}))
+    (root / "a.png").write_bytes(b"\x89PNG")
+    in_dir = tmp_path / "orgs" / org / "input"
+    in_dir.mkdir(parents=True)
+    monkeypatch.setattr(sh.folder_paths, "get_org_input_directory", lambda o=None: str(in_dir))
+    monkeypatch.setattr(sh.folder_paths, "get_org_output_directory", lambda o=None: str(root))
+    monkeypatch.setattr(sh.folder_paths, "get_output_directory", lambda: str(tmp_path))
+    captured = {}
+    async def fake_queue(request, server, graph):
+        captured["graph"] = graph
+        return "pid-fix"
+    monkeypatch.setattr(sh, "_queue_prompt", fake_queue)
+    out = await sh.dispatch_fix(None, None, org, "a.png", "make the straps thicker")
+    assert out["ok"] and out["prompt_id"] == "pid-fix"
+    g = captured["graph"]
+    assert g["1"]["class_type"] == "LoadImage" and g["1"]["inputs"]["image"].startswith("fix_src_")
+    assert g["15"]["class_type"] == "SaveImage" and "straps thicker" in g["6"]["inputs"]["prompt"]
+
+
+@pytest.mark.asyncio
+async def test_fix_accepts_uploaded_base_image(tmp_path, monkeypatch):
+    """A freshly uploaded photo can be the fix base (upload=) without landing it in
+    the library first — the '+ add a photo' single-ref path."""
+    org = "acme"
+    in_dir = tmp_path / "orgs" / org / "input"
+    in_dir.mkdir(parents=True)
+    (in_dir / "shot_1.png").write_bytes(b"\x89PNG-up")
+    monkeypatch.setattr(sh.folder_paths, "get_org_input_directory", lambda o=None: str(in_dir))
+    captured = {}
+    async def fake_queue(request, server, graph):
+        captured["graph"] = graph
+        return "pid-up"
+    monkeypatch.setattr(sh, "_queue_prompt", fake_queue)
+    out = await sh.dispatch_fix(None, None, org, "", "brighten it", upload="shot_1.png")
+    assert out["ok"] and captured["graph"]["1"]["inputs"]["image"] == "shot_1.png"
+    with pytest.raises(sh.DispatchError):
+        await sh.dispatch_fix(None, None, org, "", "brighten it", upload="../etc/passwd")
+
+
+@pytest.mark.asyncio
+async def test_queue_prompt_surfaces_downstream_error(tmp_path, monkeypatch):
+    """A non-200 from the self-POST /prompt (model-less pod) becomes a DispatchError
+    carrying the REAL reason — never a raw 502 the dialog swallows into 'Failed:'."""
+    from aiohttp import web
+    from aiohttp.test_utils import TestClient, TestServer
+
+    class Srv:
+        port = None
+    srv = Srv()
+    routes = web.RouteTableDef()
+
+    @routes.post("/prompt")
+    async def prompt(request):
+        return web.json_response({"error": {"message": "Prompt outputs failed validation",
+                                            "details": "UNETLoader: unet_name '…' not in []"}}, status=400)
+
+    async def edit(request):
+        graph = (await request.json())["graph"]
+        try:
+            pid = await sh._queue_prompt(request, srv, graph)
+            return web.json_response({"prompt_id": pid})
+        except sh.DispatchError as e:
+            return web.json_response({"error": str(e)}, status=400)
+    routes.post("/edit")(edit)
+
+    app = web.Application()
+    app.add_routes(routes)
+    ts = TestServer(app)
+    await ts.start_server()
+    srv.port = ts.port
+    client = TestClient(ts)
+    await client.start_server()
+    r = await client.post("/edit", json={"graph": {"1": {"class_type": "SaveImage", "inputs": {}}}})
+    body = await r.json()
+    assert r.status == 400 and "error" in body
+    assert "failed validation" in body["error"] and "not in []" in body["error"]  # real reason, shown
+    await client.close()
+
+
 @pytest.mark.asyncio
 async def test_compose_rejects_single_reference(tmp_path, monkeypatch):
     org = "acme"

@@ -238,42 +238,81 @@ def _compose_graph(ref_names: list[str], instruction: str, prefix: str) -> dict:
     return g
 
 
+class DispatchError(ValueError):
+    """A create/fix/compose request that can't be honored — bad input, unknown
+    asset, or a downstream /prompt failure. Carries a human message; the routes
+    return it as ``{"error": <message>}`` so a dispatch NEVER fails silently."""
+
+
+def _prompt_error_message(body) -> str:
+    """A short, human reason from a /prompt non-200 body. On a model-less cloud
+    pod the graph fails validation ("unet_name '…' not in []"); the router returns
+    'no GPU worker' / 'provisioning'. This is what the user must SEE instead of a
+    silent nothing."""
+    err = body.get("error") if isinstance(body, dict) else None
+    if isinstance(err, dict):
+        msg = err.get("message") or err.get("type") or "render could not be queued"
+        det = err.get("details")
+        return f"{msg} — {det}" if det and det != msg else msg
+    if isinstance(err, str) and err.strip():
+        return err.strip()
+    if isinstance(body, dict) and body.get("message"):
+        return str(body["message"])
+    return "render could not be queued — no GPU worker online for this org"
+
+
 async def _queue_prompt(request: web.Request, server, graph: dict) -> str:
     """Self-POST to the ONE /prompt path with the caller's own credentials, so
-    dispatch/billing/tenancy/content-publish behave exactly as a UI run."""
+    dispatch/billing/tenancy/content-publish behave exactly as a UI run. A non-200
+    from /prompt (model-less pod fails validation; router has no GPU worker) is
+    raised as a ``DispatchError`` carrying the real reason — NOT a raw 502 whose
+    truncated body the dialog can't parse (that was the deployed 'nothing happened /
+    nothing queued' — the error was swallowed)."""
     port = getattr(server, "port", None) or int(os.environ.get("PORT", "8188"))
     headers = {"Content-Type": "application/json"}
     for h in ("Authorization", "Cookie"):
         if request.headers.get(h):
             headers[h] = request.headers[h]
-    async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=60)) as s:
-        async with s.post(f"http://127.0.0.1:{port}/prompt", json={"prompt": graph}, headers=headers) as r:
-            body = await r.json(content_type=None)
-            if r.status != 200:
-                raise web.HTTPBadGateway(text=json.dumps(body)[:500])
-            return body.get("prompt_id", "")
+    try:
+        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=60)) as s:
+            async with s.post(f"http://127.0.0.1:{port}/prompt", json={"prompt": graph}, headers=headers) as r:
+                body = await r.json(content_type=None)
+                if r.status != 200:
+                    raise DispatchError(_prompt_error_message(body))
+                pid = body.get("prompt_id", "")
+                if not pid:
+                    raise DispatchError("render was not queued (no prompt_id returned)")
+                return pid
+    except aiohttp.ClientError as e:
+        raise DispatchError(f"could not reach the render engine ({e})")
 
 
-class DispatchError(ValueError):
-    """A create/fix/compose request that can't be honored (bad input / unknown asset)."""
-
-
-async def dispatch_fix(request: web.Request, server, org: str, rel: str, instruction: str) -> dict:
-    """Stage one library asset as a reference and run the proven Qwen edit graph.
-    The ONE fix path — the /v1/library/fix route and the chat `create` capability
-    both call this, so instruction-edits behave identically however they're invoked."""
+async def dispatch_fix(request: web.Request, server, org: str, rel: str,
+                       instruction: str, upload: str | None = None) -> dict:
+    """Run the proven Qwen single-image edit. The base image is EITHER a library
+    asset (``rel``, staged into the org input dir) OR an image the caller just
+    uploaded via ``/upload/image`` (``upload``, already resident there) — so a fresh
+    photo can be edited without first landing it in the library. The ONE fix path:
+    the /v1/library/fix route and the chat `create` capability both call this."""
     instruction = (instruction or "").strip()
     if not 3 <= len(instruction) <= 500:
         raise DispatchError("instruction required (3-500 chars)")
-    root = _library_root(org)
-    p = _safe_asset(root, rel) if root else None
-    if p is None or p.suffix.lower() != ".png":
-        raise DispatchError(f"unknown asset: {rel}")
     in_dir = Path(folder_paths.get_org_input_directory(org))
     in_dir.mkdir(parents=True, exist_ok=True)
-    ref_name = f"fix_src_{abs(hash((str(p), p.stat().st_mtime))) % 10**10}.png"
-    (in_dir / ref_name).write_bytes(p.read_bytes())
-    stem = re.sub(r"[^a-zA-Z0-9_-]", "_", p.stem)[:48]
+    if upload:
+        names = _resolve_uploads(org, [upload])
+        if not names:
+            raise DispatchError(f"unknown upload: {upload}")
+        ref_name = names[0]
+        stem = re.sub(r"[^a-zA-Z0-9_-]", "_", Path(ref_name).stem)[:48]
+    else:
+        root = _library_root(org)
+        p = _safe_asset(root, rel) if root else None
+        if p is None or p.suffix.lower() != ".png":
+            raise DispatchError(f"unknown asset: {rel}")
+        ref_name = f"fix_src_{abs(hash((str(p), p.stat().st_mtime))) % 10**10}.png"
+        (in_dir / ref_name).write_bytes(p.read_bytes())
+        stem = re.sub(r"[^a-zA-Z0-9_-]", "_", p.stem)[:48]
     pid = await _queue_prompt(request, server, _fix_graph(ref_name, instruction, f"fixes/{stem}"))
     return {"ok": True, "prompt_id": pid, "output_prefix": f"fixes/{stem}"}
 
@@ -510,7 +549,8 @@ def add_studio_home_routes(routes: web.RouteTableDef, server) -> None:
         body = await request.json()
         try:
             return web.json_response(await dispatch_fix(
-                request, server, _org_of(request), body.get("path", ""), body.get("instruction", "")))
+                request, server, _org_of(request), body.get("path", ""),
+                body.get("instruction", ""), body.get("upload")))
         except DispatchError as e:
             return web.json_response({"error": str(e)}, status=400)
 
