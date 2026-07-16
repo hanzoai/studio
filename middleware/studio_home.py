@@ -12,6 +12,8 @@ storage or lifecycle:
     POST /v1/library/status      {path, status}  draft|approved|queued|published
     POST /v1/library/rerun       {path, count?}  re-queue the EXACT embedded graph, new seed
     POST /v1/library/fix         {path, instruction}  chat-fix: Qwen edit pass on that output
+    POST /v1/library/compose     {paths[], uploads[]?, instruction}  multi-reference render
+                                 (library assets and/or images uploaded via /upload/image)
 
 One source of truth per concern, all pre-existing:
   * assets + curation state  -> orgs/<org>/output/library.json (library_manifest.py)
@@ -142,6 +144,31 @@ def _safe_asset(root: Path, rel: str) -> Path | None:
     return p if p.is_file() and str(p).startswith(str(root.resolve())) else None
 
 
+_REF_EXT = (".png", ".jpg", ".jpeg", ".webp")
+
+
+def _resolve_uploads(org: str, uploads: list | None) -> list[str]:
+    """Validate reference images already uploaded via ``POST /upload/image`` — the
+    core engine route lands them in this org's input dir (the SAME place fix/compose
+    stage their library-sourced references), so the compose graph's LoadImage nodes
+    can name them directly and the BYO-GPU collector ships them with the job. Return
+    the safe basenames, in order, de-duped. A traversal/absent/non-image entry is
+    dropped, never fatal — the caller enforces the reference count."""
+    in_dir = Path(folder_paths.get_org_input_directory(org))
+    root = str(in_dir.resolve())
+    names: list[str] = []
+    for u in uploads or []:
+        if not isinstance(u, str):
+            continue
+        name = os.path.basename(u.strip())
+        if not name or name in names or os.path.splitext(name)[1].lower() not in _REF_EXT:
+            continue
+        p = (in_dir / name).resolve()
+        if p.is_file() and str(p).startswith(root):
+            names.append(name)
+    return names
+
+
 def _reseed(graph: dict) -> dict:
     for node in graph.values():
         ins = node.get("inputs", {})
@@ -251,14 +278,20 @@ async def dispatch_fix(request: web.Request, server, org: str, rel: str, instruc
     return {"ok": True, "prompt_id": pid, "output_prefix": f"fixes/{stem}"}
 
 
-async def dispatch_compose(request: web.Request, server, org: str, paths: list, instruction: str) -> dict:
-    """Stage 2-5 library assets as references and run the multi-input Qwen graph.
-    Shared by the /v1/library/compose route and the chat `create` capability."""
+async def dispatch_compose(request: web.Request, server, org: str, paths: list,
+                           instruction: str, uploads: list | None = None) -> dict:
+    """Stage 2-5 references and run the multi-input Qwen graph. References are
+    library assets (``paths``, staged into the org input dir) and/or images the
+    caller just uploaded via ``/upload/image`` (``uploads``, already resident in
+    that dir). Shared by the /v1/library/compose route, the Fix surface's
+    add-reference flow, and the chat `create` capability."""
     instruction = (instruction or "").strip()
     if not 3 <= len(instruction) <= 500:
         raise DispatchError("instruction required (3-500 chars)")
-    if not 2 <= len(paths or []) <= 5:
-        raise DispatchError("select 2-5 assets to compose")
+    paths = paths or []
+    uploaded = _resolve_uploads(org, uploads)
+    if not 2 <= len(paths) + len(uploaded) <= 5:
+        raise DispatchError("select 2-5 references to compose")
     root = _library_root(org)
     in_dir = Path(folder_paths.get_org_input_directory(org))
     in_dir.mkdir(parents=True, exist_ok=True)
@@ -270,7 +303,9 @@ async def dispatch_compose(request: web.Request, server, org: str, paths: list, 
         nm = f"compose_src_{abs(hash((str(p), p.stat().st_mtime))) % 10**10}.png"
         (in_dir / nm).write_bytes(p.read_bytes())
         ref_names.append(nm)
-    stem = "compose_" + "_".join(re.sub(r"[^a-zA-Z0-9]", "", Path(x).stem)[:12] for x in paths[:2])
+    ref_names.extend(uploaded)
+    labels = [Path(x).stem for x in paths] + [Path(u).stem for u in uploaded]
+    stem = "compose_" + "_".join(re.sub(r"[^a-zA-Z0-9]", "", s)[:12] for s in labels[:2])
     pid = await _queue_prompt(request, server, _compose_graph(ref_names, instruction, f"composes/{stem}"))
     return {"ok": True, "prompt_id": pid, "output_prefix": f"composes/{stem}", "refs": len(ref_names)}
 
@@ -481,12 +516,14 @@ def add_studio_home_routes(routes: web.RouteTableDef, server) -> None:
 
     @routes.post("/v1/library/compose")
     async def compose(request: web.Request):
-        """Select N assets + say HOW to combine them → a new generated output.
-        The multi-input case of the proven Qwen reference-conditioned graph."""
+        """Select N references (library assets and/or freshly uploaded images) + say
+        HOW to combine them → a new generated output. The multi-input case of the
+        proven Qwen reference-conditioned graph."""
         body = await request.json()
         try:
             return web.json_response(await dispatch_compose(
-                request, server, _org_of(request), body.get("paths") or [], body.get("instruction", "")))
+                request, server, _org_of(request), body.get("paths") or [],
+                body.get("instruction", ""), body.get("uploads")))
         except DispatchError as e:
             return web.json_response({"error": str(e)}, status=400)
 

@@ -44,7 +44,74 @@ def test_safe_asset_blocks_traversal(tmp_path):
 
 
 def test_status_vocab_matches_library_lifecycle():
-    assert sh._STATUSES == ("draft", "approved", "queued", "published")
+    assert sh._STATUSES == ("draft", "approved", "queued", "published", "deleted")
+
+
+def test_resolve_uploads_keeps_only_safe_existing_images(tmp_path, monkeypatch):
+    in_dir = tmp_path / "orgs" / "acme" / "input"
+    in_dir.mkdir(parents=True)
+    (in_dir / "ref.png").write_bytes(b"\x89PNG")
+    (in_dir / "shot.jpg").write_bytes(b"jpg")
+    (tmp_path / "secret.txt").write_text("no")
+    monkeypatch.setattr(sh.folder_paths, "get_org_input_directory", lambda org=None: str(in_dir))
+    out = sh._resolve_uploads("acme", [
+        "ref.png",                 # kept
+        "sub/dir/shot.jpg",        # basename kept (upload names are flat)
+        "ref.png",                 # de-duped
+        "../secret.txt",           # traversal + non-image -> dropped
+        "missing.png",             # absent -> dropped
+        "notes.txt",               # non-image -> dropped
+        42,                        # non-string -> dropped
+    ])
+    assert out == ["ref.png", "shot.jpg"]
+
+
+@pytest.mark.asyncio
+async def test_compose_accepts_uploaded_references(tmp_path, monkeypatch):
+    """A base library asset + one uploaded image is a valid 2-reference compose:
+    the upload is named directly (already in the input dir), the library asset is
+    staged, and both reach the graph — no lower bound violation."""
+    org = "acme"
+    root = tmp_path / "orgs" / org / "output"
+    root.mkdir(parents=True)
+    (root / "library.json").write_text(json.dumps({"assets": [{"path": "a.png"}]}))
+    (root / "a.png").write_bytes(b"\x89PNG-base")
+    in_dir = tmp_path / "orgs" / org / "input"
+    in_dir.mkdir(parents=True)
+    (in_dir / "up_0001_.png").write_bytes(b"\x89PNG-up")
+
+    monkeypatch.setattr(sh.folder_paths, "get_org_input_directory", lambda o=None: str(in_dir))
+    monkeypatch.setattr(sh.folder_paths, "get_org_output_directory", lambda o=None: str(root))
+    monkeypatch.setattr(sh.folder_paths, "get_output_directory", lambda: str(tmp_path))
+
+    captured = {}
+    async def fake_queue(request, server, graph):
+        captured["graph"] = graph
+        return "pid-1"
+    monkeypatch.setattr(sh, "_queue_prompt", fake_queue)
+
+    out = await sh.dispatch_compose(None, None, org, ["a.png"], "merge them", uploads=["up_0001_.png"])
+    assert out["ok"] and out["refs"] == 2
+    load_names = [n["inputs"]["image"] for n in captured["graph"].values()
+                 if n["class_type"] == "LoadImage"]
+    assert "up_0001_.png" in load_names            # upload referenced by its own name
+    assert any(n.startswith("compose_src_") for n in load_names)  # library asset staged
+
+
+@pytest.mark.asyncio
+async def test_compose_rejects_single_reference(tmp_path, monkeypatch):
+    org = "acme"
+    root = tmp_path / "orgs" / org / "output"
+    root.mkdir(parents=True)
+    (root / "library.json").write_text(json.dumps({"assets": [{"path": "a.png"}]}))
+    (root / "a.png").write_bytes(b"\x89PNG")
+    in_dir = tmp_path / "orgs" / org / "input"
+    in_dir.mkdir(parents=True)
+    monkeypatch.setattr(sh.folder_paths, "get_org_input_directory", lambda o=None: str(in_dir))
+    monkeypatch.setattr(sh.folder_paths, "get_org_output_directory", lambda o=None: str(root))
+    monkeypatch.setattr(sh.folder_paths, "get_output_directory", lambda: str(tmp_path))
+    with pytest.raises(sh.DispatchError):
+        await sh.dispatch_compose(None, None, org, ["a.png"], "just one", uploads=[])
 
 
 @pytest.mark.asyncio

@@ -242,10 +242,17 @@ body.immersive #stage{display:block}
 <div id="zoom" onclick="this.style.display='none'"><img id="zoomimg"></div>
 <dialog id="fixdlg">
   <h3 style="font-size:1rem">Fix with chat</h3>
-  <p style="color:var(--dim);font-size:.83rem;margin-top:6px">Describe the change — a new render of this exact shot is queued with only that change.</p>
+  <p style="color:var(--dim);font-size:.83rem;margin-top:6px">Describe the change — a new render is queued from this image. Add reference photos (drag in, or pick from your history) to guide it.</p>
+  <div class="row" id="fixrefs" style="margin:12px 0 0;flex-wrap:wrap"></div>
+  <div class="drop" id="fixdrop">Drag images here, or <b>click to upload</b> references</div>
+  <input id="fixfile" type="file" accept="image/*" multiple hidden>
   <textarea id="fixtext" placeholder="e.g. make the straps thicker, smooth the skin"></textarea>
   <div id="gpuwarn" style="display:none;color:var(--warn);font-size:.78rem;margin:-4px 0 8px"></div>
-  <div class="row" style="justify-content:flex-end"><button class="mini" onclick="fixdlg.close()">Cancel</button><button class="mini hot" onclick="sendFix()">Queue fix</button></div>
+  <div class="row" style="justify-content:space-between">
+    <button class="mini" id="fixhistbtn" onclick="toggleFixHistory()">+ From history</button>
+    <div class="row"><button class="mini" onclick="fixdlg.close()">Cancel</button><button class="mini hot" onclick="sendFix()">Queue fix</button></div>
+  </div>
+  <div id="fixhist" style="display:none;max-height:210px;overflow:auto;margin-top:10px;border-top:1px solid var(--line);padding-top:10px"></div>
 </dialog>
 <dialog id="tmpldlg">
   <h3 style="font-size:1rem">★ Save as template</h3>
@@ -508,14 +515,71 @@ async function quickDel(path){
     if(!r.ok)throw 0;}catch(_){a.status=prev;render();toast('Delete failed — restored');}
 }
 async function rerun(i){const a=DATA.assets[i];toast('Queueing re-run…');const r=await fetch('/v1/library/rerun',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({path:a.path})});const j=await r.json();toast(r.ok?`Re-run queued — see Runs`:'Failed');}
-let FIXPATH=null;
-async function openFix(i){FIXPATH=DATA.assets[i].path;$('fixtext').value='';
+// ── Fix surface: base image + up to 4 references (history picks + drag/drop
+// uploads). No references → the single-image edit (/v1/library/fix); any
+// reference → the multi-input compose (/v1/library/compose) — same proven Qwen
+// graph, base image first. 5-ref cap = base + 4. ─────────────────────────────
+let FIXPATH=null;          // the base image (library asset path)
+let FIXREFS=[];            // [{kind:'lib'|'up', ref, thumb}] added references
+const MAXFIXREFS=4;
+function drawFixRefs(){
+  const base=`<div style="text-align:center"><img src="${thumbURL({path:FIXPATH})}" style="width:56px;height:84px;object-fit:cover;border-radius:6px;border:2px solid var(--brand)"><div style="font-size:.6rem;color:var(--dim);margin-top:3px">base</div></div>`;
+  const refs=FIXREFS.map((r,i)=>`<div style="position:relative;text-align:center">
+    <img src="${r.thumb}" style="width:56px;height:84px;object-fit:cover;border-radius:6px;border:1px solid var(--line)">
+    <button onclick="removeFixRef(${i})" title="Remove" style="position:absolute;top:-6px;right:-6px;width:18px;height:18px;border-radius:50%;border:none;background:#c0392b;color:#fff;font-size:.72rem;line-height:1;cursor:pointer">×</button>
+    <div style="font-size:.6rem;color:var(--dim);margin-top:3px">${r.kind==='up'?'upload':'ref'}</div></div>`).join('');
+  $('fixrefs').innerHTML=base+refs;
+}
+function removeFixRef(i){FIXREFS.splice(i,1);drawFixRefs();if($('fixhist').style.display!=='none')renderFixHist();}
+function toggleFixHistory(){const h=$('fixhist');const show=h.style.display==='none';h.style.display=show?'block':'none';if(show)renderFixHist();}
+function renderFixHist(){
+  const imgs=DATA.assets.filter(a=>/\.(png|jpe?g|webp)$/i.test(a.path||'')&&a.status!=='deleted'&&a.path!==FIXPATH);
+  $('fixhist').innerHTML=`<div style="font-size:.72rem;color:var(--dim);margin-bottom:8px">Tap a past generation to add it as a reference (max ${MAXFIXREFS}).</div>`
+    +`<div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(70px,1fr));gap:8px">`
+    +imgs.map(a=>{const on=FIXREFS.some(r=>r.kind==='lib'&&r.ref===a.path);
+      return `<img src="${thumbURL(a)}" onclick="addFixHistory('${a.path.replace(/'/g,"\\'")}')" title="${a.path}" style="width:100%;aspect-ratio:2/3;object-fit:cover;border-radius:6px;cursor:pointer;border:2px solid ${on?'var(--brand)':'transparent'}">`;
+    }).join('')+`</div>`;
+}
+function addFixHistory(path){
+  const at=FIXREFS.findIndex(r=>r.kind==='lib'&&r.ref===path);
+  if(at>=0){FIXREFS.splice(at,1);}
+  else{ if(FIXREFS.length>=MAXFIXREFS){toast('Up to '+MAXFIXREFS+' references');return;} FIXREFS.push({kind:'lib',ref:path,thumb:thumbURL({path})}); }
+  drawFixRefs(); renderFixHist();
+}
+async function uploadFixFiles(files){
+  for(const f of files){
+    if(!f.type.startsWith('image/'))continue;
+    if(FIXREFS.length>=MAXFIXREFS){toast('Up to '+MAXFIXREFS+' references');break;}
+    const fd=new FormData(); fd.append('image',f,f.name);
+    try{ const r=await fetch('/upload/image',{method:'POST',body:fd}); const j=await r.json();
+      if(r.ok&&j.name){FIXREFS.push({kind:'up',ref:j.name,thumb:`/v1/library/file?input=1&path=${encodeURIComponent(j.name)}`}); drawFixRefs();}
+      else toast('Upload failed'); }
+    catch(_){toast('Upload failed');}
+  }
+}
+async function openFix(i){FIXPATH=DATA.assets[i].path;FIXREFS=[];$('fixtext').value='';
+  $('fixhist').style.display='none'; drawFixRefs();
   $('gpuwarn').style.display=(await gpuOnline())?'none':'block';
   $('gpuwarn').textContent='⚠ No GPU worker online — this queues but renders only when a BYO-GPU (e.g. spark) is connected.';
   $('fixdlg').showModal();}
 async function sendFix(){const t=$('fixtext').value.trim();if(t.length<3){toast('Describe the change');return;}$('fixdlg').close();toast('Queueing fix…');
-  const r=await fetch('/v1/library/fix',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({path:FIXPATH,instruction:t})});
-  const j=await r.json().catch(()=>({})); toast(r.ok?'Fix queued → see Runs':'Failed: '+(j.error?.message||j.error||''));}
+  let r;
+  if(!FIXREFS.length){ // single base image → the proven edit path
+    r=await fetch('/v1/library/fix',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({path:FIXPATH,instruction:t})});
+  }else{               // base + references → multi-reference compose
+    const paths=[FIXPATH,...FIXREFS.filter(x=>x.kind==='lib').map(x=>x.ref)];
+    const uploads=FIXREFS.filter(x=>x.kind==='up').map(x=>x.ref);
+    r=await fetch('/v1/library/compose',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({paths,instruction:t,uploads})});
+  }
+  const j=await r.json().catch(()=>({})); toast(r.ok?'Fix queued → see Queue & History':'Failed: '+(j.error?.message||j.error||''));}
+// drag-and-drop + click-to-upload references onto the Fix surface
+(function(){const dlg=$('fixdlg'),drop=$('fixdrop'),file=$('fixfile');
+  drop.addEventListener('click',()=>file.click());
+  file.addEventListener('change',e=>{uploadFixFiles([...e.target.files]);e.target.value='';});
+  ['dragenter','dragover'].forEach(ev=>dlg.addEventListener(ev,e=>{e.preventDefault();drop.style.borderColor='var(--brand)';drop.style.color='var(--txt)';}));
+  ['dragleave','dragend'].forEach(ev=>dlg.addEventListener(ev,e=>{e.preventDefault();drop.style.borderColor='';drop.style.color='';}));
+  dlg.addEventListener('drop',e=>{e.preventDefault();drop.style.borderColor='';drop.style.color='';if(e.dataTransfer&&e.dataTransfer.files.length)uploadFixFiles([...e.dataTransfer.files]);});
+})();
 function zoom(u){$('zoomimg').src=u;$('zoom').style.display='flex';}
 const ta=$('pin'); ta.addEventListener('input',()=>{ta.style.height='auto';ta.style.height=Math.min(ta.scrollHeight,180)+'px';});
 async function loadSession(){
