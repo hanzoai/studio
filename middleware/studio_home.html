@@ -98,10 +98,12 @@ dialog::backdrop{background:rgba(0,0,0,.6)} dialog textarea{width:100%;backgroun
 /* YouTube-style queue + history */
 .qcol{margin-bottom:26px} .qh{font-size:.9rem;font-weight:600;margin-bottom:10px;color:var(--txt);display:flex;align-items:center;gap:8px}
 .qlist{display:flex;flex-direction:column;gap:8px}
-.qrow{display:flex;align-items:center;gap:12px;background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:10px 14px}
-.qrow .qthumb{width:44px;height:66px;border-radius:6px;background:#0f0f12 center/cover;flex:0 0 auto}
-.qrow .qtitle{flex:1;font-size:.85rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.qrow .qsub{font-size:.72rem;color:var(--dim)}
+.qrow{display:flex;align-items:center;gap:13px;background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:9px 13px}
+.qrow:hover{border-color:#333340}
+.qrow .qthumb{width:60px;height:80px;border-radius:7px;background:#0f0f12 center/cover;flex:0 0 auto;font-size:1.1rem}
+.qrow .qtitle{flex:1;min-width:0;font-size:.88rem;font-weight:500}
+.qrow .qdesc{font-size:.76rem;color:#b3b3bd;margin-top:3px;line-height:1.35;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.qrow .qsub{font-size:.72rem;color:var(--dim);margin-top:4px}
 .stars{display:inline-flex;gap:1px;cursor:pointer} .stars span{font-size:1rem;color:#3a3a44;transition:.1s} .stars span.on{color:#ffcf4a}
 .notebox{width:100%;background:#0f0f12;color:var(--txt);border:1px solid var(--line);border-radius:7px;padding:6px 9px;font:inherit;font-size:.76rem;margin-top:6px;min-height:34px;resize:vertical}
 .fav{cursor:pointer;font-size:1rem;color:#3a3a44} .fav.on{color:#ffcf4a}
@@ -397,12 +399,25 @@ async function runs(){
   let q={queue_running:[],queue_pending:[]}; try{q=await (await fetch('/queue')).json();}catch(_){}
   const qr=q.queue_running||[], qp=q.queue_pending||[];
   $('qrunN').textContent=qr.length; $('qpendN').textContent=qp.length;
-  const qitem=(it,running)=>{const id=it[1];const t=(it[2]&&Object.values(it[2]).find(n=>n.class_type==='SaveImage')?.inputs?.filename_prefix||id)+'';
-    return `<div class="qrow"><div class="qthumb" style="display:flex;align-items:center;justify-content:center;color:var(--dim)">${running?'▶':'⏳'}</div>
-      <div class="qtitle">${t.split('/').pop()}<div class="qsub">${running?'rendering…':'queued'} · ${(''+id).slice(0,8)}</div></div>
+  // YouTube-style up-next row: reference thumbnail + title + brief description.
+  const qitem=(it,running,pos)=>{
+    const id=it[1], g=it[2]||{};
+    const nodes=Object.values(g);
+    const title=(nodes.find(n=>n.class_type==='SaveImage')?.inputs?.filename_prefix||id+'').split('/').pop();
+    // reference image(s) attached to this job (fix/compose sources live in input dir)
+    const refs=nodes.filter(n=>n.class_type==='LoadImage').map(n=>n.inputs?.image).filter(Boolean);
+    const thumb=refs.length?`/v1/library/file?thumb=1&input=1&path=${encodeURIComponent(refs[0])}`:'';
+    // brief description = the positive prompt / instruction
+    let desc='';
+    for(const n of nodes){ if(n.class_type&&n.class_type.indexOf('TextEncode')>=0){ const t=n.inputs?.prompt||n.inputs?.text||''; if(t&&!/blurry|deformed|watermark|ghosting/i.test(t.slice(0,40))){desc=t;break;} } }
+    desc=(desc||'').replace(/\.\s*(Photorealistic|Combine|keep the same).*$/i,'').trim().slice(0,140);
+    const eta=running?'rendering now':(pos!=null?`~${(pos+1)*ETA_MIN} min · #${pos+1} in line`:'queued');
+    return `<div class="qrow">
+      <div class="qthumb" style="${thumb?`background-image:url('${thumb}');background-size:cover;background-position:center`:'display:flex;align-items:center;justify-content:center;color:var(--dim)'}">${thumb?'':(running?'▶':'⏳')}</div>
+      <div class="qtitle">${title}<div class="qdesc">${desc||'(no description)'}</div><div class="qsub">${running?'<span style=color:var(--ok)>● </span>':''}${eta}${refs.length>1?` · ${refs.length} refs`:''}</div></div>
       ${running?'':`<button class="mini" onclick="delQueued('${id}')">Remove</button>`}</div>`;};
-  $('qrun').innerHTML=qr.map(it=>qitem(it,true)).join('')||'<div class="qsub" style="padding:6px 2px">Idle.</div>';
-  $('qpend').innerHTML=qp.map(it=>qitem(it,false)).join('')||'<div class="qsub" style="padding:6px 2px">Nothing queued.</div>';
+  $('qrun').innerHTML=qr.map(it=>qitem(it,true,null)).join('')||'<div class="qsub" style="padding:6px 2px">Idle — nothing rendering.</div>';
+  $('qpend').innerHTML=qp.map((it,i)=>qitem(it,false,i)).join('')||'<div class="qsub" style="padding:6px 2px">Nothing queued.</div>';
   // history
   const h=await (await fetch('/history?max_items=40')).json();
   const items=Object.entries(h).reverse().map(([id,v])=>{const ims=[];for(const o of Object.values(v.outputs||{}))for(const im of (o.images||[]))if(im.type==='output')ims.push(im);

@@ -289,14 +289,24 @@ def add_studio_home_routes(routes: web.RouteTableDef, server) -> None:
         # one otherwise, which makes the whole page crawl). Full-res on click/zoom.
         org = _org_of(request)
         root = _library_root(org)
-        p = _safe_asset(root, request.query.get("path", "")) if root else None
-        if p is None:
-            return web.Response(status=404)
+        # ?input=1 → a staged reference in orgs/<org>/input (fix/compose sources),
+        # so YouTube-style queue rows can show the referenced work as a thumbnail.
+        if request.query.get("input"):
+            in_dir = Path(folder_paths.get_org_input_directory(org))
+            name = os.path.basename(request.query.get("path", ""))
+            ip = in_dir / name
+            if not name or not ip.is_file() or not str(ip.resolve()).startswith(str(in_dir.resolve())):
+                return web.Response(status=404)
+            p = ip
+        else:
+            p = _safe_asset(root, request.query.get("path", "")) if root else None
+            if p is None:
+                return web.Response(status=404)
         if request.query.get("thumb") and p.suffix.lower() in (".png", ".jpg", ".jpeg", ".webp"):
             try:
                 tdir = root / ".thumbs"
                 tdir.mkdir(exist_ok=True)
-                key = re.sub(r"[^a-zA-Z0-9]", "_", str(p.relative_to(root)))[:120]
+                key = re.sub(r"[^a-zA-Z0-9]", "_", str(p))[-120:]
                 tp = tdir / f"{key}.jpg"
                 if not tp.is_file() or tp.stat().st_mtime < p.stat().st_mtime:
                     from PIL import Image
