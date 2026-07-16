@@ -115,6 +115,7 @@ dialog::backdrop{background:rgba(0,0,0,.6)} dialog textarea{width:100%;backgroun
   </div>
   <section id="assets"><div class="chips" id="filters"></div><div class="grid" id="agrid"></div></section>
   <div id="bulkbar"><span id="bulkn">0 selected</span>
+    <button class="mini hot" onclick="openCompose()" title="Combine selected assets into a new one">✦ Compose new</button>
     <button class="mini" onclick="bulk('approved')">Approve</button>
     <button class="mini" onclick="bulk('published')">Publish</button>
     <button class="mini" onclick="bulkFork()">Fork / redo</button>
@@ -131,7 +132,16 @@ dialog::backdrop{background:rgba(0,0,0,.6)} dialog textarea{width:100%;backgroun
   <h3 style="font-size:1rem">Fix with chat</h3>
   <p style="color:var(--dim);font-size:.83rem;margin-top:6px">Describe the change — a new render of this exact shot is queued with only that change.</p>
   <textarea id="fixtext" placeholder="e.g. make the straps thicker, smooth the skin"></textarea>
+  <div id="gpuwarn" style="display:none;color:var(--warn);font-size:.78rem;margin:-4px 0 8px"></div>
   <div class="row" style="justify-content:flex-end"><button class="mini" onclick="fixdlg.close()">Cancel</button><button class="mini hot" onclick="sendFix()">Queue fix</button></div>
+</dialog>
+<dialog id="compdlg">
+  <h3 style="font-size:1rem">✦ Compose new from <span id="compn">0</span> assets</h3>
+  <p style="color:var(--dim);font-size:.83rem;margin-top:6px">Explain HOW to use the selected assets — e.g. "put the garment from the first onto the model in the second, keep the second's lighting."</p>
+  <div class="row" id="compthumbs" style="margin:10px 0 0;flex-wrap:wrap"></div>
+  <textarea id="comptext" placeholder="e.g. combine these — garment from #1 on the model + pose from #2, studio white background"></textarea>
+  <div id="gpuwarn2" style="display:none;color:var(--warn);font-size:.78rem;margin:-4px 0 8px"></div>
+  <div class="row" style="justify-content:flex-end"><button class="mini" onclick="compdlg.close()">Cancel</button><button class="mini hot" onclick="sendCompose()">Generate</button></div>
 </dialog>
 <script>
 // ── Template / KIND catalog — everything Studio supports ─────────────────────
@@ -235,6 +245,29 @@ async function bulk(status){
 async function bulkFork(){ if(!SEL.size)return; toast('Fork/redo '+SEL.size+' — re-running each with a fresh seed');
   for(const p of [...SEL]){await fetch('/v1/library/rerun',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({path:p})});}
   clearSel(); }
+// ── GPU status: fix/compose need an ONLINE GPU worker (Qwen models live there) ──
+let GPU_ONLINE=null;
+async function gpuOnline(){
+  if(GPU_ONLINE!==null)return GPU_ONLINE;
+  try{const e=await (await fetch('/v1/engines')).json();
+    GPU_ONLINE=(e.engines||[]).some(x=>x.type!=='local'&&x.status==='ready');}catch(_){GPU_ONLINE=false;}
+  return GPU_ONLINE;
+}
+async function openCompose(){
+  if(SEL.size<2){toast('Select 2+ assets to compose');return;}
+  const paths=[...SEL]; $('compn').textContent=paths.length;
+  $('compthumbs').innerHTML=paths.map((p,i)=>`<div style="text-align:center"><img src="/v1/library/file?path=${encodeURIComponent(p)}" style="width:64px;height:96px;object-fit:cover;border-radius:6px;border:1px solid var(--line)"><div style="font-size:.62rem;color:var(--dim)">#${i+1}</div></div>`).join('');
+  $('comptext').value='';
+  $('gpuwarn2').style.display=(await gpuOnline())?'none':'block';
+  $('gpuwarn2').textContent='⚠ No GPU worker online — this queues but renders only when a BYO-GPU (e.g. spark) is connected.';
+  $('compdlg').showModal();
+}
+async function sendCompose(){
+  const t=$('comptext').value.trim(); if(t.length<3){toast('Describe how to combine them');return;}
+  const paths=[...SEL]; $('compdlg').close(); toast('Composing from '+paths.length+' assets…');
+  const r=await fetch('/v1/library/compose',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({paths,instruction:t})});
+  const j=await r.json(); toast(r.ok?`Compose queued (${j.refs} refs) → see Runs`:'Failed: '+(j.error||'')); if(r.ok)clearSel();
+}
 function pipes(){ $('wfgrid').innerHTML=(DATA.workflows||[]).map(w=>`<div class="card"><div class="doc">⚙︎ ${w}</div><div class="meta"><div class="row"><a class="mini" href="/?advanced=1&workflow=${encodeURIComponent(w)}">Edit</a><a class="mini hot" href="/?advanced=1&workflow=${encodeURIComponent(w)}&run=1">Run</a></div></div></div>`).join('')||'<div class="empty">No saved workflows for this org yet.</div>'; }
 async function runs(){ const h=await (await fetch('/history?max_items=24')).json();
   const items=Object.entries(h).reverse().map(([id,v])=>{const ims=[];for(const o of Object.values(v.outputs||{}))for(const im of (o.images||[]))ims.push(im);return {id,ok:(v.status||{}).status_str||'?',im:ims[0]};});
@@ -242,8 +275,13 @@ async function runs(){ const h=await (await fetch('/history?max_items=24')).json
 async function setSt(i,status){const a=DATA.assets[i];const r=await fetch('/v1/library/status',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({path:a.path,status})});if(r.ok){a.status=status;render();toast(`${a.path.split('/').pop()} → ${status}`);}else toast('Failed');}
 async function rerun(i){const a=DATA.assets[i];toast('Queueing re-run…');const r=await fetch('/v1/library/rerun',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({path:a.path})});const j=await r.json();toast(r.ok?`Re-run queued — see Runs`:'Failed');}
 let FIXPATH=null;
-function openFix(i){FIXPATH=DATA.assets[i].path;$('fixtext').value='';$('fixdlg').showModal();}
-async function sendFix(){const t=$('fixtext').value.trim();if(!t)return;$('fixdlg').close();toast('Queueing fix…');const r=await fetch('/v1/library/fix',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({path:FIXPATH,instruction:t})});toast(r.ok?'Fix queued — see Runs':'Failed');}
+async function openFix(i){FIXPATH=DATA.assets[i].path;$('fixtext').value='';
+  $('gpuwarn').style.display=(await gpuOnline())?'none':'block';
+  $('gpuwarn').textContent='⚠ No GPU worker online — this queues but renders only when a BYO-GPU (e.g. spark) is connected.';
+  $('fixdlg').showModal();}
+async function sendFix(){const t=$('fixtext').value.trim();if(t.length<3){toast('Describe the change');return;}$('fixdlg').close();toast('Queueing fix…');
+  const r=await fetch('/v1/library/fix',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({path:FIXPATH,instruction:t})});
+  const j=await r.json().catch(()=>({})); toast(r.ok?'Fix queued → see Runs':'Failed: '+(j.error?.message||j.error||''));}
 function zoom(u){$('zoomimg').src=u;$('zoom').style.display='flex';}
 const ta=$('pin'); ta.addEventListener('input',()=>{ta.style.height='auto';ta.style.height=Math.min(ta.scrollHeight,180)+'px';});
 async function loadSession(){

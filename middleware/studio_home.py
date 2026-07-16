@@ -177,6 +177,40 @@ def _fix_graph(ref_name: str, instruction: str, prefix: str) -> dict:
     }
 
 
+def _compose_graph(ref_names: list[str], instruction: str, prefix: str) -> dict:
+    """Multi-reference compose: several chosen assets become the references and the
+    user's words say HOW to combine them into a new output. Same proven Qwen
+    reference-conditioned wiring as _fix_graph (TextEncodeQwenImageEditPlus takes
+    image1..imageN), so no new pipeline — the multi-input case of the good graph."""
+    prompt = (f"{instruction.strip()}. Combine the provided reference images as "
+              f"described. Photorealistic, coherent single result.")
+    g: dict = {
+        "3": {"class_type": "CLIPLoader", "inputs": {"clip_name": "qwen2.5-vl-7b.safetensors", "type": "qwen_image", "device": "default"}},
+        "4": {"class_type": "UNETLoader", "inputs": {"unet_name": "qwen-image-edit-2511.safetensors", "weight_dtype": "default"}},
+        "5": {"class_type": "VAELoader", "inputs": {"vae_name": "qwen-image-vae.safetensors"}},
+    }
+    pos_inputs: dict = {"clip": ["3", 0], "vae": ["5", 0], "prompt": prompt}
+    nid = 20
+    for i, name in enumerate(ref_names[:5], start=1):  # up to 5 references
+        li, si = str(nid), str(nid + 1)
+        g[li] = {"class_type": "LoadImage", "inputs": {"image": name}}
+        g[si] = {"class_type": "FluxKontextImageScale", "inputs": {"image": [li, 0]}}
+        pos_inputs[f"image{i}"] = [si, 0]
+        nid += 2
+    g["6"] = {"class_type": "TextEncodeQwenImageEditPlus", "inputs": pos_inputs}
+    g["7"] = {"class_type": "TextEncodeQwenImageEditPlus", "inputs": {"clip": ["3", 0], "prompt": _NEG}}
+    g["8"] = {"class_type": "FluxKontextMultiReferenceLatentMethod", "inputs": {"conditioning": ["6", 0], "reference_latents_method": "index_timestep_zero"}}
+    g["9"] = {"class_type": "FluxKontextMultiReferenceLatentMethod", "inputs": {"conditioning": ["7", 0], "reference_latents_method": "index_timestep_zero"}}
+    g["10"] = {"class_type": "EmptySD3LatentImage", "inputs": {"width": 1024, "height": 1536, "batch_size": 1}}
+    g["11"] = {"class_type": "ModelSamplingAuraFlow", "inputs": {"model": ["4", 0], "shift": 3.1}}
+    g["12"] = {"class_type": "CFGNorm", "inputs": {"model": ["11", 0], "strength": 1.0}}
+    g["13"] = {"class_type": "KSampler", "inputs": {"model": ["12", 0], "positive": ["8", 0], "negative": ["9", 0], "latent_image": ["10", 0],
+               "seed": random.randrange(2**31), "steps": 30, "cfg": 4.0, "sampler_name": "euler", "scheduler": "simple", "denoise": 1.0}}
+    g["14"] = {"class_type": "VAEDecode", "inputs": {"samples": ["13", 0], "vae": ["5", 0]}}
+    g["15"] = {"class_type": "SaveImage", "inputs": {"images": ["14", 0], "filename_prefix": prefix}}
+    return g
+
+
 async def _queue_prompt(request: web.Request, server, graph: dict) -> str:
     """Self-POST to the ONE /prompt path with the caller's own credentials, so
     dispatch/billing/tenancy/content-publish behave exactly as a UI run."""
@@ -316,3 +350,30 @@ def add_studio_home_routes(routes: web.RouteTableDef, server) -> None:
         stem = re.sub(r"[^a-zA-Z0-9_-]", "_", p.stem)[:48]
         pid = await _queue_prompt(request, server, _fix_graph(ref_name, instruction, f"fixes/{stem}"))
         return web.json_response({"ok": True, "prompt_id": pid, "output_prefix": f"fixes/{stem}"})
+
+    @routes.post("/v1/library/compose")
+    async def compose(request: web.Request):
+        """Select N assets + say HOW to combine them → a new generated output.
+        The multi-input case of the proven Qwen reference-conditioned graph."""
+        body = await request.json()
+        instruction = (body.get("instruction") or "").strip()
+        paths = body.get("paths") or []
+        if not 3 <= len(instruction) <= 500:
+            return web.json_response({"error": "instruction required (3-500 chars)"}, status=400)
+        if not 2 <= len(paths) <= 5:
+            return web.json_response({"error": "select 2-5 assets to compose"}, status=400)
+        org = _org_of(request)
+        root = _library_root(org)
+        in_dir = Path(folder_paths.get_org_input_directory(org))
+        in_dir.mkdir(parents=True, exist_ok=True)
+        ref_names = []
+        for rel in paths:
+            p = _safe_asset(root, rel) if root else None
+            if p is None or p.suffix.lower() != ".png":
+                return web.json_response({"error": f"unknown asset: {rel}"}, status=404)
+            nm = f"compose_src_{abs(hash((str(p), p.stat().st_mtime))) % 10**10}.png"
+            (in_dir / nm).write_bytes(p.read_bytes())
+            ref_names.append(nm)
+        stem = "compose_" + "_".join(re.sub(r"[^a-zA-Z0-9]", "", Path(x).stem)[:12] for x in paths[:2])
+        pid = await _queue_prompt(request, server, _compose_graph(ref_names, instruction, f"composes/{stem}"))
+        return web.json_response({"ok": True, "prompt_id": pid, "output_prefix": f"composes/{stem}", "refs": len(ref_names)})
