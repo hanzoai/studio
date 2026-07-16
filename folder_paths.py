@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import re
 import time
 import mimetypes
 import logging
@@ -94,6 +95,19 @@ def get_org_id() -> str | None:
     return _org_id
 
 
+_ORG_ID_RE = re.compile(r"^[a-zA-Z0-9._-]+$")
+
+
+def _safe_org_id(oid: str) -> str:
+    """The single choke point where an org value becomes a filesystem path — so it
+    is also the one place to reject traversal. An org id must be a plain slug; `.`,
+    `..`, `/`, `\\`, or any other character is refused so a malformed/hostile claim
+    can never escape the orgs/ tree (defense-in-depth; org id is IAM-derived today)."""
+    if oid in (".", "..") or not _ORG_ID_RE.match(oid):
+        raise ValueError(f"invalid org_id for path scoping: {oid!r}")
+    return oid
+
+
 def get_org_base_path(org_id: str | None = None) -> str:
     """
     Get the org-scoped base path. If multi-tenant is enabled and org_id is set,
@@ -101,7 +115,7 @@ def get_org_base_path(org_id: str | None = None) -> str:
     """
     oid = org_id or _org_id
     if _multi_tenant and oid:
-        org_path = os.path.join(base_path, "orgs", oid)
+        org_path = os.path.join(base_path, "orgs", _safe_org_id(oid))
         os.makedirs(org_path, exist_ok=True)
         return org_path
     return base_path

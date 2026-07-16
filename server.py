@@ -64,6 +64,41 @@ def _remove_sensitive_from_queue(queue: list) -> list:
     return [item[:5] for item in queue]
 
 
+# ── Multi-tenant scoping for the inherited core endpoints (HIP-0506 security) ──
+# /history and /queue are process-global in upstream ComfyUI. In a multi-tenant
+# deployment that is cross-tenant disclosure (one org reads another's prompts,
+# graphs, seeds) and a cross-tenant DoS (one org's "clear queue" wipes another's).
+# Every item carries its owner in extra_data["org_id"] (bound at enqueue). These
+# filter each list/dict to the caller's org. `org is None` means auth is OFF
+# (single-tenant/local dev) → return everything unchanged (no behavior change).
+def _item_org(item) -> str | None:
+    """org_id from a queue-item tuple (index 3 = extra_data)."""
+    try:
+        return item[3].get("org_id") if len(item) > 3 and isinstance(item[3], dict) else None
+    except Exception:
+        return None
+
+
+def _scope_queue_to_org(items: list, org: str | None) -> list:
+    if not org:
+        return items
+    return [it for it in items if _item_org(it) == org]
+
+
+def _scope_history_to_org(hist: dict, org: str | None) -> dict:
+    if not org:
+        return hist
+    out = {}
+    for k, entry in (hist or {}).items():
+        try:
+            ed = entry.get("prompt", [None, None, None, {}])[3]
+            if isinstance(ed, dict) and ed.get("org_id") == org:
+                out[k] = entry
+        except Exception:
+            continue  # malformed/legacy entry with no org → excluded (fail-closed)
+    return out
+
+
 async def send_socket_catch_exception(function, message):
     try:
         await function(message)
@@ -969,19 +1004,24 @@ class PromptServer():
             else:
                 offset = -1
 
-            return web.json_response(self.prompt_queue.get_history(max_items=max_items, offset=offset))
+            hist = self.prompt_queue.get_history(max_items=max_items, offset=offset)
+            hist = _scope_history_to_org(hist, self._caller_org(request))
+            return web.json_response(hist)
 
         @routes.get("/history/{prompt_id}")
         async def get_history_prompt_id(request):
             prompt_id = request.match_info.get("prompt_id", None)
-            return web.json_response(self.prompt_queue.get_history(prompt_id=prompt_id))
+            hist = self.prompt_queue.get_history(prompt_id=prompt_id)
+            hist = _scope_history_to_org(hist, self._caller_org(request))
+            return web.json_response(hist)
 
         @routes.get("/queue")
         async def get_queue(request):
+            org = self._caller_org(request)
             queue_info = {}
             current_queue = self.prompt_queue.get_current_queue_volatile()
-            queue_info['queue_running'] = _remove_sensitive_from_queue(current_queue[0])
-            queue_info['queue_pending'] = _remove_sensitive_from_queue(current_queue[1])
+            queue_info['queue_running'] = _scope_queue_to_org(_remove_sensitive_from_queue(current_queue[0]), org)
+            queue_info['queue_pending'] = _scope_queue_to_org(_remove_sensitive_from_queue(current_queue[1]), org)
             return web.json_response(queue_info)
 
         @routes.post("/prompt")
@@ -1106,13 +1146,20 @@ class PromptServer():
         @routes.post("/queue")
         async def post_queue(request):
             json_data =  await request.json()
+            org = self._caller_org(request)  # None = auth off → upstream behavior
             if "clear" in json_data:
                 if json_data["clear"]:
-                    self.prompt_queue.wipe_queue()
+                    if org is None:
+                        self.prompt_queue.wipe_queue()
+                    else:
+                        # SCOPED clear: only THIS org's pending items, never others'.
+                        self.prompt_queue.delete_queue_item(lambda a: _item_org(a) == org)
             if "delete" in json_data:
                 to_delete = json_data['delete']
                 for id_to_delete in to_delete:
-                    delete_func = lambda a: a[1] == id_to_delete
+                    # Only delete an item the caller owns (org must match when auth on).
+                    delete_func = (lambda a, i=id_to_delete: a[1] == i) if org is None \
+                        else (lambda a, i=id_to_delete: a[1] == i and _item_org(a) == org)
                     self.prompt_queue.delete_queue_item(delete_func)
 
             return web.Response(status=200)
@@ -1124,16 +1171,19 @@ class PromptServer():
             except json.JSONDecodeError:
                 json_data = {}
 
+            org = self._caller_org(request)  # None = auth off → upstream behavior
             # Check if a specific prompt_id was provided for targeted interruption
             prompt_id = json_data.get('prompt_id')
             if prompt_id:
                 currently_running, _ = self.prompt_queue.get_current_queue()
 
-                # Check if the prompt_id matches any currently running prompt
+                # Check if the prompt_id matches any currently running prompt — and
+                # (multi-tenant) that it belongs to the caller's org, so one tenant
+                # cannot interrupt another tenant's render.
                 should_interrupt = False
                 for item in currently_running:
                     # item structure: (number, prompt_id, prompt, extra_data, outputs_to_execute)
-                    if item[1] == prompt_id:
+                    if item[1] == prompt_id and (org is None or _item_org(item) == org):
                         logging.info(f"Interrupting prompt {prompt_id}")
                         should_interrupt = True
                         break
@@ -1141,11 +1191,18 @@ class PromptServer():
                 if should_interrupt:
                     nodes.interrupt_processing()
                 else:
-                    logging.info(f"Prompt {prompt_id} is not currently running, skipping interrupt")
-            else:
-                # No prompt_id provided, do a global interrupt
+                    logging.info(f"Prompt {prompt_id} is not currently running / not owned by caller, skipping interrupt")
+            elif org is None:
+                # No prompt_id + auth off → upstream global interrupt.
                 logging.info("Global interrupt (no prompt_id specified)")
                 nodes.interrupt_processing()
+            else:
+                # Multi-tenant: a global interrupt would kill another tenant's render.
+                # Only interrupt if the running job belongs to the caller's org.
+                currently_running, _ = self.prompt_queue.get_current_queue()
+                if any(_item_org(item) == org for item in currently_running):
+                    logging.info(f"Interrupting current render for org {org}")
+                    nodes.interrupt_processing()
 
             return web.Response(status=200)
 
@@ -1321,6 +1378,16 @@ class PromptServer():
         if iam_user:
             return iam_user.get("org_id", "default")
         return os.environ.get("STUDIO_ORG_ID", "default")
+
+    def _caller_org(self, request) -> str | None:
+        """The verified caller org to SCOPE cross-tenant reads by — or None when
+        multi-tenant auth is OFF (single-tenant/local dev) so /history + /queue
+        behave exactly as upstream. Only returns a value when there is a real IAM
+        user, so scoping never hides another tenant's data by accident."""
+        iam_user = request.get("iam_user")
+        if iam_user and iam_user.get("org_id"):
+            return iam_user.get("org_id")
+        return None
 
     async def setup(self):
         timeout = aiohttp.ClientTimeout(total=None) # no timeout
