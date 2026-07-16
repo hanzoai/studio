@@ -359,20 +359,25 @@ def add_studio_home_routes(routes: web.RouteTableDef, server) -> None:
         except Exception:
             jobs = []
         now = int(time.time())
-        # An output whose filename starts with the job's prefix means it completed.
-        done_prefixes = set()
-        try:
-            for p in root.rglob("*.png"):
-                done_prefixes.add(p.stem.split("_00")[0])
-        except Exception:
-            pass
         live = []
         for j in jobs:
             age = now - int(j.get("ts", 0))
-            pref = (j.get("prefix") or "").split("_00")[0]
             if age > 1500:            # aged out (worker deadline is 1200s)
                 continue
-            if pref and pref in done_prefixes and age > 30:  # output landed
+            # Completed only when the ACTUAL output for THIS job exists: the render
+            # saves to "<outPrefix>_NNNNN_.png". Check precisely (glob the exact
+            # output prefix) — not a fuzzy base match, which collided with the source
+            # image and made the job disappear from the queue after 30s.
+            out_prefix = j.get("outPrefix") or j.get("prefix") or ""
+            landed = False
+            if out_prefix:
+                try:
+                    parent = root / os.path.dirname(out_prefix)
+                    stem = os.path.basename(out_prefix)
+                    landed = any(parent.glob(stem + "*.png"))
+                except Exception:
+                    landed = False
+            if landed and age > 20:
                 continue
             j["age"] = age
             live.append(j)

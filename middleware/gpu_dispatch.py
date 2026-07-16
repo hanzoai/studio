@@ -132,13 +132,13 @@ def _track_dispatched(org_id: str, prompt_id: str, prompt: dict) -> None:
         import time
         import folder_paths
         # human title from the SaveImage prefix; refs from LoadImage for a thumbnail
-        prefix, refs = "render", []
+        full_prefix, refs = "render", []
         for n in prompt.values():
             if not isinstance(n, dict):
                 continue
             ct = n.get("class_type", "")
             if ct == "SaveImage":
-                prefix = (n.get("inputs", {}).get("filename_prefix") or "render").split("/")[-1]
+                full_prefix = n.get("inputs", {}).get("filename_prefix") or "render"
             elif "LoadImage" in ct:
                 im = n.get("inputs", {}).get("image")
                 if im:
@@ -151,7 +151,11 @@ def _track_dispatched(org_id: str, prompt_id: str, prompt: dict) -> None:
         except Exception:
             jobs = []
         jobs = [j for j in jobs if j.get("id") != prompt_id][-40:]  # dedupe + cap
-        jobs.append({"id": prompt_id, "prefix": prefix, "refs": refs[:1],
+        # store the FULL output prefix (e.g. "fixes/model01_..._00001_") so the queue
+        # endpoint can check for the ACTUAL output file, not a fuzzy base match that
+        # collides with the source image and makes the job vanish after 30s.
+        jobs.append({"id": prompt_id, "prefix": full_prefix.split("/")[-1],
+                     "outPrefix": full_prefix, "refs": refs[:1],
                      "ts": int(time.time()), "status": "rendering"})
         tmp = jf + ".tmp"
         open(tmp, "w").write(json.dumps(jobs))
