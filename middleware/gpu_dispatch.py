@@ -116,6 +116,45 @@ def dispatch_if_worker(request, org_id: str, prompt_id: str, prompt: dict) -> bo
             headers={"Authorization": tok, "Content-Type": "application/json"},
         )
         urllib.request.urlopen(req, timeout=15).read()
+        _track_dispatched(org_id, prompt_id, prompt)
         return True
     except Exception:
         return False
+
+
+def _track_dispatched(org_id: str, prompt_id: str, prompt: dict) -> None:
+    """Record a BYO-GPU render dispatched to gpu-jobs so the studio UI can SHOW it
+    in the queue. BYO-GPU jobs render on the worker (gpu-jobs), not the pod's local
+    /queue — so without this the user's fix/compose 'never appears in the queue'.
+    A tiny per-org JSON the /v1/render-queue endpoint reads; entries drop off when
+    their output lands in the library or they age out. Never raises."""
+    try:
+        import time
+        import folder_paths
+        # human title from the SaveImage prefix; refs from LoadImage for a thumbnail
+        prefix, refs = "render", []
+        for n in prompt.values():
+            if not isinstance(n, dict):
+                continue
+            ct = n.get("class_type", "")
+            if ct == "SaveImage":
+                prefix = (n.get("inputs", {}).get("filename_prefix") or "render").split("/")[-1]
+            elif "LoadImage" in ct:
+                im = n.get("inputs", {}).get("image")
+                if im:
+                    refs.append(im)
+        out_dir = folder_paths.get_org_output_directory(org_id)
+        os.makedirs(out_dir, exist_ok=True)
+        jf = os.path.join(out_dir, "render_jobs.json")
+        try:
+            jobs = json.loads(open(jf).read())
+        except Exception:
+            jobs = []
+        jobs = [j for j in jobs if j.get("id") != prompt_id][-40:]  # dedupe + cap
+        jobs.append({"id": prompt_id, "prefix": prefix, "refs": refs[:1],
+                     "ts": int(time.time()), "status": "rendering"})
+        tmp = jf + ".tmp"
+        open(tmp, "w").write(json.dumps(jobs))
+        os.replace(tmp, jf)
+    except Exception:
+        pass

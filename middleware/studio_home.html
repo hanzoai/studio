@@ -416,7 +416,14 @@ async function runs(){
       <div class="qthumb" style="${thumb?`background-image:url('${thumb}');background-size:cover;background-position:center`:'display:flex;align-items:center;justify-content:center;color:var(--dim)'}">${thumb?'':(running?'▶':'⏳')}</div>
       <div class="qtitle">${title}<div class="qdesc">${desc||'(no description)'}</div><div class="qsub">${running?'<span style=color:var(--ok)>● </span>':''}${eta}${refs.length>1?` · ${refs.length} refs`:''}</div></div>
       ${running?'':`<button class="mini" onclick="delQueued('${id}')">Remove</button>`}</div>`;};
-  $('qrun').innerHTML=qr.map(it=>qitem(it,true,null)).join('')||'<div class="qsub" style="padding:6px 2px">Idle — nothing rendering.</div>';
+  // BYO-GPU renders (fix/compose on a connected GPU) — rendered on the worker,
+  // shown here so a dispatched fix is visible (was invisible before).
+  let gjobs=[]; try{gjobs=(await (await fetch('/v1/render-queue')).json()).jobs||[];}catch(_){}
+  const gjRow=j=>`<div class="qrow">
+    <div class="qthumb" style="${j.refs&&j.refs[0]?`background-image:url('/v1/library/file?thumb=1&input=1&path=${encodeURIComponent(j.refs[0])}');background-size:cover;background-position:center`:'display:flex;align-items:center;justify-content:center;color:var(--ok)'}">${j.refs&&j.refs[0]?'':'▶'}</div>
+    <div class="qtitle">${j.prefix||'render'}<div class="qsub"><span style=color:var(--ok)>● </span>rendering on your GPU · ${Math.max(0,Math.round((j.age||0)/60))}m elapsed · ~${ETA_MIN}m</div></div></div>`;
+  const gjHtml=gjobs.map(gjRow).join('');
+  $('qrun').innerHTML=gjHtml + qr.map(it=>qitem(it,true,null)).join('') || '<div class="qsub" style="padding:6px 2px">Idle — nothing rendering.</div>';
   $('qpend').innerHTML=qp.map((it,i)=>qitem(it,false,i)).join('')||'<div class="qsub" style="padding:6px 2px">Nothing queued.</div>';
   // history
   const h=await (await fetch('/history?max_items=40')).json();
@@ -492,11 +499,23 @@ async function loadSession(){
 // ── persistent live-queue bar: always shows what's generating + ETA ──────────
 const ETA_MIN=9; // ~min per render on a warm BYO-GPU
 async function updateLivebar(){
+  // Two queues: the pod's local /queue (in-pod renders) AND the org's BYO-GPU
+  // renders on gpu-jobs (fix/compose/rerun dispatched to a connected GPU). The
+  // latter is why a queued fix "never showed" — it renders on the worker, not
+  // the pod. Merge both.
   let q={queue_running:[],queue_pending:[]}; try{q=await (await fetch('/queue')).json();}catch(_){}
+  let rq={jobs:[]}; try{rq=await (await fetch('/v1/render-queue')).json();}catch(_){}
   const run=q.queue_running||[], pend=q.queue_pending||[];
+  const gpuJobs=rq.jobs||[];
   const lb=$('livebar'), st=$('lbstatus');
   const name=it=>{try{return (Object.values(it[2]).find(n=>n.class_type==='SaveImage')?.inputs?.filename_prefix||'render').split('/').pop();}catch(_){return 'render';}};
-  if(run.length){
+  if(gpuJobs.length){
+    lb.classList.remove('idle');
+    const first=gpuJobs[0], more=gpuJobs.length-1;
+    st.innerHTML=`<span class="lb-run"><span class="spin"></span>Generating on your GPU: <b>${first.prefix||'render'}</b></span>`
+      + (more>0?` <span class="lb-q">· ${more} more</span>`:'')
+      + ` <span class="lb-eta">· ~${ETA_MIN} min each</span>`;
+  } else if(run.length){
     lb.classList.remove('idle');
     const q1=pend.length;
     st.innerHTML=`<span class="lb-run"><span class="spin"></span>Generating: <b>${name(run[0])}</b></span>`

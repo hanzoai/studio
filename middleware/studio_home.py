@@ -324,6 +324,42 @@ def add_studio_home_routes(routes: web.RouteTableDef, server) -> None:
                 pass  # fall through to full-res on any thumbnail failure
         return web.FileResponse(p)
 
+    @routes.get("/v1/render-queue")
+    async def render_queue(request: web.Request):
+        """The org's IN-FLIGHT BYO-GPU renders (fix/compose/rerun dispatched to a
+        connected GPU). These run on the worker's gpu-jobs queue, NOT the pod's
+        local /queue, so the UI could not see them — this is what makes a queued
+        fix visible. Drops entries whose output has landed in the library or that
+        have aged out (~25 min). Cheap: reads one small per-org JSON."""
+        org = _org_of(request)
+        root = _library_root(org)
+        if root is None:
+            return web.json_response({"jobs": []})
+        jf = root / "render_jobs.json"
+        try:
+            jobs = json.loads(jf.read_text())
+        except Exception:
+            jobs = []
+        now = int(time.time())
+        # An output whose filename starts with the job's prefix means it completed.
+        done_prefixes = set()
+        try:
+            for p in root.rglob("*.png"):
+                done_prefixes.add(p.stem.split("_00")[0])
+        except Exception:
+            pass
+        live = []
+        for j in jobs:
+            age = now - int(j.get("ts", 0))
+            pref = (j.get("prefix") or "").split("_00")[0]
+            if age > 1500:            # aged out (worker deadline is 1200s)
+                continue
+            if pref and pref in done_prefixes and age > 30:  # output landed
+                continue
+            j["age"] = age
+            live.append(j)
+        return web.json_response({"jobs": live})
+
     @routes.post("/v1/library/status")
     async def set_status(request: web.Request):
         body = await request.json()
