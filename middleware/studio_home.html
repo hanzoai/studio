@@ -141,6 +141,39 @@ body.immersive #stage{display:block}
 .cmsg.a{align-self:flex-start;background:#1a1a20;border:1px solid var(--line);border-bottom-left-radius:3px}
 #chatbar{display:flex;gap:8px;padding:12px;border-top:1px solid var(--line)}
 #chatbar input{flex:1;background:#0a0a0d;border:1px solid var(--line);border-radius:9px;color:var(--txt);padding:9px 11px;font:inherit;font-size:.85rem}
+/* ── Responsive: tablet ≤900px, phone ≤600px ─────────────────────────────── */
+@media (max-width:900px){
+  main{padding:12px 16px 90px}
+  .hero{font-size:2.1rem;margin:34px 0 20px}
+  .grid{grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:11px}
+  .tgrid{grid-template-columns:repeat(auto-fill,minmax(120px,1fr))}
+  #livebar{margin-left:16px;margin-right:16px}
+  #chatpanel{width:calc(100vw - 24px);height:70vh}
+}
+@media (max-width:600px){
+  header{padding:11px 14px;gap:9px}
+  header h1{font-size:.95rem} header .beta{display:none} header .lnk{display:none}
+  header .user .nm{display:none}  /* avatar only on phone */
+  .hero{font-size:1.6rem;margin:22px 0 16px}
+  .prompt{padding:12px 12px 10px;border-radius:13px}
+  .prompt textarea{font-size:.95rem}
+  .pctl{flex-wrap:wrap;gap:6px} .psend{margin-left:0}
+  .grid{grid-template-columns:repeat(auto-fill,minmax(46vw,1fr));gap:9px}
+  .tgrid{grid-template-columns:repeat(auto-fill,minmax(44vw,1fr))}
+  .sec-l{margin:26px 0 10px}
+  .tabs{overflow-x:auto;white-space:nowrap;-webkit-overflow-scrolling:touch}
+  .tabs button{padding:8px 10px;font-size:.84rem}
+  .search{width:120px} .tabs .sp{display:none}
+  #livebar{flex-wrap:wrap;font-size:.78rem}
+  #bulkbar,#reftray{left:8px;right:8px;transform:none;flex-wrap:wrap;justify-content:center}
+  #chatfab{bottom:16px;right:16px}
+  #chatpanel{bottom:0;right:0;left:0;width:100vw;height:82vh;max-height:82vh;border-radius:16px 16px 0 0}
+  .card .delx,.card .addref{width:30px;height:30px}  /* bigger tap targets */
+}
+/* touch: no hover-reveal — always show card tools on touch devices */
+@media (hover:none){
+  .card .tools{max-height:none;opacity:1;margin-top:2px}
+}
 </style>
 <header>
   <svg class="logo" viewBox="0 0 520 520" xmlns="http://www.w3.org/2000/svg"><rect width="520" height="520" rx="120" fill="#111"/><g transform="translate(100,100) scale(4.78)" fill="#fff"><path d="M22.21 67V44.6369H0V67H22.21Z"/><path d="M66.7038 22.3184H22.2534L0.0878906 44.6367H44.4634L66.7038 22.3184Z"/><path d="M22.21 0H0V22.3184H22.21V0Z"/><path d="M66.7198 0H44.5098V22.3184H66.7198V0Z"/><path d="M66.7198 67V44.6369H44.5098V67H66.7198Z"/></g></svg>
