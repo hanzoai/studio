@@ -4,7 +4,8 @@
 <title>Hanzo Studio</title>
 <style>
 :root{--bg:#0b0b0d;--panel:#131317;--line:#232329;--txt:#ececf1;--dim:#9a9aa5;
---brand:#e8ff47;--ok:#3ddc84;--warn:#ffb648;--pub:#6aa5ff;--bad:#ff5d5d;font-size:15px}
+/* Monochrome brand (Hanzo black/white) — no color accent. Status hues kept for meaning only. */
+--brand:#f4f4f6;--ok:#3ddc84;--warn:#ffb648;--pub:#6aa5ff;--bad:#ff5d5d;font-size:15px}
 *{box-sizing:border-box;margin:0}
 body{background:var(--bg);color:var(--txt);font:400 1rem/1.45 Inter,system-ui,-apple-system,sans-serif}
 header{display:flex;align-items:center;gap:16px;padding:14px 22px;border-bottom:1px solid var(--line);
@@ -52,6 +53,9 @@ dialog::backdrop{background:rgba(0,0,0,.6)}
 dialog textarea{width:100%;background:#0f0f12;color:var(--txt);border:1px solid var(--line);border-radius:8px;
 padding:10px;font:inherit;font-size:.9rem;min-height:90px;margin:12px 0}
 </style>
+<!-- Hanzo identity pill: org switcher · user · wallet · Console · Logout (same component as advanced mode; served from static root in the built image) -->
+<link rel="stylesheet" href="/hanzo-identity.css">
+<script src="/hanzo-identity.js" defer></script>
 <header>
   <h1>Hanzo Studio</h1><span class="org" id="org">…</span><span class="sp"></span>
   <button class="btn" onclick="load()">Refresh</button>
