@@ -362,12 +362,15 @@ async function genFromTray(){
   $('refprompt').value='';
 }
 // ── GPU status: fix/compose need an ONLINE GPU worker (Qwen models live there) ──
-let GPU_ONLINE=null;
+let GPU_ONLINE=null, GPU_TS=0;
 async function gpuOnline(){
-  if(GPU_ONLINE!==null)return GPU_ONLINE;
-  try{const e=await (await fetch('/v1/engines')).json();
-    GPU_ONLINE=(e.engines||[]).some(x=>x.type!=='local'&&x.status==='ready');}catch(_){GPU_ONLINE=false;}
-  return GPU_ONLINE;
+  // Check the FLEET (same source dispatch uses), not /v1/engines — a `hanzo gpu
+  // connect` box registers with the fleet, so /v1/engines missed it and the UI
+  // wrongly said "connect a GPU". Cache 15s so we don't hammer it.
+  if(GPU_ONLINE!==null && Date.now()-GPU_TS<15000)return GPU_ONLINE;
+  try{const s=await (await fetch('/v1/gpu-status')).json(); GPU_ONLINE=!!s.online;}
+  catch(_){GPU_ONLINE=false;}
+  GPU_TS=Date.now(); return GPU_ONLINE;
 }
 async function openCompose(){
   if(SEL.size<2){toast('Select 2+ assets to compose');return;}

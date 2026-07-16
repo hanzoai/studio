@@ -324,6 +324,24 @@ def add_studio_home_routes(routes: web.RouteTableDef, server) -> None:
                 pass  # fall through to full-res on any thumbnail failure
         return web.FileResponse(p)
 
+    @routes.get("/v1/gpu-status")
+    async def gpu_status(request: web.Request):
+        """Does the caller's org have an online GPU to render on? The UI showed
+        'connect a GPU' even with a GPU connected because it checked /v1/engines
+        (the worker-federation) — but `hanzo gpu connect` registers with the FLEET
+        (gpu-jobs), which is exactly what dispatch uses. Report the SAME source of
+        truth as dispatch (_has_online_gpu) so the UI matches what actually works."""
+        try:
+            from middleware.gpu_dispatch import _bearer, _has_online_gpu
+        except ImportError:
+            from .middleware.gpu_dispatch import _bearer, _has_online_gpu
+        try:
+            tok = _bearer(request)
+            online = bool(tok and _has_online_gpu(tok))
+        except Exception:
+            online = False
+        return web.json_response({"online": online})
+
     @routes.get("/v1/render-queue")
     async def render_queue(request: web.Request):
         """The org's IN-FLIGHT BYO-GPU renders (fix/compose/rerun dispatched to a
