@@ -108,6 +108,8 @@ dialog::backdrop{background:rgba(0,0,0,.6)} dialog textarea{width:100%;backgroun
 dialog .drop{border:1.5px dashed var(--line);border-radius:9px;padding:14px;text-align:center;color:var(--dim);font-size:.82rem;margin:8px 0;cursor:pointer}
 .card .addref{position:absolute;top:8px;right:9px;width:26px;height:26px;border-radius:50%;border:none;background:rgba(0,0,0,.6);color:#fff;font-size:1rem;cursor:pointer;z-index:4;line-height:1}
 .card .addref:hover{background:var(--brand);color:#111} .card .addref.on{background:var(--brand);color:#111}
+.card .delx{position:absolute;top:8px;left:9px;width:26px;height:26px;border-radius:50%;border:none;background:rgba(0,0,0,.6);color:#fff;font-size:.85rem;cursor:pointer;z-index:4;line-height:1;opacity:.8}
+.card .delx:hover{background:#c0392b;color:#fff;opacity:1}
 #reftray{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#1a1a24;border:1px solid #34344a;border-radius:12px;padding:10px 14px;display:none;gap:11px;align-items:center;z-index:44;box-shadow:0 10px 32px #000a}
 #reftray.on{display:flex} #reftray .rt{width:38px;height:56px;object-fit:cover;border-radius:5px;border:1px solid var(--line)}
 /* ── Immersive full-viewport stage (editorial hero) ────────────────────────── */
@@ -257,6 +259,7 @@ let DATA={assets:[],workflows:[]},FILTER='all';
 const $=id=>document.getElementById(id);
 const toast=m=>{const t=$('toast');t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),3000)};
 const imgURL=a=>`/v1/library/file?path=${encodeURIComponent(a.path)}`;
+const thumbURL=a=>`/v1/library/file?thumb=1&path=${encodeURIComponent(a.path)}`;
 function tcard(x){return `<div class="tcard" onclick="pickTemplate('${x.k}','${x.t.replace(/'/g,"")}')"><div class="ic">${x.ic}</div><div class="tl">${x.t}</div><div class="td">${x.d}</div></div>`;}
 function tab(name){document.querySelectorAll('.tabs button').forEach(b=>b.classList.toggle('on',b.dataset.tab===name));
   for(const s of ['assets','templates','pipelines','runs'])$(s).hidden=s!==name;
@@ -303,10 +306,12 @@ function render(){
     const picked=SEL.has(a.path);
     const cardClick=SELMODE?`onclick="pick(event,'${a.path.replace(/'/g,"\\'")}')"`:'';
     const inTray=TRAY.has(a.path);
+    const pe=a.path.replace(/'/g,"\\'");
     return `<div class="card ${SELMODE?'sel-mode':''} ${picked?'picked':''}" ${cardClick}>
       <div class="pick">${picked?'✓':''}</div>
-      ${img&&!SELMODE?`<button class="addref ${inTray?'on':''}" title="Add to next generation" onclick="event.stopPropagation();addRef('${a.path.replace(/'/g,"\\'")}')">${inTray?'✓':'+'}</button>`:''}
-      ${img?`<div class="im" style="background-image:url('${imgURL(a)}')" ${SELMODE?'':`onclick="zoom('${imgURL(a)}')"`}></div>`
+      ${img&&!SELMODE?`<button class="addref ${inTray?'on':''}" title="Add to next generation" onclick="event.stopPropagation();addRef('${pe}')">${inTray?'✓':'+'}</button>`:''}
+      ${img&&!SELMODE&&!showDel?`<button class="delx" title="Move to Deleted (recoverable)" onclick="event.stopPropagation();quickDel('${pe}')">🗑</button>`:''}
+      ${img?`<div class="im" style="background-image:url('${thumbURL(a)}')" ${SELMODE?'':`onclick="zoom('${imgURL(a)}')"`}></div>`
            :`<div class="doc">${(a.path||'').split('/').pop()}</div>`}
       <div class="meta">
         <span class="t">${(a.path||'').split('/').pop()}</span>
@@ -338,7 +343,7 @@ function addRef(path){ if(TRAY.has(path))TRAY.delete(path); else TRAY.add(path);
 function clearTray(){ TRAY.clear(); drawTray(); render(); }
 function drawTray(){
   const paths=[...TRAY]; $('reftray').classList.toggle('on',paths.length>0);
-  $('refthumbs').innerHTML=paths.map(p=>`<img class="rt" src="/v1/library/file?path=${encodeURIComponent(p)}" title="${p}">`).join('');
+  $('refthumbs').innerHTML=paths.map(p=>`<img class="rt" src="/v1/library/file?thumb=1&path=${encodeURIComponent(p)}" title="${p}">`).join('');
 }
 async function genFromTray(){
   const paths=[...TRAY]; const t=$('refprompt').value.trim();
@@ -365,7 +370,7 @@ async function gpuOnline(){
 async function openCompose(){
   if(SEL.size<2){toast('Select 2+ assets to compose');return;}
   const paths=[...SEL]; $('compn').textContent=paths.length;
-  $('compthumbs').innerHTML=paths.map((p,i)=>`<div style="text-align:center"><img src="/v1/library/file?path=${encodeURIComponent(p)}" style="width:64px;height:96px;object-fit:cover;border-radius:6px;border:1px solid var(--line)"><div style="font-size:.62rem;color:var(--dim)">#${i+1}</div></div>`).join('');
+  $('compthumbs').innerHTML=paths.map((p,i)=>`<div style="text-align:center"><img src="/v1/library/file?thumb=1&path=${encodeURIComponent(p)}" style="width:64px;height:96px;object-fit:cover;border-radius:6px;border:1px solid var(--line)"><div style="font-size:.62rem;color:var(--dim)">#${i+1}</div></div>`).join('');
   $('comptext').value='';
   $('gpuwarn2').style.display=(await gpuOnline())?'none':'block';
   $('gpuwarn2').textContent='⚠ No GPU worker online — this queues but renders only when a BYO-GPU (e.g. spark) is connected.';
@@ -436,6 +441,14 @@ async function saveTemplate(){const nm=$('tmplname').value.trim();if(!nm){toast(
   $('tmpldlg').close();toast('★ Saved "'+nm+'" — it will appear under Templates');runs();
 }
 async function setSt(i,status){const a=DATA.assets[i];const r=await fetch('/v1/library/status',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({path:a.path,status})});if(r.ok){a.status=status;render();toast(`${a.path.split('/').pop()} → ${status}`);}else toast('Failed');}
+// Optimistic trash: mark deleted locally + re-render immediately (feels instant),
+// then persist. On failure, revert. This is the always-visible 🗑 on each card.
+async function quickDel(path){
+  const a=DATA.assets.find(x=>x.path===path); if(!a)return;
+  const prev=a.status; a.status='deleted'; render(); toast('Moved to Deleted');
+  try{const r=await fetch('/v1/library/status',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({path,status:'deleted'})});
+    if(!r.ok)throw 0;}catch(_){a.status=prev;render();toast('Delete failed — restored');}
+}
 async function rerun(i){const a=DATA.assets[i];toast('Queueing re-run…');const r=await fetch('/v1/library/rerun',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({path:a.path})});const j=await r.json();toast(r.ok?`Re-run queued — see Runs`:'Failed');}
 let FIXPATH=null;
 async function openFix(i){FIXPATH=DATA.assets[i].path;$('fixtext').value='';

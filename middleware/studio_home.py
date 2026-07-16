@@ -285,11 +285,27 @@ def add_studio_home_routes(routes: web.RouteTableDef, server) -> None:
         # Org-scoped asset serving. The Studio engine's core /view serves the
         # GLOBAL output dir, so org assets (orgs/<org>/output/…) 404 there → blank
         # thumbnails. This resolves the caller's org and serves from its library root.
+        # ?thumb=1 → a cached, downsized JPEG (grid loads full-res 1-2MB PNGs one by
+        # one otherwise, which makes the whole page crawl). Full-res on click/zoom.
         org = _org_of(request)
         root = _library_root(org)
         p = _safe_asset(root, request.query.get("path", "")) if root else None
         if p is None:
             return web.Response(status=404)
+        if request.query.get("thumb") and p.suffix.lower() in (".png", ".jpg", ".jpeg", ".webp"):
+            try:
+                tdir = root / ".thumbs"
+                tdir.mkdir(exist_ok=True)
+                key = re.sub(r"[^a-zA-Z0-9]", "_", str(p.relative_to(root)))[:120]
+                tp = tdir / f"{key}.jpg"
+                if not tp.is_file() or tp.stat().st_mtime < p.stat().st_mtime:
+                    from PIL import Image
+                    im = Image.open(p)
+                    im.thumbnail((480, 720))  # grid-sized; keeps aspect
+                    im.convert("RGB").save(tp, "JPEG", quality=82)
+                return web.FileResponse(tp, headers={"Cache-Control": "public, max-age=86400"})
+            except Exception:
+                pass  # fall through to full-res on any thumbnail failure
         return web.FileResponse(p)
 
     @routes.post("/v1/library/status")
