@@ -111,6 +111,10 @@ dialog .drop{border:1.5px dashed var(--line);border-radius:9px;padding:14px;text
 .drop.drag{border-color:var(--brand);color:var(--txt)}
 .prompt.drag{outline:2px dashed var(--brand);outline-offset:2px}
 .dlgerr{display:none;color:#ff8f8f;background:rgba(192,57,43,.12);border:1px solid rgba(192,57,43,.4);border-radius:8px;padding:8px 11px;font-size:.8rem;margin:8px 0 0;white-space:pre-wrap}
+.ctxlabel{font-size:.66rem;text-transform:uppercase;letter-spacing:.05em;color:var(--dim);margin:14px 0 6px}
+.wst{font-size:.66rem;font-weight:600;border-radius:99px;padding:1px 7px}
+.wst.queued{color:var(--warn)}.wst.running{color:var(--ok)}.wst.done{color:var(--pub)}.wst.failed{color:#ff8f8f}.wst.cancelled{color:var(--dim)}
+#ctxdlg{max-width:560px}
 .card .addref{position:absolute;top:8px;right:9px;width:26px;height:26px;border-radius:50%;border:none;background:rgba(0,0,0,.6);color:#fff;font-size:1rem;cursor:pointer;z-index:4;line-height:1}
 .card .addref:hover{background:var(--brand);color:#111} .card .addref.on{background:var(--brand);color:#111}
 .card .delx{position:absolute;top:8px;left:9px;width:26px;height:26px;border-radius:50%;border:none;background:rgba(0,0,0,.6);color:#fff;font-size:.85rem;cursor:pointer;z-index:4;line-height:1;opacity:.8}
@@ -230,6 +234,9 @@ body.immersive #stage{display:block}
   <section id="templates" hidden><div class="grid" id="tgall"></div></section>
   <section id="pipelines" hidden><div class="grid" id="wfgrid"></div></section>
   <section id="runs" hidden>
+    <div class="qcol"><h3 class="qh">🗂 Your work
+      <input class="search" id="wlq" placeholder="Search prompts…" oninput="worklog()" style="margin-left:10px"></h3>
+      <div class="qlist" id="wllist"></div></div>
     <div class="qcol"><h3 class="qh">▶ Now running <span id="qrunN" class="cnt">0</span></h3><div class="qlist" id="qrun"></div></div>
     <div class="qcol"><h3 class="qh">⏳ Up next <span id="qpendN" class="cnt">0</span> <button class="mini" onclick="clearQueue()" style="margin-left:8px">Clear all</button></h3><div class="qlist" id="qpend"></div></div>
     <div class="qcol"><h3 class="qh">✓ History — rate &amp; note for better future generations</h3><div class="grid" id="rgrid"></div></div>
@@ -268,6 +275,14 @@ body.immersive #stage{display:block}
   <input id="tmpldesc" style="width:100%;background:#0f0f12;color:var(--txt);border:1px solid var(--line);border-radius:8px;padding:9px 11px;font:inherit" placeholder="e.g. Product on invisible form, real fabric">
   <div id="tmplsteps" style="color:var(--dim);font-size:.78rem;margin-top:12px;line-height:1.6"></div>
   <div class="row" style="justify-content:flex-end;margin-top:8px"><button class="mini" onclick="tmpldlg.close()">Cancel</button><button class="mini hot" onclick="saveTemplate()">Save template</button></div>
+</dialog>
+<dialog id="ctxdlg">
+  <div class="row"><h3 id="ctxtitle" style="font-size:1rem;flex:1">Work item</h3><button class="mini" onclick="ctxdlg.close()">Close</button></div>
+  <div id="ctxbody" style="margin-top:6px"></div>
+  <div class="row" style="justify-content:flex-end;margin-top:14px;gap:6px">
+    <button class="mini" id="ctxreuse" onclick="reuseCtx()" title="Open Fix primed with this prompt + references">↻ Reuse context</button>
+    <button class="mini hot" id="ctxfix" onclick="fixCtx()">Fix this version</button>
+  </div>
 </dialog>
 <dialog id="compdlg">
   <h3 style="font-size:1rem">✦ Compose new from <span id="compn">0</span> assets</h3>
@@ -368,7 +383,7 @@ function render(){
           ${showDel?`<button class="mini" onclick="setSt(${i},'draft')">Recover</button>`:`
           ${a.status!=='approved'?`<button class="mini" onclick="setSt(${i},'approved')">Approve</button>`:''}
           ${a.status!=='published'?`<button class="mini" onclick="setSt(${i},'published')">Publish</button>`:''}
-          ${img?`<button class="mini" onclick="rerun(${i})">Re-run</button><button class="mini hot" onclick="openFix(${i})">Fix</button>`:''}
+          ${img?`<button class="mini" onclick="rerun(${i})">Re-run</button><button class="mini" onclick="openLineage('${pe}')" title="Show this image's versions (what it came from + later fixes)">Versions</button><button class="mini hot" onclick="openFix(${i})">Fix</button>`:''}
           <button class="mini" onclick="setSt(${i},'deleted')" title="Move to Deleted (recoverable)">🗑</button>`}
         </div>`}
       </div></div>`;}).join('')||`<div class="empty">${showDel?'Deleted is empty.':'No assets in this view yet.'}</div>`;
@@ -479,7 +494,70 @@ const promptTitle=v=>{ // pull the SaveImage prefix / positive text from the run
   for(const n of Object.values(g)){if(n&&n.class_type==='SaveImage')return (n.inputs.filename_prefix||'render').split('/').pop();}
   return 'render';
 };
+// ── Work log: the org's dispatched renders with real status + full context ────
+let WL=[], CTX=null;
+const WSTATUS={queued:['⏳','queued'],running:['●','running'],done:['✓','done'],failed:['⚠','failed'],cancelled:['✕','cancelled']};
+function wlThumb(it){ if(it.output)return thumbURL({path:it.output});
+  if(it.refs&&it.refs[0])return inputThumb(it.refs[0]);
+  if(it.parents&&it.parents[0])return thumbURL({path:it.parents[0]}); return ''; }
+function wlRow(it){
+  const [ic,lbl]=WSTATUS[it.status]||['·',it.status||''];
+  const th=wlThumb(it), when=it.ts?new Date(it.ts*1000).toLocaleString():'', lane=it.lane&&it.lane!=='local'?' · '+it.lane:'';
+  return `<div class="qrow" style="cursor:pointer" onclick="openContext('${it.id}')">
+    <div class="qthumb" style="${th?`background-image:url('${th}');background-size:cover;background-position:center`:'display:flex;align-items:center;justify-content:center;color:var(--dim)'}">${th?'':'🗂'}</div>
+    <div class="qtitle">${it.kind} · <span class="wst ${it.status}">${ic} ${lbl}</span>
+      <div class="qdesc">${(it.prompt||'(no prompt)').replace(/</g,'&lt;')}</div>
+      <div class="qsub">${when}${lane}${it.error?` · <span style="color:#ff8f8f">${it.error.replace(/</g,'&lt;')}</span>`:''}</div></div>
+    <button class="mini" onclick="event.stopPropagation();openContext('${it.id}')">Open</button></div>`;
+}
+async function worklog(){
+  const q=($('wlq')&&$('wlq').value||'').trim();
+  let d={items:[]}; try{d=await (await fetch('/v1/worklog'+(q?('?q='+encodeURIComponent(q)):''))).json();}catch(_){}
+  WL=d.items||[];
+  $('wllist').innerHTML=WL.map(wlRow).join('')||'<div class="qsub" style="padding:6px 2px">No work yet — your renders will appear here with full context.</div>';
+}
+function pv(url,label,click){ return `<div style="text-align:center">
+  <img src="${url}" ${click?`onclick="${click}" style="cursor:pointer;`:'style="'}width:60px;height:88px;object-fit:cover;border-radius:6px;border:1px solid var(--line)">
+  <div style="font-size:.58rem;color:var(--dim);margin-top:2px">${label}</div></div>`; }
+function ctxHTML(it,lin){
+  const parents=(it.parents||[]).map(p=>pv(thumbURL({path:p}),'from',`openLibItem('${p.replace(/'/g,"\\'")}')`)).join('');
+  const refs=(it.refs||[]).map(n=>pv(inputThumb(n),(it.uploads||[]).includes(n)?'upload':'ref')).join('');
+  const result=it.output?pv(thumbURL({path:it.output}),'result',`openLibItem('${it.output.replace(/'/g,"\\'")}')`):'';
+  const params=it.params&&Object.keys(it.params).length?Object.entries(it.params).map(([k,v])=>k+':'+v).join(' · '):'';
+  const trail=(it.events||[]).map(e=>`${e.s}${e.ts?(' '+new Date(e.ts*1000).toLocaleTimeString()):''}${e.note?(' — '+e.note.replace(/</g,'&lt;')):''}`).join('  →  ');
+  const chain=[...lin.ancestors.map(a=>[a,a.kind||'ancestor']),...(it.output?[[{path:it.output},'● this']]:[]),...lin.descendants.map(d=>[d,d.kind||'later'])];
+  const chainHTML=chain.length>1?`<div class="ctxlabel">Versions</div><div style="display:flex;gap:8px;overflow-x:auto;padding-bottom:4px">${chain.map(([n,role])=>pv(thumbURL({path:n.path}),role,role==='● this'?'':`openLibItem('${(n.path||'').replace(/'/g,"\\'")}')`)).join('')}</div>`:'';
+  return `${it.prompt?`<div class="ctxlabel">Prompt</div><div style="font-size:.86rem;background:#0f0f12;border:1px solid var(--line);border-radius:8px;padding:9px 11px">${it.prompt.replace(/</g,'&lt;')}</div>`:''}
+   ${(parents||refs||result)?`<div class="ctxlabel">References &amp; result</div><div class="row" style="flex-wrap:wrap">${parents}${refs}${result}</div>`:''}
+   <div class="ctxlabel">Workflow</div><div style="font-size:.82rem;color:var(--dim)">${it.kind} · ${it.status||''}${it.lane&&it.lane!=='local'?(' · '+it.lane):''}${params?(' · '+params):''}</div>
+   ${trail?`<div class="ctxlabel">Process</div><div style="font-size:.78rem;color:var(--dim)">${trail}</div>`:''}
+   ${it.error?`<div class="dlgerr" style="display:block">${it.error.replace(/</g,'&lt;')}</div>`:''}${chainHTML}`;
+}
+async function lineageFor(path){ if(!path)return {ancestors:[],descendants:[],node:''}; try{return await (await fetch('/v1/worklog/lineage?path='+encodeURIComponent(path))).json();}catch(_){return {ancestors:[],descendants:[],node:path};} }
+async function openContext(id){
+  const it=WL.find(x=>x.id===id); if(!it)return; CTX=it;
+  $('ctxtitle').textContent=it.kind+' — '+(it.status||'');
+  $('ctxbody').innerHTML=ctxHTML(it, await lineageFor(it.output));
+  $('ctxreuse').style.display=(it.output||(it.parents&&it.parents[0]))?'':'none';
+  $('ctxfix').style.display=(it.output||(it.parents&&it.parents[0]))?'':'none';
+  $('ctxdlg').showModal();
+}
+async function openLineage(path){
+  CTX={output:path,parents:[],refs:[],uploads:[],prompt:'',kind:'asset',status:''};
+  $('ctxtitle').textContent='Versions'; $('ctxbody').innerHTML=ctxHTML(CTX, await lineageFor(path));
+  $('ctxreuse').style.display='none'; $('ctxfix').style.display=''; $('ctxdlg').showModal();
+}
+function openLibItem(path){ ctxdlg.close(); zoom(imgURL({path})); }
+async function primeFix(base,prompt,libRefs,upRefs){
+  await openFixPath(base,prompt);
+  (libRefs||[]).filter(p=>p&&p!==base).forEach(p=>{ if(FIXREFS.length<MAXFIXREFS)FIXREFS.push({kind:'lib',ref:p,thumb:thumbURL({path:p})}); });
+  (upRefs||[]).forEach(n=>{ if(FIXREFS.length<MAXFIXREFS)FIXREFS.push({kind:'up',ref:n,thumb:inputThumb(n)}); });
+  drawFixRefs();
+}
+function reuseCtx(){ if(!CTX)return; const base=CTX.output||(CTX.parents&&CTX.parents[0]); if(!base){toast('No base image to reuse');return;} ctxdlg.close(); primeFix(base,CTX.prompt||'',CTX.parents||[],CTX.uploads||[]); }
+function fixCtx(){ if(!CTX)return; const base=CTX.output||(CTX.parents&&CTX.parents[0]); if(!base){toast('No result to fix yet');return;} ctxdlg.close(); openFixPath(base,''); }
 async function runs(){
+  worklog();
   RATINGS=await (await fetch('/v1/library/ratings')).json().catch(()=>({}));
   // live queue
   let q={queue_running:[],queue_pending:[]}; try{q=await (await fetch('/queue')).json();}catch(_){}
@@ -598,11 +676,12 @@ async function uploadFixFiles(files){
     else showFixErr('Upload failed: '+r.error);
   }
 }
-async function openFix(i){FIXPATH=DATA.assets[i].path;FIXREFS=[];$('fixtext').value='';showFixErr('');
+async function openFixPath(path,prompt){FIXPATH=path;FIXREFS=[];$('fixtext').value=prompt||'';showFixErr('');
   $('fixhist').style.display='none'; drawFixRefs();
   $('gpuwarn').style.display=(await gpuOnline())?'none':'block';
   $('gpuwarn').textContent='⚠ No GPU worker online — this queues but renders only when a BYO-GPU (e.g. spark) is connected.';
   $('fixdlg').showModal();}
+async function openFix(i){ return openFixPath(DATA.assets[i].path,''); }
 async function sendFix(){const t=$('fixtext').value.trim();if(t.length<3){showFixErr('Describe the change (3+ characters).');return;}
   showFixErr(''); toast('Queueing fix…');
   let r;

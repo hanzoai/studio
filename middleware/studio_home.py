@@ -44,6 +44,7 @@ import aiohttp
 from aiohttp import web
 
 import folder_paths
+from middleware import worklog
 
 log = logging.getLogger("studio.home")
 
@@ -287,6 +288,70 @@ async def _queue_prompt(request: web.Request, server, graph: dict) -> str:
         raise DispatchError(f"could not reach the render engine ({e})")
 
 
+def _graph_params(graph: dict) -> dict:
+    """The render params worth showing in the work-log context panel."""
+    p: dict = {}
+    for n in graph.values():
+        if not isinstance(n, dict):
+            continue
+        ct, ins = n.get("class_type", ""), n.get("inputs", {})
+        if "KSampler" in ct:
+            p.update(steps=ins.get("steps"), cfg=ins.get("cfg"),
+                     sampler=ins.get("sampler_name"), scheduler=ins.get("scheduler"),
+                     seed=ins.get("seed", ins.get("noise_seed")))
+        elif ct == "EmptySD3LatentImage":
+            p.update(width=ins.get("width"), height=ins.get("height"))
+    return {k: v for k, v in p.items() if v is not None}
+
+
+def _in_render_jobs(org: str, pid: str) -> bool:
+    """True if a prompt_id was dispatched to this org's BYO-GPU lane (gpu-jobs) —
+    gpu_dispatch._track_dispatched writes it to render_jobs.json during the self-POST."""
+    try:
+        jf = Path(folder_paths.get_org_output_directory(org)) / "render_jobs.json"
+        return any(j.get("id") == pid for j in json.loads(jf.read_text()))
+    except Exception:
+        return False
+
+
+def _landed_output(root: Path | None, prefix: str) -> str | None:
+    """Library-relative path of the newest file a SaveImage prefix produced, or None
+    if it hasn't landed yet. Lets the work-log report done + wire lineage edges."""
+    if root is None or not prefix:
+        return None
+    try:
+        parent = root / os.path.dirname(prefix)
+        stem = os.path.basename(prefix)
+        # Match SaveImage's exact "<prefix>_<counter>_.png" — NOT a loose "<prefix>*"
+        # which also matches a CHILD prefix ("a" would swallow "a_00001__00001_"),
+        # collapsing distinct lineage steps onto one output.
+        pat = re.compile(r"^" + re.escape(stem) + r"_\d+_\.png$")
+        hits = [p for p in parent.glob(stem + "_*_.png") if pat.match(p.name)]
+        hits.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+        if hits:
+            return str(hits[0].relative_to(root))
+    except Exception:
+        pass
+    return None
+
+
+async def _dispatch(request, server, org: str, graph: dict, *, kind: str, prompt: str,
+                    refs: list, uploads: list, parents: list, output_prefix: str) -> str:
+    """The ONE place a render is queued AND recorded. On success writes a `queued`
+    work-log row (lane detected); on failure writes a `failed` row with the reason —
+    so a dispatch is NEVER invisible, whatever lane it took or however it failed."""
+    common = dict(kind=kind, prompt=prompt, refs=refs, uploads=uploads,
+                  parents=parents, output_prefix=output_prefix, params=_graph_params(graph))
+    try:
+        pid = await _queue_prompt(request, server, graph)
+    except DispatchError as e:
+        worklog.record(org, status="failed", error=str(e), **common)
+        raise
+    worklog.record(org, pid=pid, status="queued",
+                   lane="gpu" if _in_render_jobs(org, pid) else "local", **common)
+    return pid
+
+
 async def dispatch_fix(request: web.Request, server, org: str, rel: str,
                        instruction: str, upload: str | None = None) -> dict:
     """Run the proven Qwen single-image edit. The base image is EITHER a library
@@ -313,7 +378,10 @@ async def dispatch_fix(request: web.Request, server, org: str, rel: str,
         ref_name = f"fix_src_{abs(hash((str(p), p.stat().st_mtime))) % 10**10}.png"
         (in_dir / ref_name).write_bytes(p.read_bytes())
         stem = re.sub(r"[^a-zA-Z0-9_-]", "_", p.stem)[:48]
-    pid = await _queue_prompt(request, server, _fix_graph(ref_name, instruction, f"fixes/{stem}"))
+    pid = await _dispatch(request, server, org, _fix_graph(ref_name, instruction, f"fixes/{stem}"),
+                          kind="fix", prompt=instruction, refs=[ref_name],
+                          uploads=[upload] if upload else [], parents=[] if upload else [rel],
+                          output_prefix=f"fixes/{stem}")
     return {"ok": True, "prompt_id": pid, "output_prefix": f"fixes/{stem}"}
 
 
@@ -345,7 +413,9 @@ async def dispatch_compose(request: web.Request, server, org: str, paths: list,
     ref_names.extend(uploaded)
     labels = [Path(x).stem for x in paths] + [Path(u).stem for u in uploaded]
     stem = "compose_" + "_".join(re.sub(r"[^a-zA-Z0-9]", "", s)[:12] for s in labels[:2])
-    pid = await _queue_prompt(request, server, _compose_graph(ref_names, instruction, f"composes/{stem}"))
+    pid = await _dispatch(request, server, org, _compose_graph(ref_names, instruction, f"composes/{stem}"),
+                          kind="compose", prompt=instruction, refs=ref_names,
+                          uploads=uploaded, parents=list(paths), output_prefix=f"composes/{stem}")
     return {"ok": True, "prompt_id": pid, "output_prefix": f"composes/{stem}", "refs": len(ref_names)}
 
 
@@ -539,10 +609,62 @@ def add_studio_home_routes(routes: web.RouteTableDef, server) -> None:
             graph = None
         if not isinstance(graph, dict):
             return web.json_response({"error": "no embedded workflow in this image"}, status=422)
+        rel = body.get("path", "")
+        out_prefix = ""
+        instr = ""
+        for n in graph.values():
+            if not isinstance(n, dict):
+                continue
+            if n.get("class_type") == "SaveImage":
+                out_prefix = n.get("inputs", {}).get("filename_prefix", "") or out_prefix
+            elif "TextEncode" in n.get("class_type", "") and not instr:
+                t = n.get("inputs", {}).get("prompt") or n.get("inputs", {}).get("text") or ""
+                if t and t != _NEG:
+                    instr = t
         ids = []
-        for _ in range(max(1, min(int(body.get("count", 1)), 4))):
-            ids.append(await _queue_prompt(request, server, _reseed(json.loads(json.dumps(graph)))))
+        try:
+            for _ in range(max(1, min(int(body.get("count", 1)), 4))):
+                ids.append(await _dispatch(
+                    request, server, org, _reseed(json.loads(json.dumps(graph))),
+                    kind="rerun", prompt=instr, refs=[], uploads=[], parents=[rel],
+                    output_prefix=out_prefix))
+        except DispatchError as e:
+            return web.json_response({"error": str(e)}, status=400)
         return web.json_response({"ok": True, "prompt_ids": ids})
+
+    @routes.get("/v1/worklog")
+    async def get_worklog(request: web.Request):
+        """This org's dispatched renders (fix/compose/rerun) with REAL status — the
+        queue/history backbone. Reverse-chronological; ?q= filters over prompt+kind.
+        Server-resolved org: a caller only ever sees its OWN log file."""
+        org = _org_of(request)
+        root = _library_root(org)
+        rows = worklog.load(org)
+        out = []
+        for r in reversed(rows):
+            row = dict(r)
+            landed = _landed_output(root, r.get("output_prefix"))
+            row["output"] = landed
+            if landed and r.get("status") not in ("failed", "cancelled"):
+                row["status"] = "done"
+            out.append(row)
+        q = (request.query.get("q") or "").lower().strip()
+        if q:
+            out = [r for r in out if q in (r.get("prompt", "") or "").lower() or q in (r.get("kind", "") or "")]
+        return web.json_response({"org": org, "items": out[:200]})
+
+    @routes.get("/v1/worklog/lineage")
+    async def get_lineage(request: web.Request):
+        """The version chain for one library asset — ancestors (what it was derived
+        from, with the prompt at each step) and descendants (later fixes of it).
+        Pure over THIS org's rows; cross-tenant lineage is impossible by construction."""
+        org = _org_of(request)
+        root = _library_root(org)
+        target = request.query.get("path", "")
+        rows = worklog.load(org)
+        for r in rows:
+            r["output"] = _landed_output(root, r.get("output_prefix"))
+        return web.json_response(worklog.build_lineage(rows, target))
 
     @routes.post("/v1/library/fix")
     async def fix(request: web.Request):
