@@ -87,6 +87,72 @@ def test_build_lineage_chain():
     assert lin2["ancestors"] == []
 
 
+def test_record_stores_node(orgdirs):
+    r = worklog.record("acme", kind="fix", prompt="x", refs=[], uploads=[], parents=[],
+                       output_prefix="f", pid="p1", lane="gpu", node="spark")
+    assert r["node"] == "spark"
+    r2 = worklog.record("acme", kind="fix", prompt="y", refs=[], uploads=[], parents=[],
+                        output_prefix="g", pid="p2", lane="local")
+    assert r2["node"] == "studio pod"   # local jobs run on the pod
+
+
+def test_mark_started_finished_and_median(orgdirs):
+    worklog.record("acme", kind="fix", prompt="x", refs=[], uploads=[], parents=[],
+                   output_prefix="fixes/x", pid="p1")
+    assert worklog.mark_started("acme", "p1", 1000)
+    r = worklog.load("acme")[0]
+    assert r["started_at"] == 1000 and r["status"] == "running"
+    assert not worklog.mark_started("acme", "p1", 2000)          # idempotent: keeps first
+    assert worklog.load("acme")[0]["started_at"] == 1000
+    assert worklog.mark_finished("acme", "p1", 1050)
+    r = worklog.load("acme")[0]
+    assert r["finished_at"] == 1050 and r["status"] == "done"
+    assert worklog.median_durations(worklog.load("acme"))["fix"] == 50   # 1050-1000
+
+
+def test_median_durations_per_kind():
+    rows = [
+        {"kind": "fix", "ts": 100, "started_at": 100, "finished_at": 110},     # 10
+        {"kind": "fix", "ts": 200, "started_at": 200, "finished_at": 220},     # 20
+        {"kind": "fix", "ts": 300, "started_at": 300, "finished_at": 360},     # 60 → median 20
+        {"kind": "compose", "ts": 0, "started_at": 0, "finished_at": 100},     # 100
+        {"kind": "fix", "ts": 400},                                            # unfinished → ignored
+    ]
+    m = worklog.median_durations(rows)
+    assert m == {"fix": 20, "compose": 100}
+    # no started_at → duration falls back to finished − queued(ts)
+    assert worklog.median_durations([{"kind": "rerun", "ts": 0, "finished_at": 30}]) == {"rerun": 30}
+
+
+def test_estimate_lanes_positions_and_eta():
+    now = 1000
+    active = [
+        {"id": "a", "kind": "fix", "lane": "gpu", "ts": 100, "status": "running", "started_at": now - 60, "node": "spark"},
+        {"id": "b", "kind": "fix", "lane": "gpu", "ts": 200, "status": "queued", "node": "spark"},
+        {"id": "c", "kind": "compose", "lane": "gpu", "ts": 300, "status": "queued", "node": "spark"},
+        {"id": "d", "kind": "fix", "lane": "local", "ts": 150, "status": "queued", "node": "studio pod"},
+    ]
+    medians = {"fix": 120, "compose": 300}
+    est, counts = worklog.estimate_lanes(active, medians, now)
+    assert counts == {"gpu": 3, "local": 1}
+    # running: elapsed 60 of median 120 → 60 remaining
+    assert est["a"]["position"] == 1 and est["a"]["of"] == 3
+    assert est["a"]["elapsed_seconds"] == 60 and est["a"]["remaining_seconds"] == 60 and est["a"]["eta_seconds"] == 60
+    assert est["a"]["node"] == "spark"
+    # queued #2: wait = running remaining(60); eta = 60 + own fix median(120)
+    assert est["b"]["position"] == 2 and est["b"]["wait_seconds"] == 60 and est["b"]["eta_seconds"] == 180
+    # queued #3: wait = 60 + b's fix(120) = 180; eta = 180 + compose(300)
+    assert est["c"]["position"] == 3 and est["c"]["wait_seconds"] == 180 and est["c"]["eta_seconds"] == 480
+    # separate lane, single queued item, nothing running → starts ~now
+    assert est["d"]["position"] == 1 and est["d"]["of"] == 1 and est["d"]["wait_seconds"] == 0 and est["d"]["eta_seconds"] == 120
+
+
+def test_estimate_lanes_default_median_for_unknown_kind():
+    est, _ = worklog.estimate_lanes(
+        [{"id": "x", "kind": "video", "lane": "gpu", "ts": 1, "status": "queued"}], {}, 0, default_median=200)
+    assert est["x"]["eta_seconds"] == 200
+
+
 def test_build_lineage_terminates_on_cycle():
     rows = [
         {"kind": "fix", "prompt": "x", "ts": 1, "parents": ["y.png"], "output": "x.png"},

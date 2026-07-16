@@ -61,7 +61,7 @@ def _save(org: str, rows: list[dict]) -> None:
 
 def record(org: str, *, kind: str, prompt: str, refs: list, uploads: list,
            parents: list, output_prefix: str, params: dict | None = None,
-           pid: str | None = None, lane: str | None = None,
+           pid: str | None = None, lane: str | None = None, node: str | None = None,
            status: str = "queued", error: str | None = None) -> dict:
     """Append one dispatch row. ``pid`` is the /prompt id on success (used to match
     live queue/history); a failed dispatch has no id, so a synthetic one is minted
@@ -78,6 +78,7 @@ def record(org: str, *, kind: str, prompt: str, refs: list, uploads: list,
         "output_prefix": output_prefix or "",
         "params": params or {},
         "lane": lane or ("failed" if status == "failed" else "local"),
+        "node": node or ("studio pod" if (lane in (None, "local")) else "gpu"),
         "status": status,
         "updatedAt": now,
         "events": [{"s": "queued", "ts": now}],
@@ -109,6 +110,110 @@ def set_status(org: str, pid: str, status: str, note: str | None = None) -> bool
     if hit:
         _save(org, rows)
     return hit
+
+
+def mark_started(org: str, pid: str, at: int) -> bool:
+    """Stamp when a job first begins rendering (first seen at the head of its lane).
+    Idempotent: only the first observation sets started_at. Feeds duration = finished
+    − started, the basis of the ETA median."""
+    if not pid:
+        return False
+    rows = load(org)
+    hit = False
+    for r in rows:
+        if r.get("id") == pid and not r.get("started_at") and r.get("status") not in _TERMINAL:
+            r["started_at"] = int(at)
+            r["status"] = "running"
+            r["updatedAt"] = int(time.time())
+            r.setdefault("events", []).append({"s": "running", "ts": int(at)})
+            hit = True
+    if hit:
+        _save(org, rows)
+    return hit
+
+
+def mark_finished(org: str, pid: str, at: int) -> bool:
+    """Stamp real completion (the output file's mtime) and close the row as done."""
+    if not pid:
+        return False
+    rows = load(org)
+    hit = False
+    for r in rows:
+        if r.get("id") == pid and r.get("status") not in _TERMINAL:
+            r["finished_at"] = int(at)
+            r["status"] = "done"
+            r["updatedAt"] = int(time.time())
+            r.setdefault("events", []).append({"s": "done", "ts": int(at)})
+            hit = True
+    if hit:
+        _save(org, rows)
+    return hit
+
+
+def _duration(r: dict) -> float | None:
+    """Measured render seconds for a completed row: finished − started when both
+    exist (true render time), else finished − queued (turnaround, an upper bound)."""
+    fin = r.get("finished_at")
+    if fin is None:
+        return None
+    start = r.get("started_at")
+    if start is None:
+        start = r.get("ts")
+    if start is None:
+        return None
+    return float(fin - start) if fin > start else None
+
+
+def median_durations(rows: list[dict]) -> dict:
+    """Rolling median render seconds per kind (fix/compose/rerun) over completed
+    rows — the ETA basis. Pure. Only kinds with a measured sample appear."""
+    buckets: dict[str, list[float]] = {}
+    for r in rows:
+        d = _duration(r)
+        if d and d > 0:
+            buckets.setdefault(r.get("kind", ""), []).append(d)
+    out: dict[str, int] = {}
+    for k, v in buckets.items():
+        v.sort()
+        n = len(v)
+        out[k] = int(v[n // 2] if n % 2 else (v[n // 2 - 1] + v[n // 2]) / 2)
+    return out
+
+
+def estimate_lanes(active: list[dict], medians: dict, now: int,
+                   default_median: int = 180) -> tuple[dict, dict]:
+    """Pure position + ETA math, per lane. ``active`` items are
+    ``{id, kind, lane, ts, status, started_at?}``. Within a lane the running item
+    (head) is position 1; each queued item's wait ≈ jobs-ahead × their medians +
+    the running item's remaining time (median − elapsed). ETA to done = wait +
+    its own median. Returns (per-id info, per-lane count). No client math over
+    another tenant's data — the caller passes only THIS org's active jobs."""
+    lanes: dict[str, list[dict]] = {}
+    for j in active:
+        lanes.setdefault(j.get("lane") or "local", []).append(j)
+    info: dict[str, dict] = {}
+    counts: dict[str, int] = {}
+    for lane, jobs in lanes.items():
+        jobs.sort(key=lambda j: (0 if j.get("status") == "running" else 1, j.get("ts", 0)))
+        counts[lane] = len(jobs)
+        cum = 0.0  # seconds until the START of the current item
+        for idx, j in enumerate(jobs):
+            m = medians.get(j.get("kind", ""), default_median)
+            row = {"lane": lane, "position": idx + 1, "of": len(jobs),
+                   "node": j.get("node") or ("studio pod" if lane == "local" else "gpu")}
+            if idx == 0 and j.get("status") == "running":
+                started = j.get("started_at") or j.get("ts") or now
+                elapsed = max(0, now - started)
+                remaining = max(0.0, m - elapsed)
+                row.update(elapsed_seconds=int(elapsed), wait_seconds=0,
+                           remaining_seconds=int(remaining), eta_seconds=int(remaining))
+                cum = remaining
+            else:
+                row.update(elapsed_seconds=0, wait_seconds=int(cum),
+                           remaining_seconds=None, eta_seconds=int(cum + m))
+                cum += m
+            info[j["id"]] = row
+    return info, counts
 
 
 def build_lineage(rows: list[dict], target: str) -> dict:

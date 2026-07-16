@@ -76,11 +76,36 @@ def _bearer(request) -> str:
     return f"Bearer {tok}" if tok else ""
 
 
-def _has_online_gpu(tok: str) -> bool:
-    """True if the caller's org has an online GPU machine in the cloud fleet."""
+# Identity keys a fleet machine might carry, most human-friendly first. We READ
+# whatever the gpu-jobs lane publishes (home-lab labels like spark/dbc/evo land in
+# `name`/`hostname`); we never invent a parallel registry.
+_NODE_KEYS = ("name", "hostname", "label", "node", "worker_id", "machine_id", "id", "gpu_model")
+
+
+def _node_label(m: dict) -> str:
+    for k in _NODE_KEYS:
+        v = m.get(k)
+        if isinstance(v, str) and v.strip():
+            return v.strip()
+    return "gpu"
+
+
+def _fleet_machines(tok: str) -> list:
+    """The caller-org's machines from the cloud fleet. The token scopes the fleet to
+    the caller's org, so this is inherently tenant-isolated."""
     req = urllib.request.Request(f"{CLOUD}/v1/machines", headers={"Authorization": tok})
     d = json.loads(urllib.request.urlopen(req, timeout=10).read())
-    return any(m.get("status") == "online" and m.get("gpu") for m in d.get("machines", []))
+    ms = d.get("machines", [])
+    return ms if isinstance(ms, list) else []
+
+
+def _online_gpu_nodes(tok: str) -> list:
+    return [m for m in _fleet_machines(tok) if m.get("status") == "online" and m.get("gpu")]
+
+
+def _has_online_gpu(tok: str) -> bool:
+    """True if the caller's org has an online GPU machine in the cloud fleet."""
+    return bool(_online_gpu_nodes(tok))
 
 
 def dispatch_if_worker(request, org_id: str, prompt_id: str, prompt: dict) -> bool:
@@ -89,8 +114,12 @@ def dispatch_if_worker(request, org_id: str, prompt_id: str, prompt: dict) -> bo
     Never raises — any failure falls back to local."""
     try:
         tok = _bearer(request)
-        if not tok or not _has_online_gpu(tok):
+        online = _online_gpu_nodes(tok) if tok else []
+        if not online:
             return False
+        # Which node runs it: the single online GPU is definitive; with several the
+        # claimer is decided at pick-up time, so record the ambiguous "gpu".
+        node = _node_label(online[0]) if len(online) == 1 else "gpu"
         body = json.dumps({
             "activityId": prompt_id,
             "runId": prompt_id,
@@ -116,13 +145,13 @@ def dispatch_if_worker(request, org_id: str, prompt_id: str, prompt: dict) -> bo
             headers={"Authorization": tok, "Content-Type": "application/json"},
         )
         urllib.request.urlopen(req, timeout=15).read()
-        _track_dispatched(org_id, prompt_id, prompt)
+        _track_dispatched(org_id, prompt_id, prompt, node=node)
         return True
     except Exception:
         return False
 
 
-def _track_dispatched(org_id: str, prompt_id: str, prompt: dict) -> None:
+def _track_dispatched(org_id: str, prompt_id: str, prompt: dict, node: str = "gpu") -> None:
     """Record a BYO-GPU render dispatched to gpu-jobs so the studio UI can SHOW it
     in the queue. BYO-GPU jobs render on the worker (gpu-jobs), not the pod's local
     /queue — so without this the user's fix/compose 'never appears in the queue'.
@@ -155,7 +184,7 @@ def _track_dispatched(org_id: str, prompt_id: str, prompt: dict) -> None:
         # endpoint can check for the ACTUAL output file, not a fuzzy base match that
         # collides with the source image and makes the job vanish after 30s.
         jobs.append({"id": prompt_id, "prefix": full_prefix.split("/")[-1],
-                     "outPrefix": full_prefix, "refs": refs[:1],
+                     "outPrefix": full_prefix, "refs": refs[:1], "node": node,
                      "ts": int(time.time()), "status": "rendering"})
         tmp = jf + ".tmp"
         open(tmp, "w").write(json.dumps(jobs))

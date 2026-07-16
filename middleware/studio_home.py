@@ -312,11 +312,31 @@ def _graph_params(graph: dict) -> dict:
 def _in_render_jobs(org: str, pid: str) -> bool:
     """True if a prompt_id was dispatched to this org's BYO-GPU lane (gpu-jobs) —
     gpu_dispatch._track_dispatched writes it to render_jobs.json during the self-POST."""
+    return _render_job(org, pid) is not None
+
+
+def _render_job(org: str, pid: str) -> dict | None:
     try:
         jf = Path(folder_paths.get_org_output_directory(org)) / "render_jobs.json"
-        return any(j.get("id") == pid for j in json.loads(jf.read_text()))
+        for j in json.loads(jf.read_text()):
+            if j.get("id") == pid:
+                return j
     except Exception:
-        return False
+        pass
+    return None
+
+
+def _render_job_node(org: str, pid: str) -> str:
+    """The node label the gpu-jobs lane recorded for this dispatch (spark/dbc/…)."""
+    j = _render_job(org, pid)
+    return (j.get("node") if j else None) or "gpu"
+
+
+def _output_mtime(root: Path | None, rel: str) -> int | None:
+    try:
+        return int((root / rel).stat().st_mtime) if root and rel else None
+    except OSError:
+        return None
 
 
 def _remove_render_job(org: str, pid: str) -> bool:
@@ -415,8 +435,9 @@ async def _dispatch(request, server, org: str, graph: dict, *, kind: str, prompt
     except DispatchError as e:
         worklog.record(org, status="failed", error=str(e), **common)
         raise
-    worklog.record(org, pid=pid, status="queued",
-                   lane="gpu" if _in_render_jobs(org, pid) else "local", **common)
+    lane = "gpu" if _in_render_jobs(org, pid) else "local"
+    node = _render_job_node(org, pid) if lane == "gpu" else "studio pod"
+    worklog.record(org, pid=pid, status="queued", lane=lane, node=node, **common)
     return pid
 
 
@@ -780,6 +801,67 @@ def add_studio_home_routes(routes: web.RouteTableDef, server) -> None:
             return web.json_response({"error": str(e)}, status=404)
         except DispatchError as e:
             return web.json_response({"error": str(e)}, status=400)
+
+    @routes.get("/v1/queue/status")
+    async def queue_status(request: web.Request):
+        """This org's LIVE queue with where + when: per-lane position N of M, the
+        node each job runs on, elapsed for the running item, and an ETA computed
+        server-side from the org's OWN measured render medians. Tenant-scoped — only
+        the caller's active jobs and their positions. Cheap: reads the org work log,
+        stamps started/finished as it observes them, no fleet call."""
+        org = _org_of(request)
+        root = _library_root(org)
+        now = int(time.time())
+        rows = worklog.load(org)
+        # finalize any job whose output has landed (real finish time = file mtime)
+        for r in rows:
+            if r.get("status") in ("done", "failed", "cancelled"):
+                continue
+            landed = _landed_output(root, r.get("output_prefix"))
+            if landed:
+                mt = _output_mtime(root, landed) or now
+                worklog.mark_finished(org, r["id"], mt)
+                r["status"], r["finished_at"] = "done", mt   # mirror in-memory
+        active = [r for r in rows if r.get("status") not in ("done", "failed", "cancelled")
+                  and now - int(r.get("ts", now)) <= 1800]
+        # the oldest job in each lane is the one rendering — stamp its start once
+        by_lane: dict[str, list[dict]] = {}
+        for r in active:
+            by_lane.setdefault(r.get("lane") or "local", []).append(r)
+        for jobs in by_lane.values():
+            head = min(jobs, key=lambda j: j.get("ts", 0))
+            if not head.get("started_at"):
+                worklog.mark_started(org, head["id"], now)
+                head["started_at"] = now
+            head["status"] = "running"
+        medians = worklog.median_durations(rows)
+        est, counts = worklog.estimate_lanes(active, medians, now)
+        items = {}
+        for r in active:
+            items[r["id"]] = {**est.get(r["id"], {}), "id": r["id"], "kind": r.get("kind", ""),
+                              "prompt": r.get("prompt", ""), "status": r.get("status"),
+                              "node": r.get("node")}
+        return web.json_response({"items": items, "medians": medians, "lanes": counts, "now": now})
+
+    @routes.get("/v1/nodes")
+    async def get_nodes(request: web.Request):
+        """The caller-org's GPU nodes (online/offline) for the queue header badges,
+        plus this studio pod. The fleet is token-scoped, so only the caller's org's
+        nodes are ever returned."""
+        try:
+            from middleware.gpu_dispatch import _bearer, _fleet_machines, _node_label
+        except ImportError:
+            from .middleware.gpu_dispatch import _bearer, _fleet_machines, _node_label
+        nodes = []
+        try:
+            tok = _bearer(request)
+            for m in (_fleet_machines(tok) if tok else []):
+                if not m.get("gpu"):
+                    continue
+                nodes.append({"name": _node_label(m), "online": m.get("status") == "online"})
+        except Exception:
+            nodes = []
+        return web.json_response({"nodes": nodes, "pod": {"name": "studio pod", "online": True}})
 
     @routes.get("/v1/worklog")
     async def get_worklog(request: web.Request):

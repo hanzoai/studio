@@ -114,6 +114,13 @@ dialog .drop{border:1.5px dashed var(--line);border-radius:9px;padding:14px;text
 .ctxlabel{font-size:.66rem;text-transform:uppercase;letter-spacing:.05em;color:var(--dim);margin:14px 0 6px}
 .wst{font-size:.66rem;font-weight:600;border-radius:99px;padding:1px 7px}
 .wst.queued{color:var(--warn)}.wst.running{color:var(--ok)}.wst.done{color:var(--pub)}.wst.failed{color:#ff8f8f}.wst.cancelled{color:var(--dim)}
+.wmeta{font-size:.72rem;color:var(--dim);margin-top:3px;display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.wnode{border:1px solid var(--line);border-radius:6px;padding:0 6px;color:var(--txt)}
+.qhead{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:0 0 14px;font-size:.8rem;color:var(--dim)}
+.nodebadge{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);border-radius:99px;padding:3px 11px;background:var(--panel)}
+.nodebadge .dot{width:7px;height:7px;border-radius:50%;background:#555}
+.nodebadge.on .dot{background:var(--ok)} .nodebadge.off{opacity:.6}
+.qhead .mstat{margin-left:auto;color:var(--dim)}
 #ctxdlg{max-width:560px}
 .card .addref{position:absolute;top:8px;right:9px;width:26px;height:26px;border-radius:50%;border:none;background:rgba(0,0,0,.6);color:#fff;font-size:1rem;cursor:pointer;z-index:4;line-height:1}
 .card .addref:hover{background:var(--brand);color:#111} .card .addref.on{background:var(--brand);color:#111}
@@ -234,6 +241,7 @@ body.immersive #stage{display:block}
   <section id="templates" hidden><div class="grid" id="tgall"></div></section>
   <section id="pipelines" hidden><div class="grid" id="wfgrid"></div></section>
   <section id="runs" hidden>
+    <div id="qhead" class="qhead"></div>
     <div class="qcol"><h3 class="qh">🗂 Your work
       <input class="search" id="wlq" placeholder="Search prompts…" oninput="worklog()" style="margin-left:10px"></h3>
       <div class="qlist" id="wllist"></div></div>
@@ -498,20 +506,54 @@ const promptTitle=v=>{ // pull the SaveImage prefix / positive text from the run
 };
 // ── Work log: the org's dispatched renders with real status + full context ────
 let WL=[], CTX=null;
+// live queue status (positions/ETAs/node) computed SERVER-SIDE; QLOCAL seeds the
+// client-side elapsed tick between polls. NODES = the org's GPU nodes for badges.
+let QST={items:{},medians:{},lanes:{},now:0}, QLOCAL=Date.now(), NODES=[];
 const WSTATUS={queued:['⏳','queued'],running:['●','running'],done:['✓','done'],failed:['⚠','failed'],cancelled:['✕','cancelled']};
+const fmtDur=s=>{ s=Math.max(0,Math.round(s)); if(s<60)return s+'s'; const m=Math.floor(s/60),r=s%60; if(s<3600)return m+'m'+(r?(' '+r+'s'):''); return Math.floor(s/3600)+'h '+Math.floor((s%3600)/60)+'m'; };
+const fmtEta=s=>{ s=Math.max(0,Math.round(s)); return s<60?('~'+s+'s est'):('~'+Math.round(s/60)+' min est'); };
 function wlThumb(it){ if(it.output)return thumbURL({path:it.output});
   if(it.refs&&it.refs[0])return inputThumb(it.refs[0]);
   if(it.parents&&it.parents[0])return thumbURL({path:it.parents[0]}); return ''; }
+function qmetaHTML(it,e){
+  if(!e)return '';
+  const node=`<span class="wnode">⚙ ${(e.node||it.node||'gpu')}</span>`;
+  if(e.status==='running'){
+    const el=(e.elapsed_seconds||0)+(Date.now()-QLOCAL)/1000;
+    return `<div class="wmeta">${node} · #${e.position}/${e.of} · running <span id="el-${it.id}">${fmtDur(el)}</span>${e.eta_seconds!=null?(' · ~'+fmtDur(e.eta_seconds)+' left'):''}</div>`;
+  }
+  return `<div class="wmeta">${node} · #${e.position}/${e.of} in line · ${fmtEta(e.eta_seconds||0)}</div>`;
+}
 function wlRow(it){
-  const [ic,lbl]=WSTATUS[it.status]||['·',it.status||''];
-  const th=wlThumb(it), when=it.ts?new Date(it.ts*1000).toLocaleString():'', lane=it.lane&&it.lane!=='local'?' · '+it.lane:'';
+  const e=QST.items[it.id];                    // live status wins over the stored one
+  const status=(e&&e.status)||it.status;
+  const [ic,lbl]=WSTATUS[status]||['·',status||''];
+  const th=wlThumb(it), when=it.ts?new Date(it.ts*1000).toLocaleString():'';
+  const active=status==='queued'||status==='running';
   return `<div class="qrow" style="cursor:pointer" onclick="openContext('${it.id}')">
     <div class="qthumb" style="${th?`background-image:url('${th}');background-size:cover;background-position:center`:'display:flex;align-items:center;justify-content:center;color:var(--dim)'}">${th?'':'🗂'}</div>
-    <div class="qtitle">${it.kind} · <span class="wst ${it.status}">${ic} ${lbl}</span>
+    <div class="qtitle">${it.kind} · <span class="wst ${status}">${ic} ${lbl}</span>
       <div class="qdesc">${(it.prompt||'(no prompt)').replace(/</g,'&lt;')}</div>
-      <div class="qsub">${when}${lane}${it.error?` · <span style="color:#ff8f8f">${it.error.replace(/</g,'&lt;')}</span>`:''}</div></div>
-    ${(it.status==='queued'||it.status==='running')?`<button class="mini" onclick="event.stopPropagation();openAmend('${it.id}')" title="Amend prompt/refs (re-queues)">Edit</button><button class="mini" onclick="event.stopPropagation();cancelJob('${it.id}')">Cancel</button>`:''}
+      ${active&&e?qmetaHTML(it,e):`<div class="qsub">${when}${it.node?(' · ⚙ '+it.node):''}${it.error?` · <span style="color:#ff8f8f">${it.error.replace(/</g,'&lt;')}</span>`:''}</div>`}</div>
+    ${active?`<button class="mini" onclick="event.stopPropagation();openAmend('${it.id}')" title="Amend prompt/refs (re-queues)">Edit</button><button class="mini" onclick="event.stopPropagation();cancelJob('${it.id}')">Cancel</button>`:''}
     <button class="mini" onclick="event.stopPropagation();openContext('${it.id}')">Open</button></div>`;
+}
+// server does the position/ETA math over the org's OWN jobs; the client only renders.
+async function loadQueueStatus(){ let d; try{d=await (await fetch('/v1/queue/status')).json();}catch(_){d=null;} if(d){QST=d;QLOCAL=Date.now();} }
+async function loadNodes(){ try{const d=await (await fetch('/v1/nodes')).json(); NODES=d.nodes||[];}catch(_){NODES=[];} renderQhead(); }
+function renderQhead(){
+  if(!$('qhead'))return;
+  const badges=(NODES||[]).map(n=>`<span class="nodebadge ${n.online?'on':'off'}"><span class="dot"></span>${n.name}${n.online?'':' · offline'}</span>`).join('')
+    +`<span class="nodebadge on"><span class="dot"></span>studio pod</span>`;
+  const m=QST.medians||{}, ks=Object.keys(m);
+  const ms=ks.length?('median '+ks.map(k=>k+' ~'+fmtDur(m[k])).join(' · ')):'';
+  $('qhead').innerHTML=badges+(ms?`<span class="mstat">${ms}</span>`:'');
+}
+async function refreshQueue(){
+  const before=Object.keys(QST.items||{});
+  await loadQueueStatus(); await worklog(); renderQhead();
+  let fin=0; before.forEach(id=>{ if(!QST.items[id]){ const w=WL.find(x=>x.id===id); if(w&&w.status==='done')fin++; } });
+  if(fin>0)toast('✓ '+fin+' render'+(fin>1?'s':'')+' finished — in your library');
 }
 async function worklog(){
   const q=($('wlq')&&$('wlq').value||'').trim();
@@ -566,7 +608,7 @@ async function primeFix(base,prompt,libRefs,upRefs){
 function reuseCtx(){ if(!CTX)return; const base=CTX.output||(CTX.parents&&CTX.parents[0]); if(!base){toast('No base image to reuse');return;} ctxdlg.close(); primeFix(base,CTX.prompt||'',CTX.parents||[],CTX.uploads||[]); }
 function fixCtx(){ if(!CTX)return; const base=CTX.output||(CTX.parents&&CTX.parents[0]); if(!base){toast('No result to fix yet');return;} ctxdlg.close(); openFixPath(base,''); }
 async function runs(){
-  worklog();
+  refreshQueue(); loadNodes();
   RATINGS=await (await fetch('/v1/library/ratings')).json().catch(()=>({}));
   // live queue
   let q={queue_running:[],queue_pending:[]}; try{q=await (await fetch('/queue')).json();}catch(_){}
@@ -594,7 +636,7 @@ async function runs(){
   let gjobs=[]; try{gjobs=(await (await fetch('/v1/render-queue')).json()).jobs||[];}catch(_){}
   const gjRow=j=>`<div class="qrow">
     <div class="qthumb" style="${j.refs&&j.refs[0]?`background-image:url('/v1/library/file?thumb=1&input=1&path=${encodeURIComponent(j.refs[0])}');background-size:cover;background-position:center`:'display:flex;align-items:center;justify-content:center;color:var(--ok)'}">${j.refs&&j.refs[0]?'':'▶'}</div>
-    <div class="qtitle">${j.prefix||'render'}<div class="qsub"><span style=color:var(--ok)>● </span>rendering on your GPU · ${Math.max(0,Math.round((j.age||0)/60))}m elapsed · ~${ETA_MIN}m</div></div>
+    <div class="qtitle">${j.prefix||'render'}<div class="qsub"><span style=color:var(--ok)>● </span>rendering on ${j.node||'your GPU'} · ${Math.max(0,Math.round((j.age||0)/60))}m elapsed${QST.items[j.id]&&QST.items[j.id].eta_seconds!=null?(' · ~'+fmtDur(QST.items[j.id].eta_seconds)+' left'):''}</div></div>
     ${j.id?`<button class="mini" onclick="cancelJob('${j.id}')">Cancel</button>`:''}</div>`;
   const gjHtml=gjobs.map(gjRow).join('');
   $('qrun').innerHTML=gjHtml + qr.map(it=>qitem(it,true,null)).join('') || '<div class="qsub" style="padding:6px 2px">Idle — nothing rendering.</div>';
@@ -802,4 +844,9 @@ async function updateLivebar(){
 document.getElementById('tophover').addEventListener('mouseenter',()=>document.querySelector('header').classList.add('reveal'));
 document.addEventListener('mousemove',e=>{if(e.clientY<8)document.querySelector('header').classList.add('reveal');else if(e.clientY>90&&document.body.classList.contains('immersive'))document.querySelector('header').classList.remove('reveal');});
 load(); loadSession(); updateLivebar(); setInterval(updateLivebar, 5000);
+// Queue transparency: refresh positions/ETAs while the queue view is open (sane
+// cadence, no hammering); node badges less often; tick the running item's elapsed.
+setInterval(()=>{ if(!$('runs').hidden)refreshQueue(); }, 6000);
+setInterval(()=>{ if(!$('runs').hidden)loadNodes(); }, 20000);
+setInterval(()=>{ for(const id in (QST.items||{})){ const e=QST.items[id]; if(e.status==='running'){ const el=$('el-'+id); if(el)el.textContent=fmtDur((e.elapsed_seconds||0)+(Date.now()-QLOCAL)/1000); } } }, 1000);
 </script>
