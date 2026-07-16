@@ -79,6 +79,17 @@ dialog::backdrop{background:rgba(0,0,0,.6)} dialog textarea{width:100%;backgroun
 .card .meta{gap:5px}
 .card .pick{position:absolute;top:8px;left:9px;width:20px;height:20px;border-radius:5px;border:1.5px solid #fff;background:rgba(0,0,0,.5);display:none;align-items:center;justify-content:center;font-size:.8rem;color:#111;z-index:3}
 .card{position:relative} .sel-mode .pick{display:flex} .picked .pick{background:var(--brand)}
+/* YouTube-style queue + history */
+.qcol{margin-bottom:26px} .qh{font-size:.9rem;font-weight:600;margin-bottom:10px;color:var(--txt);display:flex;align-items:center;gap:8px}
+.qlist{display:flex;flex-direction:column;gap:8px}
+.qrow{display:flex;align-items:center;gap:12px;background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:10px 14px}
+.qrow .qthumb{width:44px;height:66px;border-radius:6px;background:#0f0f12 center/cover;flex:0 0 auto}
+.qrow .qtitle{flex:1;font-size:.85rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.qrow .qsub{font-size:.72rem;color:var(--dim)}
+.stars{display:inline-flex;gap:1px;cursor:pointer} .stars span{font-size:1rem;color:#3a3a44;transition:.1s} .stars span.on{color:#ffcf4a}
+.notebox{width:100%;background:#0f0f12;color:var(--txt);border:1px solid var(--line);border-radius:7px;padding:6px 9px;font:inherit;font-size:.76rem;margin-top:6px;min-height:34px;resize:vertical}
+.fav{cursor:pointer;font-size:1rem;color:#3a3a44} .fav.on{color:#ffcf4a}
+dialog .drop{border:1.5px dashed var(--line);border-radius:9px;padding:14px;text-align:center;color:var(--dim);font-size:.82rem;margin:8px 0;cursor:pointer}
 </style>
 <header>
   <svg class="logo" viewBox="0 0 520 520" xmlns="http://www.w3.org/2000/svg"><rect width="520" height="520" rx="120" fill="#111"/><g transform="translate(100,100) scale(4.78)" fill="#fff"><path d="M22.21 67V44.6369H0V67H22.21Z"/><path d="M66.7038 22.3184H22.2534L0.0878906 44.6367H44.4634L66.7038 22.3184Z"/><path d="M22.21 0H0V22.3184H22.21V0Z"/><path d="M66.7198 0H44.5098V22.3184H66.7198V0Z"/><path d="M66.7198 67V44.6369H44.5098V67H66.7198Z"/></g></svg>
@@ -108,7 +119,7 @@ dialog::backdrop{background:rgba(0,0,0,.6)} dialog textarea{width:100%;backgroun
     <button class="on" data-tab="assets" onclick="tab('assets')">Assets</button>
     <button data-tab="templates" onclick="tab('templates')">Templates</button>
     <button data-tab="pipelines" onclick="tab('pipelines')">Workflows</button>
-    <button data-tab="runs" onclick="tab('runs')">Runs</button>
+    <button data-tab="runs" onclick="tab('runs')">Queue &amp; History</button>
     <span class="sp"></span>
     <button class="btn" id="selbtn" onclick="toggleSel()" style="padding:6px 12px">Select</button>
     <input class="search" id="q" placeholder="Search…" oninput="render()">
@@ -124,7 +135,11 @@ dialog::backdrop{background:rgba(0,0,0,.6)} dialog textarea{width:100%;backgroun
   </div>
   <section id="templates" hidden><div class="grid" id="tgall"></div></section>
   <section id="pipelines" hidden><div class="grid" id="wfgrid"></div></section>
-  <section id="runs" hidden><div class="grid" id="rgrid"></div></section>
+  <section id="runs" hidden>
+    <div class="qcol"><h3 class="qh">▶ Now running <span id="qrunN" class="cnt">0</span></h3><div class="qlist" id="qrun"></div></div>
+    <div class="qcol"><h3 class="qh">⏳ Up next <span id="qpendN" class="cnt">0</span> <button class="mini" onclick="clearQueue()" style="margin-left:8px">Clear all</button></h3><div class="qlist" id="qpend"></div></div>
+    <div class="qcol"><h3 class="qh">✓ History — rate &amp; note for better future generations</h3><div class="grid" id="rgrid"></div></div>
+  </section>
 </main>
 <div id="toast"></div>
 <div id="zoom" onclick="this.style.display='none'"><img id="zoomimg"></div>
@@ -134,6 +149,16 @@ dialog::backdrop{background:rgba(0,0,0,.6)} dialog textarea{width:100%;backgroun
   <textarea id="fixtext" placeholder="e.g. make the straps thicker, smooth the skin"></textarea>
   <div id="gpuwarn" style="display:none;color:var(--warn);font-size:.78rem;margin:-4px 0 8px"></div>
   <div class="row" style="justify-content:flex-end"><button class="mini" onclick="fixdlg.close()">Cancel</button><button class="mini hot" onclick="sendFix()">Queue fix</button></div>
+</dialog>
+<dialog id="tmpldlg">
+  <h3 style="font-size:1rem">★ Save as template</h3>
+  <p style="color:var(--dim);font-size:.83rem;margin-top:6px">Turn this favorited generation into a reusable template — its workflow becomes a one-click KIND you can run again with new inputs.</p>
+  <label style="display:block;font-size:.72rem;color:var(--dim);margin:12px 0 4px;text-transform:uppercase;letter-spacing:.04em">Template name</label>
+  <input id="tmplname" style="width:100%;background:#0f0f12;color:var(--txt);border:1px solid var(--line);border-radius:8px;padding:9px 11px;font:inherit" placeholder="e.g. Karma ghost mannequin — white studio">
+  <label style="display:block;font-size:.72rem;color:var(--dim);margin:12px 0 4px;text-transform:uppercase;letter-spacing:.04em">What it makes</label>
+  <input id="tmpldesc" style="width:100%;background:#0f0f12;color:var(--txt);border:1px solid var(--line);border-radius:8px;padding:9px 11px;font:inherit" placeholder="e.g. Product on invisible form, real fabric">
+  <div id="tmplsteps" style="color:var(--dim);font-size:.78rem;margin-top:12px;line-height:1.6"></div>
+  <div class="row" style="justify-content:flex-end;margin-top:8px"><button class="mini" onclick="tmpldlg.close()">Cancel</button><button class="mini hot" onclick="saveTemplate()">Save template</button></div>
 </dialog>
 <dialog id="compdlg">
   <h3 style="font-size:1rem">✦ Compose new from <span id="compn">0</span> assets</h3>
@@ -269,9 +294,63 @@ async function sendCompose(){
   const j=await r.json(); toast(r.ok?`Compose queued (${j.refs} refs) → see Runs`:'Failed: '+(j.error||'')); if(r.ok)clearSel();
 }
 function pipes(){ $('wfgrid').innerHTML=(DATA.workflows||[]).map(w=>`<div class="card"><div class="doc">⚙︎ ${w}</div><div class="meta"><div class="row"><a class="mini" href="/?advanced=1&workflow=${encodeURIComponent(w)}">Edit</a><a class="mini hot" href="/?advanced=1&workflow=${encodeURIComponent(w)}&run=1">Run</a></div></div></div>`).join('')||'<div class="empty">No saved workflows for this org yet.</div>'; }
-async function runs(){ const h=await (await fetch('/history?max_items=24')).json();
-  const items=Object.entries(h).reverse().map(([id,v])=>{const ims=[];for(const o of Object.values(v.outputs||{}))for(const im of (o.images||[]))ims.push(im);return {id,ok:(v.status||{}).status_str||'?',im:ims[0]};});
-  $('rgrid').innerHTML=items.map(r=>`<div class="card">${r.im?`<div class="im" style="background-image:url('/view?filename=${encodeURIComponent(r.im.filename)}&subfolder=${encodeURIComponent(r.im.subfolder)}&type=${r.im.type}')"></div>`:`<div class="doc">no output</div>`}<div class="meta"><span class="t">${r.im?r.im.filename:r.id.slice(0,8)}</span><div class="row"><span class="st ${r.ok==='success'?'approved':'draft'}">${r.ok}</span></div></div></div>`).join('')||'<div class="empty">No runs yet.</div>'; }
+// ── YouTube-style Queue & History ───────────────────────────────────────────
+let RATINGS={};
+const vURL=im=>`/view?filename=${encodeURIComponent(im.filename)}&subfolder=${encodeURIComponent(im.subfolder||'')}&type=${im.type||'output'}`;
+const promptTitle=v=>{ // pull the SaveImage prefix / positive text from the run's graph
+  const g=(v.prompt&&v.prompt[2])||{};
+  for(const n of Object.values(g)){if(n&&n.class_type==='SaveImage')return (n.inputs.filename_prefix||'render').split('/').pop();}
+  return 'render';
+};
+async function runs(){
+  RATINGS=await (await fetch('/v1/library/ratings')).json().catch(()=>({}));
+  // live queue
+  let q={queue_running:[],queue_pending:[]}; try{q=await (await fetch('/queue')).json();}catch(_){}
+  const qr=q.queue_running||[], qp=q.queue_pending||[];
+  $('qrunN').textContent=qr.length; $('qpendN').textContent=qp.length;
+  const qitem=(it,running)=>{const id=it[1];const t=(it[2]&&Object.values(it[2]).find(n=>n.class_type==='SaveImage')?.inputs?.filename_prefix||id)+'';
+    return `<div class="qrow"><div class="qthumb" style="display:flex;align-items:center;justify-content:center;color:var(--dim)">${running?'▶':'⏳'}</div>
+      <div class="qtitle">${t.split('/').pop()}<div class="qsub">${running?'rendering…':'queued'} · ${(''+id).slice(0,8)}</div></div>
+      ${running?'':`<button class="mini" onclick="delQueued('${id}')">Remove</button>`}</div>`;};
+  $('qrun').innerHTML=qr.map(it=>qitem(it,true)).join('')||'<div class="qsub" style="padding:6px 2px">Idle.</div>';
+  $('qpend').innerHTML=qp.map(it=>qitem(it,false)).join('')||'<div class="qsub" style="padding:6px 2px">Nothing queued.</div>';
+  // history
+  const h=await (await fetch('/history?max_items=40')).json();
+  const items=Object.entries(h).reverse().map(([id,v])=>{const ims=[];for(const o of Object.values(v.outputs||{}))for(const im of (o.images||[]))if(im.type==='output')ims.push(im);
+    return {id,ok:(v.status||{}).status_str||'?',im:ims[0],title:promptTitle(v)};});
+  $('rgrid').innerHTML=items.map(r=>{
+    const rt=RATINGS[r.id]||{}; const st=rt.stars||0;
+    const stars=[1,2,3,4,5].map(n=>`<span class="${n<=st?'on':''}" onclick="rate('${r.id}',${n})">★</span>`).join('');
+    return `<div class="card">
+      ${r.im?`<div class="im" style="background-image:url('${vURL(r.im)}')" onclick="zoom('${vURL(r.im)}')"></div>`:`<div class="doc">no output</div>`}
+      <div class="meta">
+        <span class="t">${r.title}</span>
+        <div class="row" style="justify-content:space-between">
+          <span class="stars">${stars}</span>
+          <span class="fav ${rt.favorite?'on':''}" onclick="toggleFav('${r.id}','${r.title}')" title="Favorite → save as template">★fav</span>
+        </div>
+        <textarea class="notebox" placeholder="Notes for the AI to improve next time…" onblur="rateNote('${r.id}',this.value)">${(rt.notes||'').replace(/</g,'&lt;')}</textarea>
+      </div></div>`;}).join('')||'<div class="empty">No runs yet.</div>';
+}
+async function delQueued(id){await fetch('/queue',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({delete:[id]})});toast('Removed from queue');runs();}
+async function clearQueue(){if(!confirm('Clear all queued jobs?'))return;await fetch('/queue',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({clear:true})});toast('Queue cleared');runs();}
+async function rate(key,stars){await fetch('/v1/library/rate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({key,stars})});RATINGS[key]={...(RATINGS[key]||{}),stars};runs();}
+async function rateNote(key,notes){await fetch('/v1/library/rate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({key,notes})});toast('Note saved — the AI will use it next time');}
+let FAVKEY=null,FAVTITLE=null;
+async function toggleFav(key,title){const cur=RATINGS[key]||{};const nv=!cur.favorite;
+  await fetch('/v1/library/rate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({key,favorite:nv})});
+  RATINGS[key]={...cur,favorite:nv};
+  if(nv){FAVKEY=key;FAVTITLE=title;$('tmplname').value=title;$('tmpldesc').value='';
+    $('tmplsteps').innerHTML='This favorited run has an embedded workflow. Saving turns it into a reusable KIND:<br>1 · name it &amp; describe what it makes<br>2 · it appears under Templates for your org<br>3 · run it anytime with new inputs';
+    $('tmpldlg').showModal();}
+  else runs();
+}
+async function saveTemplate(){const nm=$('tmplname').value.trim();if(!nm){toast('Name the template');return;}
+  // Real save lands with the studio-app template store (HIP-0506 phase 3); for now
+  // persist intent on the rating entry so it's not lost and surfaces the guided flow.
+  await fetch('/v1/library/rate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({key:FAVKEY,notes:'TEMPLATE: '+nm+' — '+$('tmpldesc').value})});
+  $('tmpldlg').close();toast('★ Saved "'+nm+'" — it will appear under Templates');runs();
+}
 async function setSt(i,status){const a=DATA.assets[i];const r=await fetch('/v1/library/status',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({path:a.path,status})});if(r.ok){a.status=status;render();toast(`${a.path.split('/').pop()} → ${status}`);}else toast('Failed');}
 async function rerun(i){const a=DATA.assets[i];toast('Queueing re-run…');const r=await fetch('/v1/library/rerun',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({path:a.path})});const j=await r.json();toast(r.ok?`Re-run queued — see Runs`:'Failed');}
 let FIXPATH=null;

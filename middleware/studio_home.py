@@ -377,3 +377,48 @@ def add_studio_home_routes(routes: web.RouteTableDef, server) -> None:
         stem = "compose_" + "_".join(re.sub(r"[^a-zA-Z0-9]", "", Path(x).stem)[:12] for x in paths[:2])
         pid = await _queue_prompt(request, server, _compose_graph(ref_names, instruction, f"composes/{stem}"))
         return web.json_response({"ok": True, "prompt_id": pid, "output_prefix": f"composes/{stem}", "refs": len(ref_names)})
+
+    # ── Ratings + notes: the curation feedback loop (HIP-0506 §5) ──────────────
+    # Stored per-org in orgs/<org>/output/ratings.json keyed by asset path OR run
+    # prompt_id. 0-5 stars + free notes; the copilot reads these before assembling
+    # a workflow so generations get closer to intent each pass.
+    @routes.get("/v1/library/ratings")
+    async def get_ratings(request: web.Request):
+        root = _library_root(_org_of(request))
+        if root is None:
+            return web.json_response({})
+        try:
+            return web.json_response(json.loads((root / "ratings.json").read_text()))
+        except Exception:
+            return web.json_response({})
+
+    @routes.post("/v1/library/rate")
+    async def rate(request: web.Request):
+        body = await request.json()
+        key = (body.get("key") or "").strip()   # asset path or run prompt_id
+        if not key:
+            return web.json_response({"error": "key required"}, status=400)
+        stars = body.get("stars")
+        if stars is not None and not (isinstance(stars, int) and 0 <= stars <= 5):
+            return web.json_response({"error": "stars must be 0-5"}, status=400)
+        root = _library_root(_org_of(request))
+        if root is None:
+            return web.json_response({"error": "no library for org"}, status=404)
+        rf = root / "ratings.json"
+        try:
+            data = json.loads(rf.read_text())
+        except Exception:
+            data = {}
+        entry = data.get(key, {})
+        if stars is not None:
+            entry["stars"] = stars
+        if "notes" in body:
+            entry["notes"] = str(body.get("notes") or "")[:2000]
+        if body.get("favorite") is not None:
+            entry["favorite"] = bool(body.get("favorite"))
+        entry["updatedAt"] = int(time.time())
+        data[key] = entry
+        tmp = root / "ratings.json.tmp"
+        tmp.write_text(json.dumps(data, indent=1))
+        tmp.replace(rf)
+        return web.json_response({"ok": True, "key": key, "entry": entry})
