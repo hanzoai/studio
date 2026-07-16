@@ -257,7 +257,13 @@ def add_studio_home_routes(routes: web.RouteTableDef, server) -> None:
 
     @routes.get("/studio")
     async def studio_home(request: web.Request):
-        return web.Response(text=_HTML.read_text(), content_type="text/html")
+        # no-store: the SPA HTML changes every release; without this, browsers
+        # (and any proxy) heuristically cache it and serve a STALE page after a
+        # deploy — which is why UI fixes (e.g. delete) appeared "not working" to
+        # a user still running yesterday's cached studio_home.html. The page is
+        # tiny; always serve fresh. Static assets keep their own long cache.
+        return web.Response(text=_HTML.read_text(), content_type="text/html",
+                            headers={"Cache-Control": "no-store, must-revalidate"})
 
     @routes.get("/v1/library")
     async def get_library(request: web.Request):
