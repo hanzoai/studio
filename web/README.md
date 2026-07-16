@@ -7,11 +7,13 @@ tools and the outputs land in the library. This is the default surface at
 
 - **Stack**: Vite + React + TS. `@hanzo/*` packages are npm-published, so a clean
   `npm install` — no workspace linking.
-- **Backend contract**: `POST /v1/chat {capability, messages}` → `{reply, actions, ops}`
-  (the cloud `clients/chat` orchestrator; studio proxies it same-origin). Plus the
-  studio engine API: `/v1/session`, `/v1/library`, `/v1/render-queue`, `/v1/gpu-status`.
-- **Same-origin**: served by the studio Python pod at `/studio`, so every `/v1/*`
-  fetch rides the `hanzo_token` cookie — no CORS, no token handling in the browser.
+- **Chat**: `POST api.hanzo.ai/v1/chat {capability, messages}` → `{reply, actions, ops}`
+  — the cloud `clients/chat` orchestrator, called **directly** (no studio proxy). The
+  `hanzo_token` cookie is `.hanzo.ai`-scoped, so `credentials:'include'` carries it
+  cross-origin and the handler bills the caller org. (Gateway CORS must allow the
+  `studio.hanzo.ai` origin with credentials.)
+- **Engine**: the studio pod serves `/v1/session`, `/v1/library`, `/v1/render-queue`,
+  `/v1/gpu-status` same-origin (same cookie) — no token handling in the browser.
 
 ```bash
 npm install
@@ -26,5 +28,5 @@ The ComfyUI-derived node editor ("Advanced mode") is a **separate** repo —
 - Increment 1 (done): chat wired to `/v1/chat` create + live library/queue/gpu strip.
 - Increment 2: swap the transcript/composer for `@hanzo/chat` `<Chat>` on `@hanzo/gui`
   (GuiProvider + SessionProvider, copying console2's `Provider.tsx` spine).
-- Wiring: a `/v1/chat` proxy in studio → cloud; Dockerfile multi-stage to build
-  `dist/` and serve it at `/studio` in place of `middleware/studio_home.html`.
+- Wiring: Dockerfile multi-stage to build `dist/` and serve it at `/studio` in
+  place of `middleware/studio_home.html`. (No proxy — chat hits api.hanzo.ai direct.)
