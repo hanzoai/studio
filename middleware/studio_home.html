@@ -3,185 +3,204 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Hanzo Studio</title>
 <style>
-:root{--bg:#0b0b0d;--panel:#131317;--line:#232329;--txt:#ececf1;--dim:#9a9aa5;
-/* Monochrome brand (Hanzo black/white) — no color accent. Status hues kept for meaning only. */
---brand:#f4f4f6;--ok:#3ddc84;--warn:#ffb648;--pub:#6aa5ff;--bad:#ff5d5d;font-size:15px}
+:root{--bg:#0a0a0b;--panel:#131317;--panel2:#17171c;--line:#232329;--txt:#ececf1;--dim:#8a8a95;
+--brand:#f4f4f6;--ok:#3ddc84;--warn:#ffb648;--pub:#6aa5ff;font-size:15px}
 *{box-sizing:border-box;margin:0}
-body{background:var(--bg);color:var(--txt);font:400 1rem/1.45 Inter,system-ui,-apple-system,sans-serif}
-header{display:flex;align-items:center;gap:16px;padding:14px 22px;border-bottom:1px solid var(--line);
-position:sticky;top:0;background:rgba(11,11,13,.92);backdrop-filter:blur(8px);z-index:5}
-header h1{font-size:1.05rem;font-weight:600;letter-spacing:.2px}
-header .org{color:var(--dim);font-size:.85rem;border:1px solid var(--line);border-radius:99px;padding:3px 10px}
+body{background:var(--bg);color:var(--txt);font:400 1rem/1.5 Inter,system-ui,-apple-system,sans-serif}
+.serif{font-family:"Iowan Old Style","Palatino Linotype",Georgia,serif}
+a{color:inherit}
+header{display:flex;align-items:center;gap:12px;padding:14px 26px;border-bottom:1px solid var(--line);
+position:sticky;top:0;background:rgba(10,10,11,.9);backdrop-filter:blur(10px);z-index:20}
+header .logo{width:26px;height:26px;border-radius:7px;display:block;flex:0 0 auto}
+header h1{font-size:1.02rem;font-weight:600;letter-spacing:.2px}
+header .beta{font-size:.62rem;color:var(--dim);border:1px solid var(--line);border-radius:5px;padding:1px 5px;text-transform:uppercase;letter-spacing:.08em}
 header .sp{flex:1}
-.btn{border:1px solid var(--line);background:var(--panel);color:var(--txt);border-radius:8px;
-padding:7px 13px;font-size:.85rem;cursor:pointer;transition:.15s}
-.btn:hover{border-color:var(--dim)}
-.btn.brand{background:var(--brand);border-color:var(--brand);color:#111;font-weight:600}
-nav{display:flex;gap:4px;padding:12px 22px 0}
-nav button{background:none;border:none;color:var(--dim);font-size:.92rem;padding:8px 14px;cursor:pointer;
-border-radius:8px 8px 0 0;border-bottom:2px solid transparent}
-nav button.on{color:var(--txt);border-bottom-color:var(--brand)}
-main{padding:18px 22px 60px;max-width:1500px;margin:0 auto}
-.chips{display:flex;gap:8px;flex-wrap:wrap;margin:6px 0 18px}
-.chip{border:1px solid var(--line);border-radius:99px;padding:4px 12px;font-size:.82rem;color:var(--dim);cursor:pointer}
+header .lnk{color:var(--dim);font-size:.85rem;text-decoration:none}
+header .user{display:flex;align-items:center;gap:8px;border:1px solid var(--line);border-radius:99px;padding:3px 11px 3px 4px;cursor:pointer}
+header .user .av{width:24px;height:24px;border-radius:50%;background:#26262e;display:flex;align-items:center;justify-content:center;font-size:.72rem;font-weight:600}
+header .user .nm{font-size:.82rem;color:var(--dim)}
+.btn{border:1px solid var(--line);background:var(--panel);color:var(--txt);border-radius:8px;padding:7px 13px;font-size:.85rem;cursor:pointer}
+.btn:hover{border-color:var(--dim)} .btn.brand{background:var(--brand);border-color:var(--brand);color:#111;font-weight:600}
+main{max-width:1120px;margin:0 auto;padding:0 24px 80px}
+.hero{text-align:center;font-size:3rem;font-weight:500;margin:56px 0 26px;letter-spacing:-.01em}
+/* prompt box */
+.prompt{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:16px 16px 12px;max-width:820px;margin:0 auto}
+.prompt textarea{width:100%;background:none;border:none;color:var(--txt);font:inherit;font-size:1.02rem;resize:none;outline:none;min-height:26px;max-height:180px}
+.prompt textarea::placeholder{color:var(--dim)}
+.pctl{display:flex;align-items:center;gap:8px;margin-top:12px}
+.pchip{display:flex;flex-direction:column;line-height:1.1;border:1px solid var(--line);border-radius:9px;padding:5px 11px;background:var(--panel2);cursor:pointer;font-size:.8rem}
+.pchip .k{color:var(--dim);font-size:.64rem;text-transform:uppercase;letter-spacing:.05em}
+.pchip .v{color:var(--txt);font-weight:500}
+.pico{border:1px solid var(--line);border-radius:9px;padding:8px 10px;background:var(--panel2);cursor:pointer;color:var(--dim);font-size:.9rem}
+.psend{margin-left:auto;width:38px;height:38px;border-radius:10px;border:none;background:var(--brand);color:#111;font-size:1.1rem;cursor:pointer}
+/* templates */
+.sec-l{color:var(--dim);font-size:.82rem;margin:40px 0 12px}
+.tgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px}
+.tcard{background:var(--panel);border:1px solid var(--line);border-radius:12px;overflow:hidden;cursor:pointer;transition:.12s}
+.tcard:hover{border-color:#3a3a48;transform:translateY(-2px)}
+.tcard .ic{aspect-ratio:16/10;display:flex;align-items:center;justify-content:center;color:var(--dim);font-size:1.7rem;background:var(--panel2)}
+.tcard .tl{padding:9px 11px;font-size:.83rem;font-weight:500}
+.tcard .td{padding:0 11px 10px;font-size:.7rem;color:var(--dim)}
+/* tabs */
+.tabs{display:flex;gap:6px;align-items:center;margin:44px 0 16px;border-bottom:1px solid var(--line);padding-bottom:0}
+.tabs button{background:none;border:none;color:var(--dim);font-size:.9rem;padding:8px 12px;cursor:pointer;border-radius:8px 8px 0 0;border-bottom:2px solid transparent}
+.tabs button.on{color:var(--txt);border-bottom-color:var(--brand)}
+.tabs .sp{flex:1}
+.search{background:var(--panel);border:1px solid var(--line);border-radius:9px;padding:6px 12px;color:var(--txt);font:inherit;font-size:.85rem;width:220px}
+.chips{display:flex;gap:8px;flex-wrap:wrap;margin:4px 0 18px}
+.chip{border:1px solid var(--line);border-radius:99px;padding:4px 12px;font-size:.8rem;color:var(--dim);cursor:pointer}
 .chip.on{color:#111;background:var(--brand);border-color:var(--brand);font-weight:600}
-.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:16px}
-.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;overflow:hidden;display:flex;flex-direction:column}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(215px,1fr));gap:15px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:13px;overflow:hidden;display:flex;flex-direction:column}
 .card .im{aspect-ratio:2/3;background:#0f0f12 center/cover no-repeat;cursor:zoom-in}
-.card .doc{aspect-ratio:2/3;display:flex;align-items:center;justify-content:center;color:var(--dim);font-size:.8rem}
-.card .meta{padding:10px 12px;display:flex;flex-direction:column;gap:8px}
-.card .t{font-size:.83rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--txt)}
-.card .sub{font-size:.72rem;color:var(--dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.card .doc{aspect-ratio:2/3;display:flex;align-items:center;justify-content:center;color:var(--dim);font-size:.8rem;text-align:center;padding:12px}
+.card .meta{padding:10px 12px;display:flex;flex-direction:column;gap:7px}
+.card .t{font-size:.82rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.card .sub{font-size:.7rem;color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .row{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
-.st{font-size:.7rem;font-weight:600;border-radius:99px;padding:2px 9px;text-transform:uppercase;letter-spacing:.4px}
+.st{font-size:.66rem;font-weight:600;border-radius:99px;padding:2px 8px;text-transform:uppercase;letter-spacing:.4px}
 .st.draft{background:#2a2a31;color:var(--dim)}.st.approved{background:rgba(61,220,132,.15);color:var(--ok)}
 .st.queued{background:rgba(255,182,72,.15);color:var(--warn)}.st.published{background:rgba(106,165,255,.18);color:var(--pub)}
-.mini{border:1px solid var(--line);background:none;color:var(--dim);border-radius:7px;padding:4px 9px;font-size:.74rem;cursor:pointer}
-.mini:hover{color:var(--txt);border-color:var(--dim)}
-.mini.hot{color:#111;background:var(--brand);border-color:var(--brand);font-weight:600}
-.list{display:flex;flex-direction:column;gap:10px}
-.wf{display:flex;align-items:center;gap:12px;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px 16px}
-.wf .name{font-size:.9rem;flex:1}
-.empty{color:var(--dim);padding:40px;text-align:center}
-#toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%);background:#1c1c22;border:1px solid var(--line);
-border-radius:10px;padding:10px 18px;font-size:.85rem;opacity:0;transition:.25s;pointer-events:none;max-width:80vw}
+.mini{border:1px solid var(--line);background:none;color:var(--dim);border-radius:7px;padding:4px 9px;font-size:.72rem;cursor:pointer}
+.mini:hover{color:var(--txt);border-color:var(--dim)} .mini.hot{color:#111;background:var(--brand);border-color:var(--brand);font-weight:600}
+.empty{color:var(--dim);padding:44px;text-align:center}
+#toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%);background:#1c1c22;border:1px solid var(--line);border-radius:10px;padding:10px 18px;font-size:.85rem;opacity:0;transition:.25s;pointer-events:none;z-index:50}
 #toast.show{opacity:1}
-#zoom{position:fixed;inset:0;background:rgba(0,0,0,.88);display:none;align-items:center;justify-content:center;z-index:20;cursor:zoom-out}
+#zoom{position:fixed;inset:0;background:rgba(0,0,0,.9);display:none;align-items:center;justify-content:center;z-index:40;cursor:zoom-out}
 #zoom img{max-width:94vw;max-height:94vh;border-radius:8px}
 dialog{background:var(--panel);color:var(--txt);border:1px solid var(--line);border-radius:14px;padding:22px;max-width:460px;width:92vw}
-dialog::backdrop{background:rgba(0,0,0,.6)}
-dialog textarea{width:100%;background:#0f0f12;color:var(--txt);border:1px solid var(--line);border-radius:8px;
-padding:10px;font:inherit;font-size:.9rem;min-height:90px;margin:12px 0}
-header .logo{width:26px;height:26px;border-radius:7px;display:block;flex:0 0 auto}
-header .user{display:flex;align-items:center;gap:8px;border:1px solid var(--line);border-radius:99px;padding:3px 10px 3px 4px;cursor:pointer}
-header .user .av{width:24px;height:24px;border-radius:50%;background:#26262e;color:var(--txt);display:flex;align-items:center;justify-content:center;font-size:.72rem;font-weight:600}
-header .user .nm{font-size:.82rem;color:var(--dim)}
+dialog::backdrop{background:rgba(0,0,0,.6)} dialog textarea{width:100%;background:#0f0f12;color:var(--txt);border:1px solid var(--line);border-radius:8px;padding:10px;font:inherit;font-size:.9rem;min-height:90px;margin:12px 0}
 </style>
 <header>
   <svg class="logo" viewBox="0 0 520 520" xmlns="http://www.w3.org/2000/svg"><rect width="520" height="520" rx="120" fill="#111"/><g transform="translate(100,100) scale(4.78)" fill="#fff"><path d="M22.21 67V44.6369H0V67H22.21Z"/><path d="M66.7038 22.3184H22.2534L0.0878906 44.6367H44.4634L66.7038 22.3184Z"/><path d="M22.21 0H0V22.3184H22.21V0Z"/><path d="M66.7198 0H44.5098V22.3184H66.7198V0Z"/><path d="M66.7198 67V44.6369H44.5098V67H66.7198Z"/></g></svg>
-  <h1>Hanzo Studio</h1><span class="sp"></span>
+  <h1>Hanzo Studio</h1><span class="beta">Beta</span><span class="sp"></span>
+  <a class="lnk" href="/?advanced=1">Advanced mode</a>
   <button class="btn" onclick="load()">Refresh</button>
-  <a class="btn brand" href="/?advanced=1" style="text-decoration:none">Advanced mode</a>
   <div class="user" id="user" title="Account"><span class="av" id="av">·</span><span class="nm" id="org">…</span></div>
 </header>
-<nav>
-  <button class="on" data-tab="assets" onclick="tab('assets')">Assets</button>
-  <button data-tab="pipelines" onclick="tab('pipelines')">Pipelines</button>
-  <button data-tab="runs" onclick="tab('runs')">Runs</button>
-</nav>
 <main>
+  <h2 class="hero serif">What should we create?</h2>
+  <div class="prompt">
+    <textarea id="pin" rows="1" placeholder="Describe what you want to create…"></textarea>
+    <div class="pctl">
+      <span class="pico" title="Attach">+</span>
+      <span class="pchip" onclick="pickPreset()"><span class="k">Design system</span><span class="v" id="ds">None</span></span>
+      <span class="pchip" onclick="tab('templates')"><span class="k">Template</span><span class="v" id="tmpl">None</span></span>
+      <span class="pico" title="Code">&lt;/&gt;</span>
+      <span class="pchip" style="margin-left:auto"><span class="k">Model</span><span class="v">Opus 4.8</span></span>
+      <button class="psend" onclick="create()" title="Create">↑</button>
+    </div>
+  </div>
+
+  <div class="sec-l">Use a template</div>
+  <div class="tgrid" id="tcards"></div>
+
+  <div class="tabs">
+    <button class="on" data-tab="assets" onclick="tab('assets')">Assets</button>
+    <button data-tab="templates" onclick="tab('templates')">Templates</button>
+    <button data-tab="pipelines" onclick="tab('pipelines')">Workflows</button>
+    <button data-tab="runs" onclick="tab('runs')">Runs</button>
+    <span class="sp"></span>
+    <input class="search" id="q" placeholder="Search…" oninput="render()">
+  </div>
   <section id="assets"><div class="chips" id="filters"></div><div class="grid" id="agrid"></div></section>
-  <section id="pipelines" hidden><div class="list" id="wflist"></div></section>
+  <section id="templates" hidden><div class="grid" id="tgall"></div></section>
+  <section id="pipelines" hidden><div class="grid" id="wfgrid"></div></section>
   <section id="runs" hidden><div class="grid" id="rgrid"></div></section>
 </main>
 <div id="toast"></div>
 <div id="zoom" onclick="this.style.display='none'"><img id="zoomimg"></div>
 <dialog id="fixdlg">
   <h3 style="font-size:1rem">Fix with chat</h3>
-  <p style="color:var(--dim);font-size:.83rem;margin-top:6px">Describe the change — a new render of this exact shot is queued with only that change applied.</p>
-  <textarea id="fixtext" placeholder="e.g. make the straps thicker and remove the blotchy skin texture"></textarea>
-  <div class="row" style="justify-content:flex-end">
-    <button class="mini" onclick="fixdlg.close()">Cancel</button>
-    <button class="mini hot" onclick="sendFix()">Queue fix</button>
-  </div>
+  <p style="color:var(--dim);font-size:.83rem;margin-top:6px">Describe the change — a new render of this exact shot is queued with only that change.</p>
+  <textarea id="fixtext" placeholder="e.g. make the straps thicker, smooth the skin"></textarea>
+  <div class="row" style="justify-content:flex-end"><button class="mini" onclick="fixdlg.close()">Cancel</button><button class="mini hot" onclick="sendFix()">Queue fix</button></div>
 </dialog>
 <script>
-let DATA={assets:[],workflows:[]},FILTER='all',FIXPATH=null;
+// ── Template / KIND catalog — everything Studio supports ─────────────────────
+const TEMPLATES=[
+ {k:'product',   t:'Product photo',   d:'Ecom front·side·back',      ic:'🛍', wf:'product'},
+ {k:'ghost',     t:'Ghost mannequin', d:'On invisible form',          ic:'👕', wf:'ghost'},
+ {k:'tryon',     t:'CAD → mockup',    d:'Fashion / packaging',        ic:'✳️', wf:'tryon'},
+ {k:'3d',        t:'CAD → 3D',        d:'Multi-view → 3D + drape',    ic:'🧊', wf:'3d'},
+ {k:'video',     t:'Video',           d:'Wan · LTX · Hunyuan',        ic:'🎬', wf:'video'},
+ {k:'music',     t:'Music',           d:'ACE-Step · song',            ic:'🎵', wf:'music'},
+ {k:'voice',     t:'Voice',           d:'Narration · TTS',            ic:'🎙', wf:'voice'},
+ {k:'social',    t:'Social / Ad',     d:'Posts · ads · campaigns',    ic:'📣', wf:'social'},
+ {k:'email',     t:'Marketing email', d:'HTML / MJML',                ic:'✉️', wf:'email'},
+ {k:'deck',      t:'Deck',            d:'Sales · investor',           ic:'📊', wf:'deck'},
+ {k:'doc',       t:'Document',        d:'Word · guide',               ic:'📄', wf:'doc'},
+ {k:'sheet',     t:'Spreadsheet',     d:'xlsx · data',                ic:'🧮', wf:'sheet'},
+ {k:'paper',     t:'Paper (LaTeX)',   d:'Academic · PDF',             ic:'📐', wf:'paper'},
+ {k:'site',      t:'Website',         d:'Prototype · app',            ic:'🖥', wf:'site'},
+];
+let DATA={assets:[],workflows:[]},FILTER='all';
 const $=id=>document.getElementById(id);
-const toast=m=>{const t=$('toast');t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),3200)};
-const viewURL=v=>`/view?filename=${encodeURIComponent(v.filename)}&subfolder=${encodeURIComponent(v.subfolder)}&type=${v.type}`;
-function tab(name){document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('on',b.dataset.tab===name));
-  for(const s of ['assets','pipelines','runs'])$(s).hidden=s!==name; if(name==='runs')runs();}
+const toast=m=>{const t=$('toast');t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),3000)};
+const imgURL=a=>`/v1/library/file?path=${encodeURIComponent(a.path)}`;
+function tcard(x){return `<div class="tcard" onclick="pickTemplate('${x.k}','${x.t.replace(/'/g,"")}')"><div class="ic">${x.ic}</div><div class="tl">${x.t}</div><div class="td">${x.d}</div></div>`;}
+function tab(name){document.querySelectorAll('.tabs button').forEach(b=>b.classList.toggle('on',b.dataset.tab===name));
+  for(const s of ['assets','templates','pipelines','runs'])$(s).hidden=s!==name;
+  if(name==='runs')runs(); if(name==='pipelines')pipes();}
+function pickTemplate(k,t){$('tmpl').textContent=t; tab('assets'); $('pin').focus(); toast('Template: '+t);}
+function pickPreset(){toast('Design systems / presets — coming in the preset library');}
+function create(){const p=$('pin').value.trim(); const t=$('tmpl').textContent;
+  if(!p&&t==='None'){toast('Describe what to create, or pick a template');return;}
+  toast('Creation flow wires copilot → exec/tasks (HIP-0506 phase 1)');
+  // real path once phase 1 lands: POST /v1/studio/create {prompt,template,design_system}
+}
 async function load(){
-  const r=await fetch('/v1/library');DATA=await r.json();
-  $('org').textContent=DATA.org||'';
+  const r=await fetch('/v1/library'); DATA=await r.json(); $('org').textContent=DATA.org||'';
+  $('tcards').innerHTML=TEMPLATES.slice(0,7).map(tcard).join('');
+  $('tgall').innerHTML=TEMPLATES.map(tcard).join('');
   const groups=[...new Set(DATA.assets.map(a=>a.design).filter(Boolean))].sort();
   $('filters').innerHTML=['all','marketing',...groups].map(g=>`<span class="chip ${g===FILTER?'on':''}" onclick="FILTER='${g}';render()">${g}</span>`).join('');
-  render();pipes();
+  render();
 }
 function render(){
-  const rows=DATA.assets.filter(a=>FILTER==='all'?true:FILTER==='marketing'?(a.path||'').startsWith('marketing/'):a.design===FILTER);
+  const q=($('q').value||'').toLowerCase();
+  let rows=DATA.assets.filter(a=>FILTER==='all'?true:FILTER==='marketing'?(a.path||'').startsWith('marketing/'):a.design===FILTER);
+  if(q)rows=rows.filter(a=>(a.path||'').toLowerCase().includes(q));
   $('agrid').innerHTML=rows.map((a,i)=>{
-    const img=a.view&&/\.(png|jpe?g|webp)$/i.test(a.view.filename);
-    const prov=a.prov&&a.prov.workflow?`· ${a.prov.workflow}${a.prov.cfg?` · cfg ${a.prov.cfg}`:''}`:'';
+    const img=/\.(png|jpe?g|webp)$/i.test(a.path||'');
+    const prov=a.prov&&a.prov.workflow?` · ${a.prov.workflow}`:'';
     return `<div class="card">
-      ${img?`<div class="im" style="background-image:url('${viewURL(a.view)}')" onclick="zoom('${viewURL(a.view)}')"></div>`
+      ${img?`<div class="im" style="background-image:url('${imgURL(a)}')" onclick="zoom('${imgURL(a)}')"></div>`
            :`<div class="doc">${(a.path||'').split('/').pop()}</div>`}
       <div class="meta">
         <span class="t">${(a.path||'').split('/').pop()}</span>
-        <span class="sub">${a.design||a.kind||''} ${prov}</span>
+        <span class="sub">${a.design||a.kind||''}${prov}</span>
         <div class="row"><span class="st ${a.status}">${a.status}</span></div>
         <div class="row">
           ${a.status!=='approved'?`<button class="mini" onclick="setSt(${i},'approved')">Approve</button>`:''}
-          ${a.status!=='queued'?`<button class="mini" onclick="setSt(${i},'queued')">Queue</button>`:''}
           ${a.status!=='published'?`<button class="mini" onclick="setSt(${i},'published')">Publish</button>`:''}
-          ${a.status!=='draft'?`<button class="mini" onclick="setSt(${i},'draft')">Draft</button>`:''}
+          ${img?`<button class="mini" onclick="rerun(${i})">Re-run</button><button class="mini hot" onclick="openFix(${i})">Fix with chat</button>`:''}
         </div>
-        ${img?`<div class="row">
-          <button class="mini" onclick="rerun(${i})">Re-run</button>
-          <button class="mini hot" onclick="openFix(${i})">Fix with chat</button>
-        </div>`:''}
-      </div></div>`;}).join('')||'<div class="empty">No assets yet — run a pipeline.</div>';
+      </div></div>`;}).join('')||'<div class="empty">No assets in this view yet.</div>';
 }
-function pipes(){
-  $('wflist').innerHTML=(DATA.workflows||[]).map(w=>`<div class="wf"><span class="name">${w}</span>
-    <a class="mini" style="text-decoration:none" href="/?advanced=1&workflow=${encodeURIComponent(w)}">Edit</a>
-    <a class="mini hot" style="text-decoration:none" href="/?advanced=1&workflow=${encodeURIComponent(w)}&run=1">Run</a></div>`).join('')
-    ||'<div class="empty">No saved workflows for this org.</div>';
-}
-async function runs(){
-  const h=await (await fetch('/history?max_items=24')).json();
-  const items=Object.entries(h).reverse().map(([id,v])=>{
-    const ims=[];for(const o of Object.values(v.outputs||{}))for(const im of (o.images||[]))ims.push(im);
-    const ok=(v.status||{}).status_str||'?';
-    return {id,ok,im:ims[0]};
-  });
-  $('rgrid').innerHTML=items.map(r=>`<div class="card">
-    ${r.im?`<div class="im" style="background-image:url('${viewURL(r.im)}')" onclick="zoom('${viewURL(r.im)}')"></div>`:`<div class="doc">no output</div>`}
-    <div class="meta"><span class="t">${r.im?r.im.filename:r.id.slice(0,8)}</span>
-    <div class="row"><span class="st ${r.ok==='success'?'approved':'draft'}">${r.ok}</span></div></div></div>`).join('')
-    ||'<div class="empty">No runs yet.</div>';
-}
-async function setSt(i,status){
-  const a=DATA.assets[i];
-  const r=await fetch('/v1/library/status',{method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({path:a.path,status})});
-  if(r.ok){a.status=status;render();toast(`${a.path.split('/').pop()} → ${status}`);}
-  else toast('Failed: '+(await r.json()).error);
-}
-async function rerun(i){
-  const a=DATA.assets[i];toast('Queueing re-run…');
-  const r=await fetch('/v1/library/rerun',{method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({path:a.path})});
-  const j=await r.json();
-  toast(r.ok?`Re-run queued (${(j.prompt_ids||[]).length}) — watch Runs tab`:'Failed: '+j.error);
-}
+function pipes(){ $('wfgrid').innerHTML=(DATA.workflows||[]).map(w=>`<div class="card"><div class="doc">⚙︎ ${w}</div><div class="meta"><div class="row"><a class="mini" href="/?advanced=1&workflow=${encodeURIComponent(w)}">Edit</a><a class="mini hot" href="/?advanced=1&workflow=${encodeURIComponent(w)}&run=1">Run</a></div></div></div>`).join('')||'<div class="empty">No saved workflows for this org yet.</div>'; }
+async function runs(){ const h=await (await fetch('/history?max_items=24')).json();
+  const items=Object.entries(h).reverse().map(([id,v])=>{const ims=[];for(const o of Object.values(v.outputs||{}))for(const im of (o.images||[]))ims.push(im);return {id,ok:(v.status||{}).status_str||'?',im:ims[0]};});
+  $('rgrid').innerHTML=items.map(r=>`<div class="card">${r.im?`<div class="im" style="background-image:url('/view?filename=${encodeURIComponent(r.im.filename)}&subfolder=${encodeURIComponent(r.im.subfolder)}&type=${r.im.type}')"></div>`:`<div class="doc">no output</div>`}<div class="meta"><span class="t">${r.im?r.im.filename:r.id.slice(0,8)}</span><div class="row"><span class="st ${r.ok==='success'?'approved':'draft'}">${r.ok}</span></div></div></div>`).join('')||'<div class="empty">No runs yet.</div>'; }
+async function setSt(i,status){const a=DATA.assets[i];const r=await fetch('/v1/library/status',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({path:a.path,status})});if(r.ok){a.status=status;render();toast(`${a.path.split('/').pop()} → ${status}`);}else toast('Failed');}
+async function rerun(i){const a=DATA.assets[i];toast('Queueing re-run…');const r=await fetch('/v1/library/rerun',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({path:a.path})});const j=await r.json();toast(r.ok?`Re-run queued — see Runs`:'Failed');}
+let FIXPATH=null;
 function openFix(i){FIXPATH=DATA.assets[i].path;$('fixtext').value='';$('fixdlg').showModal();}
-async function sendFix(){
-  const txt=$('fixtext').value.trim();if(!txt)return;
-  $('fixdlg').close();toast('Queueing fix…');
-  const r=await fetch('/v1/library/fix',{method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({path:FIXPATH,instruction:txt})});
-  const j=await r.json();
-  toast(r.ok?`Fix queued → ${j.output_prefix} — watch Runs tab`:'Failed: '+j.error);
-}
+async function sendFix(){const t=$('fixtext').value.trim();if(!t)return;$('fixdlg').close();toast('Queueing fix…');const r=await fetch('/v1/library/fix',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({path:FIXPATH,instruction:t})});toast(r.ok?'Fix queued — see Runs':'Failed');}
 function zoom(u){$('zoomimg').src=u;$('zoom').style.display='flex';}
+const ta=$('pin'); ta.addEventListener('input',()=>{ta.style.height='auto';ta.style.height=Math.min(ta.scrollHeight,180)+'px';});
 async function loadSession(){
   let s={}; try{ s=await (await fetch('/v1/session')).json(); }catch(e){ return; }
-  const nm=(s.user||s.email||'').trim(); $('av').textContent=(nm[0]||'·').toUpperCase();
-  if(s.org)$('org').textContent=s.org;
-  $('user').onclick=()=>{
-    const ex=$('omenu'); if(ex){ex.remove();return;}
+  const nm=(s.user||s.email||'').trim(); $('av').textContent=(nm[0]||'·').toUpperCase(); if(s.org)$('org').textContent=s.org;
+  $('user').onclick=()=>{ const ex=$('omenu'); if(ex){ex.remove();return;}
     const orgs=(s.orgs&&s.orgs.length?s.orgs:[s.org]).filter(Boolean);
     const m=document.createElement('div'); m.id='omenu';
-    m.style.cssText='position:fixed;top:54px;right:22px;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:6px;min-width:190px;z-index:30;box-shadow:0 12px 34px #000b';
+    m.style.cssText='position:fixed;top:54px;right:24px;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:6px;min-width:190px;z-index:30;box-shadow:0 12px 34px #000b';
     m.innerHTML=orgs.map(o=>`<div class="omi" data-o="${o}" style="padding:8px 11px;border-radius:8px;cursor:pointer;font-size:.85rem;color:${o===s.org?'var(--txt)':'var(--dim)'}">${o===s.org?'● ':'○ '}${o}</div>`).join('')
-      +`<div style="height:1px;background:var(--line);margin:5px 4px"></div>`
-      +(s.console_url?`<a href="${s.console_url}" style="display:block;padding:8px 11px;color:var(--dim);text-decoration:none;font-size:.85rem">Console ↗</a>`:'')
-      +`<a href="/logout" style="display:block;padding:8px 11px;color:var(--dim);text-decoration:none;font-size:.85rem">Sign out</a>`;
+      +`<div style="height:1px;background:var(--line);margin:5px 4px"></div>`+(s.console_url?`<a href="${s.console_url}" style="display:block;padding:8px 11px;color:var(--dim);text-decoration:none;font-size:.85rem">Console ↗</a>`:'')+`<a href="/logout" style="display:block;padding:8px 11px;color:var(--dim);text-decoration:none;font-size:.85rem">Sign out</a>`;
     document.body.appendChild(m);
     m.querySelectorAll('.omi').forEach(el=>el.onclick=async()=>{try{await fetch('/v1/session/org',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({org:el.dataset.o})});}catch(e){} location.reload();});
-    setTimeout(()=>document.addEventListener('click',function h(e){if(!m.contains(e.target)&&e.target.id!=='user'&&!$('user').contains(e.target)){m.remove();document.removeEventListener('click',h);}}),0);
+    setTimeout(()=>document.addEventListener('click',function h(e){if(!m.contains(e.target)&&!$('user').contains(e.target)){m.remove();document.removeEventListener('click',h);}}),0);
   };
 }
 load(); loadSession();

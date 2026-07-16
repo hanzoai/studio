@@ -246,6 +246,18 @@ def add_studio_home_routes(routes: web.RouteTableDef, server) -> None:
             assets.append(row)
         return web.json_response({"org": org, "assets": assets, "workflows": _workflows(org)})
 
+    @routes.get("/v1/library/file")
+    async def get_asset_file(request: web.Request):
+        # Org-scoped asset serving. ComfyUI's core /view serves the GLOBAL output
+        # dir, so org assets (orgs/<org>/output/…) 404 there → blank thumbnails.
+        # This resolves the caller's org and serves from that org's library root.
+        org = _org_of(request)
+        root = _library_root(org)
+        p = _safe_asset(root, request.query.get("path", "")) if root else None
+        if p is None:
+            return web.Response(status=404)
+        return web.FileResponse(p)
+
     @routes.post("/v1/library/status")
     async def set_status(request: web.Request):
         body = await request.json()
