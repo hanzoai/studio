@@ -90,6 +90,10 @@ dialog::backdrop{background:rgba(0,0,0,.6)} dialog textarea{width:100%;backgroun
 .notebox{width:100%;background:#0f0f12;color:var(--txt);border:1px solid var(--line);border-radius:7px;padding:6px 9px;font:inherit;font-size:.76rem;margin-top:6px;min-height:34px;resize:vertical}
 .fav{cursor:pointer;font-size:1rem;color:#3a3a44} .fav.on{color:#ffcf4a}
 dialog .drop{border:1.5px dashed var(--line);border-radius:9px;padding:14px;text-align:center;color:var(--dim);font-size:.82rem;margin:8px 0;cursor:pointer}
+.card .addref{position:absolute;top:8px;right:9px;width:26px;height:26px;border-radius:50%;border:none;background:rgba(0,0,0,.6);color:#fff;font-size:1rem;cursor:pointer;z-index:4;line-height:1}
+.card .addref:hover{background:var(--brand);color:#111} .card .addref.on{background:var(--brand);color:#111}
+#reftray{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#1a1a24;border:1px solid #34344a;border-radius:12px;padding:10px 14px;display:none;gap:11px;align-items:center;z-index:44;box-shadow:0 10px 32px #000a}
+#reftray.on{display:flex} #reftray .rt{width:38px;height:56px;object-fit:cover;border-radius:5px;border:1px solid var(--line)}
 </style>
 <header>
   <svg class="logo" viewBox="0 0 520 520" xmlns="http://www.w3.org/2000/svg"><rect width="520" height="520" rx="120" fill="#111"/><g transform="translate(100,100) scale(4.78)" fill="#fff"><path d="M22.21 67V44.6369H0V67H22.21Z"/><path d="M66.7038 22.3184H22.2534L0.0878906 44.6367H44.4634L66.7038 22.3184Z"/><path d="M22.21 0H0V22.3184H22.21V0Z"/><path d="M66.7198 0H44.5098V22.3184H66.7198V0Z"/><path d="M66.7198 67V44.6369H44.5098V67H66.7198Z"/></g></svg>
@@ -141,6 +145,13 @@ dialog .drop{border:1.5px dashed var(--line);border-radius:9px;padding:14px;text
     <div class="qcol"><h3 class="qh">✓ History — rate &amp; note for better future generations</h3><div class="grid" id="rgrid"></div></div>
   </section>
 </main>
+<div id="reftray">
+  <div style="font-size:.72rem;color:var(--dim);text-transform:uppercase;letter-spacing:.05em">Next generation</div>
+  <div id="refthumbs" style="display:flex;gap:6px;align-items:center"></div>
+  <input id="refprompt" placeholder="Describe what to make from these…" style="background:#0f0f12;color:var(--txt);border:1px solid var(--line);border-radius:8px;padding:7px 11px;font:inherit;font-size:.82rem;width:280px">
+  <button class="mini hot" onclick="genFromTray()">✦ Generate</button>
+  <button class="mini" onclick="clearTray()">Clear</button>
+</div>
 <div id="toast"></div>
 <div id="zoom" onclick="this.style.display='none'"><img id="zoomimg"></div>
 <dialog id="fixdlg">
@@ -242,8 +253,10 @@ function render(){
     const prov=a.prov&&a.prov.workflow?` · ${a.prov.workflow}`:'';
     const picked=SEL.has(a.path);
     const cardClick=SELMODE?`onclick="pick(event,'${a.path.replace(/'/g,"\\'")}')"`:'';
+    const inTray=TRAY.has(a.path);
     return `<div class="card ${SELMODE?'sel-mode':''} ${picked?'picked':''}" ${cardClick}>
       <div class="pick">${picked?'✓':''}</div>
+      ${img&&!SELMODE?`<button class="addref ${inTray?'on':''}" title="Add to next generation" onclick="event.stopPropagation();addRef('${a.path.replace(/'/g,"\\'")}')">${inTray?'✓':'+'}</button>`:''}
       ${img?`<div class="im" style="background-image:url('${imgURL(a)}')" ${SELMODE?'':`onclick="zoom('${imgURL(a)}')"`}></div>`
            :`<div class="doc">${(a.path||'').split('/').pop()}</div>`}
       <div class="meta">
@@ -270,6 +283,28 @@ async function bulk(status){
 async function bulkFork(){ if(!SEL.size)return; toast('Fork/redo '+SEL.size+' — re-running each with a fresh seed');
   for(const p of [...SEL]){await fetch('/v1/library/rerun',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({path:p})});}
   clearSel(); }
+// ── Reference tray: "+" on any photo → build up the next generation ──────────
+const TRAY=new Set();
+function addRef(path){ if(TRAY.has(path))TRAY.delete(path); else TRAY.add(path); drawTray(); render(); }
+function clearTray(){ TRAY.clear(); drawTray(); render(); }
+function drawTray(){
+  const paths=[...TRAY]; $('reftray').classList.toggle('on',paths.length>0);
+  $('refthumbs').innerHTML=paths.map(p=>`<img class="rt" src="/v1/library/file?path=${encodeURIComponent(p)}" title="${p}">`).join('');
+}
+async function genFromTray(){
+  const paths=[...TRAY]; const t=$('refprompt').value.trim();
+  if(!paths.length){toast('Add photos with + first');return;}
+  if(t.length<3){toast('Describe what to make');return;}
+  if(!(await gpuOnline()))toast('⚠ No GPU online — queues until a BYO-GPU connects');
+  if(paths.length===1){ // single ref → fix/edit
+    const r=await fetch('/v1/library/fix',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({path:paths[0],instruction:t})});
+    const j=await r.json(); toast(r.ok?'Queued → see Queue & History':'Failed: '+(j.error?.message||j.error||''));
+  } else { // multi ref → compose
+    const r=await fetch('/v1/library/compose',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({paths:paths.slice(0,5),instruction:t})});
+    const j=await r.json(); toast(r.ok?`Composing from ${j.refs} refs → see Queue & History`:'Failed: '+(j.error||''));
+  }
+  $('refprompt').value='';
+}
 // ── GPU status: fix/compose need an ONLINE GPU worker (Qwen models live there) ──
 let GPU_ONLINE=null;
 async function gpuOnline(){
