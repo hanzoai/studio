@@ -96,7 +96,10 @@ def dispatch_if_worker(request, org_id: str, prompt_id: str, prompt: dict) -> bo
             "runId": prompt_id,
             "activityType": {"name": "studio.render"},
             "taskQueue": JOBS_NS,
-            "heartbeatTimeout": "600s",
+            # 1200s: a heavy Qwen edit on a cold GB10 (model reload + full 30-step
+            # sample) can exceed 600s; the worker heartbeats each step, so this is
+            # the ceiling for a genuinely long single render, not idle slack.
+            "heartbeatTimeout": "1200s",
             "input": {
                 "prompt": prompt,
                 "org": org_id,
