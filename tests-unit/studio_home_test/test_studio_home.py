@@ -98,6 +98,108 @@ async def test_compose_accepts_uploaded_references(tmp_path, monkeypatch):
     assert any(n.startswith("compose_src_") for n in load_names)  # library asset staged
 
 
+class _FakeQueue:
+    def __init__(self, running=None, pending=None):
+        self.running = running or []
+        self.pending = pending or []
+        self.deleted = []
+
+    def get_current_queue_volatile(self):
+        return (self.running, self.pending)
+
+    def delete_queue_item(self, fn):
+        before = len(self.pending)
+        self.pending = [it for it in self.pending if not fn(it)]
+        self.deleted.append(before - len(self.pending))
+
+
+class _FakeServer:
+    port = 1
+
+    def __init__(self, **kw):
+        self.prompt_queue = _FakeQueue(**kw)
+
+
+def _orgaware(tmp_path, monkeypatch):
+    def outd(o=None):
+        d = tmp_path / "orgs" / (o or "default") / "output"
+        d.mkdir(parents=True, exist_ok=True)
+        return str(d)
+    def ind(o=None):
+        d = tmp_path / "orgs" / (o or "default") / "input"
+        d.mkdir(parents=True, exist_ok=True)
+        return str(d)
+    monkeypatch.setattr(sh.folder_paths, "get_org_output_directory", outd)
+    monkeypatch.setattr(sh.folder_paths, "get_org_input_directory", ind)
+    monkeypatch.setattr(sh.folder_paths, "get_output_directory", lambda: str(tmp_path))
+    return outd, ind
+
+
+def test_cancel_marks_cancelled_and_removes_gpu_row_org_scoped(tmp_path, monkeypatch):
+    outd, _ = _orgaware(tmp_path, monkeypatch)
+    (Path(outd("acme")) / "library.json").write_text('{"assets":[]}')
+    sh.worklog.record("acme", kind="fix", prompt="x", refs=[], uploads=[], parents=[],
+                      output_prefix="fixes/x", pid="p1", lane="gpu")
+    (Path(outd("acme")) / "render_jobs.json").write_text(json.dumps([{"id": "p1", "prefix": "x"}]))
+    srv = _FakeServer()
+    assert sh._owns_job(srv, "acme", "p1")
+    assert not sh._owns_job(srv, "globex", "p1")            # cross-tenant: not owned
+    assert sh._cancel_job(srv, "acme", "p1") == "gpu"
+    assert sh.worklog.load("acme")[0]["status"] == "cancelled"
+    assert json.loads((Path(outd("acme")) / "render_jobs.json").read_text()) == []
+
+
+def test_cancel_deletes_local_pending_only_when_org_matches(tmp_path, monkeypatch):
+    _orgaware(tmp_path, monkeypatch)
+    mine = (1, "p1", {}, {"org_id": "acme"}, [])
+    theirs = (2, "p2", {}, {"org_id": "globex"}, [])
+    srv = _FakeServer(pending=[mine, theirs])
+    sh.worklog.record("acme", kind="fix", prompt="x", refs=[], uploads=[], parents=[],
+                      output_prefix="fixes/x", pid="p1")
+    assert sh._cancel_job(srv, "acme", "p1") == "local"
+    assert [it[1] for it in srv.prompt_queue.pending] == ["p2"]   # only mine deleted
+
+
+@pytest.mark.asyncio
+async def test_amend_atomic_swap_keeps_original_refs_and_adds_new(tmp_path, monkeypatch):
+    outd, ind = _orgaware(tmp_path, monkeypatch)
+    (Path(outd("acme")) / "library.json").write_text('{"assets":[]}')
+    (Path(ind("acme")) / "fix_src_1.png").write_bytes(b"\x89PNG")   # original ref, still present
+    (Path(ind("acme")) / "drop_9.png").write_bytes(b"\x89PNG")      # new upload
+    sh.worklog.record("acme", kind="fix", prompt="brighten", refs=["fix_src_1.png"],
+                      uploads=[], parents=["a.png"], output_prefix="fixes/a", pid="p1", lane="local")
+    captured = {}
+    async def fake_queue(request, server, graph):
+        captured["graph"] = graph
+        return "p2"
+    monkeypatch.setattr(sh, "_queue_prompt", fake_queue)
+    out = await sh.dispatch_amend(None, _FakeServer(), "acme", "p1", "brighten a lot more",
+                                  paths=[], uploads=["drop_9.png"])
+    assert out["amended_from"] == "p1" and out["prompt_id"] == "p2" and out["refs"] == 2
+    rows = {r["id"]: r for r in sh.worklog.load("acme")}
+    assert rows["p1"]["status"] == "cancelled"                      # original swapped out
+    assert rows["p2"]["status"] == "queued" and rows["p2"]["prompt"] == "brighten a lot more"
+    loads = [n["inputs"]["image"] for n in captured["graph"].values() if n.get("class_type") == "LoadImage"]
+    assert "fix_src_1.png" in loads and "drop_9.png" in loads       # original kept + new added
+
+
+@pytest.mark.asyncio
+async def test_amend_unknown_job_is_not_owned(tmp_path, monkeypatch):
+    _orgaware(tmp_path, monkeypatch)
+    with pytest.raises(sh.NotOwned):
+        await sh.dispatch_amend(None, _FakeServer(), "acme", "ghost", "change it")
+
+
+@pytest.mark.asyncio
+async def test_amend_terminal_job_rejected(tmp_path, monkeypatch):
+    outd, _ = _orgaware(tmp_path, monkeypatch)
+    sh.worklog.record("acme", kind="fix", prompt="x", refs=["r.png"], uploads=[], parents=[],
+                      output_prefix="fixes/x", pid="p1")
+    sh.worklog.set_status("acme", "p1", "done")
+    with pytest.raises(sh.DispatchError):
+        await sh.dispatch_amend(None, _FakeServer(), "acme", "p1", "too late")
+
+
 def test_prompt_error_message_extracts_real_reason():
     # model-less pod: /prompt returns a validation error — the user must SEE it.
     body = {"error": {"type": "prompt_outputs_failed_validation",

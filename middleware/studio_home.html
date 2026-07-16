@@ -252,8 +252,8 @@ body.immersive #stage{display:block}
 <div id="toast"></div>
 <div id="zoom" onclick="this.style.display='none'"><img id="zoomimg"></div>
 <dialog id="fixdlg">
-  <h3 style="font-size:1rem">Fix with chat</h3>
-  <p style="color:var(--dim);font-size:.83rem;margin-top:6px">Describe the change — a new render is queued from this image. Add reference photos (drag in, or pick from your history) to guide it.</p>
+  <h3 id="fixtitle" style="font-size:1rem">Fix with chat</h3>
+  <p id="fixdesc" style="color:var(--dim);font-size:.83rem;margin-top:6px">Describe the change — a new render is queued from this image. Add reference photos (drag in, or pick from your history) to guide it.</p>
   <div class="row" id="fixrefs" style="margin:12px 0 0;flex-wrap:wrap"></div>
   <div class="drop" id="fixdrop">Drag images here, or <b>click to upload</b> references</div>
   <input id="fixfile" type="file" accept="image/*" multiple hidden>
@@ -280,6 +280,8 @@ body.immersive #stage{display:block}
   <div class="row"><h3 id="ctxtitle" style="font-size:1rem;flex:1">Work item</h3><button class="mini" onclick="ctxdlg.close()">Close</button></div>
   <div id="ctxbody" style="margin-top:6px"></div>
   <div class="row" style="justify-content:flex-end;margin-top:14px;gap:6px">
+    <button class="mini" id="ctxcancel" onclick="cancelCtx()" style="display:none">✕ Cancel job</button>
+    <button class="mini" id="ctxedit" onclick="editCtx()" style="display:none">✎ Edit</button>
     <button class="mini" id="ctxreuse" onclick="reuseCtx()" title="Open Fix primed with this prompt + references">↻ Reuse context</button>
     <button class="mini hot" id="ctxfix" onclick="fixCtx()">Fix this version</button>
   </div>
@@ -508,6 +510,7 @@ function wlRow(it){
     <div class="qtitle">${it.kind} · <span class="wst ${it.status}">${ic} ${lbl}</span>
       <div class="qdesc">${(it.prompt||'(no prompt)').replace(/</g,'&lt;')}</div>
       <div class="qsub">${when}${lane}${it.error?` · <span style="color:#ff8f8f">${it.error.replace(/</g,'&lt;')}</span>`:''}</div></div>
+    ${(it.status==='queued'||it.status==='running')?`<button class="mini" onclick="event.stopPropagation();openAmend('${it.id}')" title="Amend prompt/refs (re-queues)">Edit</button><button class="mini" onclick="event.stopPropagation();cancelJob('${it.id}')">Cancel</button>`:''}
     <button class="mini" onclick="event.stopPropagation();openContext('${it.id}')">Open</button></div>`;
 }
 async function worklog(){
@@ -538,10 +541,16 @@ async function openContext(id){
   const it=WL.find(x=>x.id===id); if(!it)return; CTX=it;
   $('ctxtitle').textContent=it.kind+' — '+(it.status||'');
   $('ctxbody').innerHTML=ctxHTML(it, await lineageFor(it.output));
-  $('ctxreuse').style.display=(it.output||(it.parents&&it.parents[0]))?'':'none';
-  $('ctxfix').style.display=(it.output||(it.parents&&it.parents[0]))?'':'none';
+  const hasBase=!!(it.output||(it.parents&&it.parents[0]));
+  const live=it.status==='queued'||it.status==='running';
+  $('ctxreuse').style.display=hasBase?'':'none';
+  $('ctxfix').style.display=hasBase?'':'none';
+  $('ctxcancel').style.display=live?'':'none';
+  $('ctxedit').style.display=live?'':'none';
   $('ctxdlg').showModal();
 }
+function cancelCtx(){ if(!CTX)return; ctxdlg.close(); cancelJob(CTX.id); }
+function editCtx(){ if(!CTX)return; ctxdlg.close(); openAmend(CTX.id); }
 async function openLineage(path){
   CTX={output:path,parents:[],refs:[],uploads:[],prompt:'',kind:'asset',status:''};
   $('ctxtitle').textContent='Versions'; $('ctxbody').innerHTML=ctxHTML(CTX, await lineageFor(path));
@@ -579,13 +588,14 @@ async function runs(){
     return `<div class="qrow">
       <div class="qthumb" style="${thumb?`background-image:url('${thumb}');background-size:cover;background-position:center`:'display:flex;align-items:center;justify-content:center;color:var(--dim)'}">${thumb?'':(running?'▶':'⏳')}</div>
       <div class="qtitle">${title}<div class="qdesc">${desc||'(no description)'}</div><div class="qsub">${running?'<span style=color:var(--ok)>● </span>':''}${eta}${refs.length>1?` · ${refs.length} refs`:''}</div></div>
-      ${running?'':`<button class="mini" onclick="delQueued('${id}')">Remove</button>`}</div>`;};
+      ${running?'':`<button class="mini" onclick="cancelJob('${id}')">Remove</button>`}</div>`;};
   // BYO-GPU renders (fix/compose on a connected GPU) — rendered on the worker,
   // shown here so a dispatched fix is visible (was invisible before).
   let gjobs=[]; try{gjobs=(await (await fetch('/v1/render-queue')).json()).jobs||[];}catch(_){}
   const gjRow=j=>`<div class="qrow">
     <div class="qthumb" style="${j.refs&&j.refs[0]?`background-image:url('/v1/library/file?thumb=1&input=1&path=${encodeURIComponent(j.refs[0])}');background-size:cover;background-position:center`:'display:flex;align-items:center;justify-content:center;color:var(--ok)'}">${j.refs&&j.refs[0]?'':'▶'}</div>
-    <div class="qtitle">${j.prefix||'render'}<div class="qsub"><span style=color:var(--ok)>● </span>rendering on your GPU · ${Math.max(0,Math.round((j.age||0)/60))}m elapsed · ~${ETA_MIN}m</div></div></div>`;
+    <div class="qtitle">${j.prefix||'render'}<div class="qsub"><span style=color:var(--ok)>● </span>rendering on your GPU · ${Math.max(0,Math.round((j.age||0)/60))}m elapsed · ~${ETA_MIN}m</div></div>
+    ${j.id?`<button class="mini" onclick="cancelJob('${j.id}')">Cancel</button>`:''}</div>`;
   const gjHtml=gjobs.map(gjRow).join('');
   $('qrun').innerHTML=gjHtml + qr.map(it=>qitem(it,true,null)).join('') || '<div class="qsub" style="padding:6px 2px">Idle — nothing rendering.</div>';
   $('qpend').innerHTML=qp.map((it,i)=>qitem(it,false,i)).join('')||'<div class="qsub" style="padding:6px 2px">Nothing queued.</div>';
@@ -607,7 +617,6 @@ async function runs(){
         <textarea class="notebox" placeholder="Notes for the AI to improve next time…" onblur="rateNote('${r.id}',this.value)">${(rt.notes||'').replace(/</g,'&lt;')}</textarea>
       </div></div>`;}).join('')||'<div class="empty">No runs yet.</div>';
 }
-async function delQueued(id){await fetch('/queue',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({delete:[id]})});toast('Removed from queue');runs();}
 async function clearQueue(){if(!confirm('Clear all queued jobs?'))return;await fetch('/queue',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({clear:true})});toast('Queue cleared');runs();}
 async function rate(key,stars){await fetch('/v1/library/rate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({key,stars})});RATINGS[key]={...(RATINGS[key]||{}),stars};runs();}
 async function rateNote(key,notes){await fetch('/v1/library/rate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({key,notes})});toast('Note saved — the AI will use it next time');}
@@ -642,9 +651,18 @@ async function rerun(i){const a=DATA.assets[i];toast('Queueing re-run…');const
 // graph, base image first. 5-ref cap = base + 4. ─────────────────────────────
 let FIXPATH=null;          // the base image (library asset path)
 let FIXREFS=[];            // [{kind:'lib'|'up', ref, thumb}] added references
-const MAXFIXREFS=4;
+let FIXMODE='fix';         // 'fix' (new render) | 'amend' (swap a queued job)
+let AMENDID=null;          // the queued prompt_id when FIXMODE==='amend'
+let ORIGREFS=[];           // amend: the job's current refs (input-dir names), locked base
+let MAXFIXREFS=4;          // added-ref cap = 5 − base count (set per open)
 function drawFixRefs(){
-  const base=`<div style="text-align:center"><img src="${thumbURL({path:FIXPATH})}" style="width:56px;height:84px;object-fit:cover;border-radius:6px;border:2px solid var(--brand)"><div style="font-size:.6rem;color:var(--dim);margin-top:3px">base</div></div>`;
+  let base;
+  if(FIXMODE==='amend'){
+    base=(ORIGREFS||[]).map(n=>`<div style="text-align:center"><img src="${inputThumb(n)}" style="width:56px;height:84px;object-fit:cover;border-radius:6px;border:2px solid var(--brand)"><div style="font-size:.6rem;color:var(--dim);margin-top:3px">current</div></div>`).join('')
+      ||`<div style="font-size:.72rem;color:var(--dim)">Amending queued job</div>`;
+  }else{
+    base=`<div style="text-align:center"><img src="${thumbURL({path:FIXPATH})}" style="width:56px;height:84px;object-fit:cover;border-radius:6px;border:2px solid var(--brand)"><div style="font-size:.6rem;color:var(--dim);margin-top:3px">base</div></div>`;
+  }
   const refs=FIXREFS.map((r,i)=>`<div style="position:relative;text-align:center">
     <img src="${r.thumb}" style="width:56px;height:84px;object-fit:cover;border-radius:6px;border:1px solid var(--line)">
     <button onclick="removeFixRef(${i})" title="Remove" style="position:absolute;top:-6px;right:-6px;width:18px;height:18px;border-radius:50%;border:none;background:#c0392b;color:#fff;font-size:.72rem;line-height:1;cursor:pointer">×</button>
@@ -676,25 +694,48 @@ async function uploadFixFiles(files){
     else showFixErr('Upload failed: '+r.error);
   }
 }
-async function openFixPath(path,prompt){FIXPATH=path;FIXREFS=[];$('fixtext').value=prompt||'';showFixErr('');
+async function openFixPath(path,prompt){FIXMODE='fix';AMENDID=null;ORIGREFS=[];MAXFIXREFS=4;
+  FIXPATH=path;FIXREFS=[];$('fixtext').value=prompt||'';showFixErr('');
+  $('fixtitle').textContent='Fix with chat';
+  $('fixdesc').textContent='Describe the change — a new render is queued from this image. Add reference photos (drag in, or pick from your history) to guide it.';
   $('fixhist').style.display='none'; drawFixRefs();
   $('gpuwarn').style.display=(await gpuOnline())?'none':'block';
   $('gpuwarn').textContent='⚠ No GPU worker online — this queues but renders only when a BYO-GPU (e.g. spark) is connected.';
   $('fixdlg').showModal();}
 async function openFix(i){ return openFixPath(DATA.assets[i].path,''); }
+async function openAmend(id){
+  const it=WL.find(x=>x.id===id); if(!it){toast('Job not found');return;}
+  FIXMODE='amend';AMENDID=id;FIXPATH=null;ORIGREFS=it.refs||[];FIXREFS=[];MAXFIXREFS=Math.max(0,5-ORIGREFS.length);
+  $('fixtext').value=it.prompt||'';showFixErr('');
+  $('fixtitle').textContent='Edit queued job';
+  $('fixdesc').textContent='Change the prompt and/or add references. Saving cancels the queued job and re-queues it with the amendment — it re-enters the queue, so its position resets.';
+  $('fixhist').style.display='none'; drawFixRefs();
+  $('gpuwarn').style.display='none';
+  $('fixdlg').showModal();
+}
 async function sendFix(){const t=$('fixtext').value.trim();if(t.length<3){showFixErr('Describe the change (3+ characters).');return;}
-  showFixErr(''); toast('Queueing fix…');
+  showFixErr(''); toast(FIXMODE==='amend'?'Amending…':'Queueing fix…');
+  const paths=FIXREFS.filter(x=>x.kind==='lib').map(x=>x.ref);
+  const uploads=FIXREFS.filter(x=>x.kind==='up').map(x=>x.ref);
   let r;
-  if(!FIXREFS.length){ // single base image → the proven edit path
+  if(FIXMODE==='amend'){ // atomic swap: cancel the queued job + re-dispatch amended
+    r=await fetch('/v1/queue/amend',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({prompt_id:AMENDID,instruction:t,paths,uploads})});
+  }else if(!FIXREFS.length){ // single base image → the proven edit path
     r=await fetch('/v1/library/fix',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({path:FIXPATH,instruction:t})});
   }else{               // base + references → multi-reference compose
-    const paths=[FIXPATH,...FIXREFS.filter(x=>x.kind==='lib').map(x=>x.ref)];
-    const uploads=FIXREFS.filter(x=>x.kind==='up').map(x=>x.ref);
-    r=await fetch('/v1/library/compose',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({paths,instruction:t,uploads})});
+    r=await fetch('/v1/library/compose',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({paths:[FIXPATH,...paths],instruction:t,uploads})});
   }
   const j=await r.json().catch(()=>({}));
-  if(r.ok){ $('fixdlg').close(); toast('Fix queued → see Queue & History'); }
-  else showFixErr('Couldn’t queue: '+(errMsg(j)||('error '+r.status)));   // stay open so the reason is visible
+  if(r.ok){ $('fixdlg').close(); toast(FIXMODE==='amend'?'Amended — re-queued (position reset)':'Fix queued → see Queue & History'); if(typeof runs==='function')runs(); }
+  else showFixErr('Couldn’t '+(FIXMODE==='amend'?'amend':'queue')+': '+(errMsg(j)||('error '+r.status)));   // stay open so the reason is visible
+}
+async function cancelJob(id){
+  if(!confirm('Cancel this job?'))return;
+  const r=await fetch('/v1/queue/cancel',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({prompt_id:id})});
+  const j=await r.json().catch(()=>({}));
+  if(r.ok)toast('Cancelled'+(j.canceled==='gpu'?' — if it was already rendering on your GPU it may still finish':''));
+  else toast('Cancel failed: '+(errMsg(j)||('error '+r.status)));
+  if(typeof runs==='function')runs();
 }
 // One shared drag/drop/paste + click-to-upload wiring, applied to every add-photo
 // surface: the Fix dialog dropzone AND the composer prompt box + "+" button.

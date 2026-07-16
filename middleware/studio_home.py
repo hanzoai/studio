@@ -277,10 +277,15 @@ async def _queue_prompt(request: web.Request, server, graph: dict) -> str:
     try:
         async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=60)) as s:
             async with s.post(f"http://127.0.0.1:{port}/prompt", json={"prompt": graph}, headers=headers) as r:
-                body = await r.json(content_type=None)
+                text = await r.text()
+                try:
+                    body = json.loads(text) if text else {}
+                except ValueError:
+                    body = {}   # non-JSON (e.g. an HTML error page) — don't 500, report it
                 if r.status != 200:
-                    raise DispatchError(_prompt_error_message(body))
-                pid = body.get("prompt_id", "")
+                    raise DispatchError(_prompt_error_message(body) if body
+                                        else f"render engine returned HTTP {r.status}")
+                pid = body.get("prompt_id", "") if isinstance(body, dict) else ""
                 if not pid:
                     raise DispatchError("render was not queued (no prompt_id returned)")
                 return pid
@@ -312,6 +317,69 @@ def _in_render_jobs(org: str, pid: str) -> bool:
         return any(j.get("id") == pid for j in json.loads(jf.read_text()))
     except Exception:
         return False
+
+
+def _remove_render_job(org: str, pid: str) -> bool:
+    """Drop a BYO-GPU tracking row from this org's render_jobs.json. The file is
+    per-org so a match is inherently owned. Returns True if one was removed."""
+    try:
+        jf = Path(folder_paths.get_org_output_directory(org)) / "render_jobs.json"
+        jobs = json.loads(jf.read_text())
+    except Exception:
+        return False
+    keep = [j for j in jobs if j.get("id") != pid]
+    if len(keep) == len(jobs):
+        return False
+    tmp = jf.with_name(jf.name + ".tmp")
+    tmp.write_text(json.dumps(keep))
+    tmp.replace(jf)
+    return True
+
+
+def _owns_job(server, org: str, pid: str) -> bool:
+    """Does this prompt_id belong to the caller's org? True if it's in the org's
+    work log, or a local-queue item stamped with this org, or the org's BYO-GPU
+    tracking file. A cross-tenant id matches none of these → the route 404s and
+    never reveals that it exists for someone else."""
+    if any(r.get("id") == pid for r in worklog.load(org)):
+        return True
+    try:
+        running, pending = server.prompt_queue.get_current_queue_volatile()
+        if any(it[1] == pid and (it[3] or {}).get("org_id") == org
+               for it in list(running) + list(pending)):
+            return True
+    except Exception:
+        pass
+    return _in_render_jobs(org, pid)
+
+
+def _cancel_job(server, org: str, pid: str) -> str:
+    """Cancel an OWNED job across both realms (caller must have checked ownership).
+    Local pod queue: delete a pending item, or interrupt a running one — both
+    org-scoped so one tenant can't touch another's render. BYO-GPU: drop the
+    tracking row (a queued gpu-job stops showing; one already rendering on the
+    worker may still finish — the pod can't stop a remote process). Marks the work
+    log cancelled. Returns the realm acted on."""
+    realm = "gone"
+    try:
+        running, pending = server.prompt_queue.get_current_queue_volatile()
+    except Exception:
+        running, pending = [], []
+    if any(it[1] == pid and (it[3] or {}).get("org_id") == org for it in pending):
+        server.prompt_queue.delete_queue_item(
+            lambda it: it[1] == pid and (it[3] or {}).get("org_id") == org)
+        realm = "local"
+    elif any(it[1] == pid and (it[3] or {}).get("org_id") == org for it in running):
+        try:
+            import nodes
+            nodes.interrupt_processing()
+            realm = "local"
+        except Exception:
+            pass
+    if _remove_render_job(org, pid) and realm == "gone":
+        realm = "gpu"
+    worklog.set_status(org, pid, "cancelled")
+    return realm
 
 
 def _landed_output(root: Path | None, prefix: str) -> str | None:
@@ -417,6 +485,61 @@ async def dispatch_compose(request: web.Request, server, org: str, paths: list,
                           kind="compose", prompt=instruction, refs=ref_names,
                           uploads=uploaded, parents=list(paths), output_prefix=f"composes/{stem}")
     return {"ok": True, "prompt_id": pid, "output_prefix": f"composes/{stem}", "refs": len(ref_names)}
+
+
+class NotOwned(DispatchError):
+    """The prompt_id isn't the caller's — routes map this to 404 (never reveals it)."""
+
+
+async def dispatch_amend(request: web.Request, server, org: str, prompt_id: str,
+                         instruction: str, paths: list | None = None,
+                         uploads: list | None = None) -> dict:
+    """Amend a still-queued job as an honest ATOMIC SWAP: queued graphs are
+    immutable, so cancel the original and re-dispatch with the amended prompt and an
+    augmented reference set. The original's references (already staged in the org
+    input dir, read from its work-log row — the authoritative ownership record) are
+    kept and combined with any new library picks (``paths``) and uploads
+    (``uploads``). The re-dispatch goes through the ONE funnel, so it lands in the
+    right lane and records a fresh work-log row. Position resets (it re-enters the
+    queue) — the caller SHOWS that honestly."""
+    instruction = (instruction or "").strip()
+    if not 3 <= len(instruction) <= 500:
+        raise DispatchError("instruction required (3-500 chars)")
+    orig = next((r for r in worklog.load(org) if r.get("id") == prompt_id), None)
+    if orig is None:
+        raise NotOwned(f"no such job: {prompt_id}")
+    if orig.get("status") in ("done", "failed", "cancelled"):
+        raise DispatchError("this job already finished — start a new fix instead")
+    root = _library_root(org)
+    in_dir = Path(folder_paths.get_org_input_directory(org))
+    in_dir.mkdir(parents=True, exist_ok=True)
+    # keep the original references that are still present (already input-dir names)
+    ref_names = _resolve_uploads(org, orig.get("refs") or [])
+    new_uploads = _resolve_uploads(org, uploads)
+    for rel in (paths or []):
+        p = _safe_asset(root, rel) if root else None
+        if p is None or p.suffix.lower() != ".png":
+            raise DispatchError(f"unknown asset: {rel}")
+        nm = f"amend_src_{abs(hash((str(p), p.stat().st_mtime))) % 10**10}.png"
+        (in_dir / nm).write_bytes(p.read_bytes())
+        ref_names.append(nm)
+    # de-dupe, keep order, cap at the graph's 5
+    seen: set = set()
+    refs = [n for n in ref_names + new_uploads if not (n in seen or seen.add(n))][:5]
+    if not refs:
+        raise DispatchError("no reference images available to amend")
+    _cancel_job(server, org, prompt_id)
+    parents = list(orig.get("parents") or []) + list(paths or [])
+    stem = re.sub(r"[^a-zA-Z0-9_-]", "_", Path(refs[0]).stem)[:40] + "_amended"
+    if len(refs) == 1:
+        graph, kind, out = _fix_graph(refs[0], instruction, f"fixes/{stem}"), "fix", f"fixes/{stem}"
+    else:
+        graph, kind, out = _compose_graph(refs, instruction, f"composes/{stem}"), "compose", f"composes/{stem}"
+    all_uploads = list(dict.fromkeys(list(orig.get("uploads") or []) + new_uploads))
+    pid = await _dispatch(request, server, org, graph, kind=kind, prompt=instruction,
+                          refs=refs, uploads=all_uploads, parents=parents, output_prefix=out)
+    return {"ok": True, "prompt_id": pid, "amended_from": prompt_id,
+            "output_prefix": out, "refs": len(refs)}
 
 
 def _workflows(org: str) -> list[str]:
@@ -631,6 +754,32 @@ def add_studio_home_routes(routes: web.RouteTableDef, server) -> None:
         except DispatchError as e:
             return web.json_response({"error": str(e)}, status=400)
         return web.json_response({"ok": True, "prompt_ids": ids})
+
+    @routes.post("/v1/queue/cancel")
+    async def cancel_job(request: web.Request):
+        """Cancel one of the caller's OWN queued/running jobs (local pod queue or
+        BYO-GPU lane). Ownership is resolved server-side; a prompt_id that isn't the
+        caller's 404s — never confirming another tenant's job exists."""
+        org = _org_of(request)
+        pid = (await request.json()).get("prompt_id", "")
+        if not pid:
+            return web.json_response({"error": "prompt_id required"}, status=400)
+        if not _owns_job(server, org, pid):
+            return web.json_response({"error": "not found"}, status=404)
+        return web.json_response({"ok": True, "canceled": _cancel_job(server, org, pid)})
+
+    @routes.post("/v1/queue/amend")
+    async def amend_job(request: web.Request):
+        """Amend a still-queued job (atomic cancel + re-dispatch with more context)."""
+        body = await request.json()
+        try:
+            return web.json_response(await dispatch_amend(
+                request, server, _org_of(request), body.get("prompt_id", ""),
+                body.get("instruction", ""), body.get("paths"), body.get("uploads")))
+        except NotOwned as e:
+            return web.json_response({"error": str(e)}, status=404)
+        except DispatchError as e:
+            return web.json_response({"error": str(e)}, status=400)
 
     @routes.get("/v1/worklog")
     async def get_worklog(request: web.Request):
