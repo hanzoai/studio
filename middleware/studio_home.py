@@ -58,6 +58,14 @@ _NEG = ("ghosting, double exposure, duplicated body, transparent fabric, sheer "
         "fabric, illustration, painterly, blotchy skin, mottled skin, jpeg "
         "artifacts, pixelation, noise, deformed hands, extra limbs, text, watermark")
 
+# The Qwen-Image-Edit-2511 model set, by the EXACT filenames present on the render
+# worker (diffusion_models / text_encoders / vae — verified on spark). The graph
+# names ONLY these: a graph that referenced a missing checkpoint fails ComfyUI
+# validation instantly and lands a degenerate, un-sampled result.
+_QWEN_UNET = "qwen-image-edit-2511.safetensors"
+_QWEN_CLIP = "qwen2.5-vl-7b.safetensors"
+_QWEN_VAE = "qwen-image-vae.safetensors"
+
 
 def _home_default() -> bool:
     return os.environ.get("STUDIO_HOME_DEFAULT", "").lower() in ("1", "true", "yes")
@@ -217,25 +225,35 @@ def _reseed(graph: dict) -> dict:
 
 
 def _fix_graph(ref_name: str, instruction: str, prefix: str) -> dict:
-    """The proven Qwen-Image-Edit-2511 wiring, instruction-edit form: the chosen
-    output is the sole reference; the user's words are the edit."""
+    """The canonical Qwen-Image-Edit-2511 instruction edit — ComfyUI's OWN
+    image_qwen_image_edit template, node for node. FluxKontextImageScale sizes the
+    reference ONCE; that SAME scaled image feeds both TextEncodeQwenImageEditPlus
+    (the edit conditioning) and VAEEncode (the sampling latent), so reference and
+    generation latents are identical in size. Denoise 1.0 over that latent applies
+    the edit; AuraFlow shift + CFGNorm are the recipe.
+
+    The prod graph broke it in one place: two FluxKontextMultiReferenceLatentMethod
+    nodes forced a Flux-Kontext `index_timestep_zero` reference method onto Qwen
+    conditioning. That baked latent-grid mosaic + skin speckle — the noise-stipple
+    class — into every edit and compounded on each fix-of-a-fix. Gone here: Qwen's
+    native reference handling (TextEncodeQwenImageEditPlus alone) renders clean.
+    Feeding the SAME scaled image to conditioning and latent is what also keeps the
+    generation from insetting the scene in a frame-within-frame border."""
     prompt = (f"{instruction.strip()}. Photorealistic, keep the same model, "
               f"pose, framing, lighting and background; only apply the "
               f"requested change.")
     return {
         "1": {"class_type": "LoadImage", "inputs": {"image": ref_name}},
         "2": {"class_type": "FluxKontextImageScale", "inputs": {"image": ["1", 0]}},
-        "3": {"class_type": "CLIPLoader", "inputs": {"clip_name": "qwen2.5-vl-7b.safetensors", "type": "qwen_image", "device": "default"}},
-        "4": {"class_type": "UNETLoader", "inputs": {"unet_name": "qwen-image-edit-2511.safetensors", "weight_dtype": "default"}},
-        "5": {"class_type": "VAELoader", "inputs": {"vae_name": "qwen-image-vae.safetensors"}},
+        "3": {"class_type": "CLIPLoader", "inputs": {"clip_name": _QWEN_CLIP, "type": "qwen_image", "device": "default"}},
+        "4": {"class_type": "UNETLoader", "inputs": {"unet_name": _QWEN_UNET, "weight_dtype": "default"}},
+        "5": {"class_type": "VAELoader", "inputs": {"vae_name": _QWEN_VAE}},
         "6": {"class_type": "TextEncodeQwenImageEditPlus", "inputs": {"clip": ["3", 0], "vae": ["5", 0], "image1": ["2", 0], "prompt": prompt}},
-        "7": {"class_type": "TextEncodeQwenImageEditPlus", "inputs": {"clip": ["3", 0], "prompt": _NEG}},
-        "8": {"class_type": "FluxKontextMultiReferenceLatentMethod", "inputs": {"conditioning": ["6", 0], "reference_latents_method": "index_timestep_zero"}},
-        "9": {"class_type": "FluxKontextMultiReferenceLatentMethod", "inputs": {"conditioning": ["7", 0], "reference_latents_method": "index_timestep_zero"}},
-        "10": {"class_type": "EmptySD3LatentImage", "inputs": {"width": 1024, "height": 1536, "batch_size": 1}},
+        "7": {"class_type": "TextEncodeQwenImageEditPlus", "inputs": {"clip": ["3", 0], "vae": ["5", 0], "image1": ["2", 0], "prompt": _NEG}},
+        "10": {"class_type": "VAEEncode", "inputs": {"pixels": ["2", 0], "vae": ["5", 0]}},
         "11": {"class_type": "ModelSamplingAuraFlow", "inputs": {"model": ["4", 0], "shift": 3.1}},
         "12": {"class_type": "CFGNorm", "inputs": {"model": ["11", 0], "strength": 1.0}},
-        "13": {"class_type": "KSampler", "inputs": {"model": ["12", 0], "positive": ["8", 0], "negative": ["9", 0], "latent_image": ["10", 0],
+        "13": {"class_type": "KSampler", "inputs": {"model": ["12", 0], "positive": ["6", 0], "negative": ["7", 0], "latent_image": ["10", 0],
                  "seed": random.randrange(2**31), "steps": 30, "cfg": 4.0, "sampler_name": "euler", "scheduler": "simple", "denoise": 1.0}},
         "14": {"class_type": "VAEDecode", "inputs": {"samples": ["13", 0], "vae": ["5", 0]}},
         "15": {"class_type": "SaveImage", "inputs": {"images": ["14", 0], "filename_prefix": prefix}},
@@ -250,9 +268,9 @@ def _compose_graph(ref_names: list[str], instruction: str, prefix: str) -> dict:
     prompt = (f"{instruction.strip()}. Combine the provided reference images as "
               f"described. Photorealistic, coherent single result.")
     g: dict = {
-        "3": {"class_type": "CLIPLoader", "inputs": {"clip_name": "qwen2.5-vl-7b.safetensors", "type": "qwen_image", "device": "default"}},
-        "4": {"class_type": "UNETLoader", "inputs": {"unet_name": "qwen-image-edit-2511.safetensors", "weight_dtype": "default"}},
-        "5": {"class_type": "VAELoader", "inputs": {"vae_name": "qwen-image-vae.safetensors"}},
+        "3": {"class_type": "CLIPLoader", "inputs": {"clip_name": _QWEN_CLIP, "type": "qwen_image", "device": "default"}},
+        "4": {"class_type": "UNETLoader", "inputs": {"unet_name": _QWEN_UNET, "weight_dtype": "default"}},
+        "5": {"class_type": "VAELoader", "inputs": {"vae_name": _QWEN_VAE}},
     }
     pos_inputs: dict = {"clip": ["3", 0], "vae": ["5", 0], "prompt": prompt}
     nid = 20
@@ -264,12 +282,13 @@ def _compose_graph(ref_names: list[str], instruction: str, prefix: str) -> dict:
         nid += 2
     g["6"] = {"class_type": "TextEncodeQwenImageEditPlus", "inputs": pos_inputs}
     g["7"] = {"class_type": "TextEncodeQwenImageEditPlus", "inputs": {"clip": ["3", 0], "prompt": _NEG}}
-    g["8"] = {"class_type": "FluxKontextMultiReferenceLatentMethod", "inputs": {"conditioning": ["6", 0], "reference_latents_method": "index_timestep_zero"}}
-    g["9"] = {"class_type": "FluxKontextMultiReferenceLatentMethod", "inputs": {"conditioning": ["7", 0], "reference_latents_method": "index_timestep_zero"}}
+    # Qwen's native multi-reference conditioning (image1..imageN on node 6) — NO
+    # FluxKontextMultiReferenceLatentMethod: the same Flux-Kontext override that
+    # stippled the single-image fix has no place on Qwen conditioning here either.
     g["10"] = {"class_type": "EmptySD3LatentImage", "inputs": {"width": 1024, "height": 1536, "batch_size": 1}}
     g["11"] = {"class_type": "ModelSamplingAuraFlow", "inputs": {"model": ["4", 0], "shift": 3.1}}
     g["12"] = {"class_type": "CFGNorm", "inputs": {"model": ["11", 0], "strength": 1.0}}
-    g["13"] = {"class_type": "KSampler", "inputs": {"model": ["12", 0], "positive": ["8", 0], "negative": ["9", 0], "latent_image": ["10", 0],
+    g["13"] = {"class_type": "KSampler", "inputs": {"model": ["12", 0], "positive": ["6", 0], "negative": ["7", 0], "latent_image": ["10", 0],
                "seed": random.randrange(2**31), "steps": 30, "cfg": 4.0, "sampler_name": "euler", "scheduler": "simple", "denoise": 1.0}}
     g["14"] = {"class_type": "VAEDecode", "inputs": {"samples": ["13", 0], "vae": ["5", 0]}}
     g["15"] = {"class_type": "SaveImage", "inputs": {"images": ["14", 0], "filename_prefix": prefix}}
@@ -491,6 +510,7 @@ async def dispatch_fix(request: web.Request, server, org: str, rel: str,
         raise DispatchError("instruction required (3-500 chars)")
     in_dir = Path(folder_paths.get_org_input_directory(org))
     in_dir.mkdir(parents=True, exist_ok=True)
+    note = None
     if upload:
         names = _resolve_uploads(org, [upload])
         if not names:
@@ -499,6 +519,11 @@ async def dispatch_fix(request: web.Request, server, org: str, rel: str,
         stem = re.sub(r"[^a-zA-Z0-9_-]", "_", Path(ref_name).stem)[:48]
     else:
         root = _library_root(org)
+        # Iteration hygiene: if the chosen base is corrupt (flagged/deleted), fix from
+        # its nearest clean ancestor instead — never compound a known-bad version.
+        rel, substituted = _clean_base(org, root, rel)
+        if substituted:
+            note = "Fixing from the original — this version is corrupted"
         p = _safe_asset(root, rel) if root else None
         if p is None or p.suffix.lower() != ".png":
             raise DispatchError(f"unknown asset: {rel}")
@@ -511,7 +536,10 @@ async def dispatch_fix(request: web.Request, server, org: str, rel: str,
                           output_prefix=f"fixes/{stem}")
     if stack:
         stacks_store.route_prefix(org, f"fixes/{stem}", stack, added_by=_owner_of(request))
-    return {"ok": True, "prompt_id": pid, "output_prefix": f"fixes/{stem}"}
+    out = {"ok": True, "prompt_id": pid, "output_prefix": f"fixes/{stem}"}
+    if note:
+        out["note"] = note
+    return out
 
 
 async def dispatch_compose(request: web.Request, server, org: str, paths: list,
@@ -773,6 +801,89 @@ def _row_output(root: Path | None, output_prefix: str | None) -> str | None:
     if landed is None and root is not None and output_prefix and _safe_asset(root, output_prefix) is not None:
         landed = output_prefix
     return landed
+
+
+# ── Honesty guard + iteration hygiene ────────────────────────────────────────────
+# A >=10-step 1024x1536 Qwen edit takes MINUTES on any real GPU (≈350s on the GB10).
+# If an output lands within this many seconds of the job being dispatched, the engine
+# did not sample — a graph that errored straight into history, a stale-history reuse,
+# a degenerate self-POST on a model-less pod. Such a result is marked FAILED, never
+# delivered. The bound is a queued→done wall clock: `ts` (dispatch) and the output's
+# mtime are the two timestamps we measure reliably (started_at is a lazy display
+# stamp set by the poller, so a real render observed late must never read as fast).
+_IMPLAUSIBLE_SECS = 5
+
+
+def _implausibly_fast(row: dict, finished_at: int) -> bool:
+    """True when a completion cannot have sampled for its step count. Sound: a genuine
+    >=10-step render's dispatch→landed wall always far exceeds the bound, so a real
+    result is never failed; a sub-bound wall proves no sampling ran. steps<10 or an
+    unknown step count is exempt (nothing to contradict)."""
+    steps = (row.get("params") or {}).get("steps")
+    if not isinstance(steps, (int, float)) or steps < 10:
+        return False
+    ts = row.get("ts")
+    if not isinstance(ts, (int, float)):
+        return False
+    return finished_at - ts < _IMPLAUSIBLE_SECS
+
+
+def _finalize_landed(org: str, root: Path | None, rows: list[dict], now: int) -> None:
+    """The ONE place a landed render becomes terminal, shared by the queue poller and
+    the work-log view. For each non-terminal row whose output has landed: close it
+    `done` at the file mtime — UNLESS it landed implausibly fast, then `failed` with
+    "engine did not sample" so a degenerate result never surfaces as a normal one. A
+    matched output OLDER than the dispatch is a pre-existing sibling (same prefix,
+    earlier fix), not this job's result — left pending until its own output lands.
+    Mutates rows in place (mirrors the persisted status)."""
+    for r in rows:
+        if r.get("status") in ("done", "failed", "cancelled"):
+            continue
+        landed = _landed_output(root, r.get("output_prefix"))
+        if not landed:
+            continue
+        mt = _output_mtime(root, landed) or now
+        if mt < int(r.get("ts", now)):
+            continue
+        if _implausibly_fast(r, mt):
+            worklog.set_status(org, r["id"], "failed",
+                               note="completed implausibly fast — engine did not sample")
+            r["status"] = "failed"
+        else:
+            worklog.mark_finished(org, r["id"], mt)
+            r["status"], r["finished_at"] = "done", mt
+
+
+_CORRUPT = ("flagged", "deleted")
+
+
+def _asset_status(root: Path | None, rel: str) -> str | None:
+    """The library curation status of an asset path (draft/approved/flagged/…), or
+    None if it isn't in the library."""
+    if root is None:
+        return None
+    for a in _load_library(root).get("assets", []):
+        if a.get("path") == rel:
+            return a.get("status")
+    return None
+
+
+def _clean_base(org: str, root: Path | None, rel: str) -> tuple[str, bool]:
+    """Iteration hygiene, the ONE place the fix base is chosen: if ``rel`` is corrupt
+    (quality-gate ``flagged``, or ``deleted``), fix from the NEAREST clean ancestor in
+    its lineage instead — so a fix never compounds a known-bad version. Returns
+    ``(path_to_fix_from, substituted)``; a clean base is returned unchanged."""
+    if root is None or _asset_status(root, rel) not in _CORRUPT:
+        return rel, False
+    rows = worklog.load(org)
+    for r in rows:
+        r["output"] = _row_output(root, r.get("output_prefix"))
+    ancestors = worklog.build_lineage(rows, rel).get("ancestors") or []
+    for anc in reversed(ancestors):  # nearest parent first, walking back to the root
+        p = anc.get("path")
+        if p and _asset_status(root, p) not in _CORRUPT and _safe_asset(root, p) is not None:
+            return p, True
+    return rel, False
 
 
 def _index_upload(org: str, root: Path, rel: str, *, design, kind, role, node) -> bool:
@@ -1369,15 +1480,9 @@ def add_studio_home_routes(routes: web.RouteTableDef, server) -> None:
         root = _library_root(org)
         now = int(time.time())
         rows = worklog.load(org)
-        # finalize any job whose output has landed (real finish time = file mtime)
-        for r in rows:
-            if r.get("status") in ("done", "failed", "cancelled"):
-                continue
-            landed = _landed_output(root, r.get("output_prefix"))
-            if landed:
-                mt = _output_mtime(root, landed) or now
-                worklog.mark_finished(org, r["id"], mt)
-                r["status"], r["finished_at"] = "done", mt   # mirror in-memory
+        # finalize any job whose output has landed: done at the file mtime, or FAILED
+        # when it landed implausibly fast for its step count (the honesty guard).
+        _finalize_landed(org, root, rows, now)
         active = [r for r in rows if r.get("status") not in ("done", "failed", "cancelled")
                   and now - int(r.get("ts", now)) <= 1800]
         # the oldest job in each lane is the one rendering — stamp its start once
@@ -1427,13 +1532,14 @@ def add_studio_home_routes(routes: web.RouteTableDef, server) -> None:
         org = _org_of(request)
         root = _library_root(org)
         rows = worklog.load(org)
+        # Same terminal-state mechanism as the queue poller: done at the output mtime,
+        # or FAILED when it landed implausibly fast. The view reflects it, never
+        # re-derives "done" from a landed file (which would relabel a guarded fail).
+        _finalize_landed(org, root, rows, int(time.time()))
         out = []
         for r in reversed(rows):
             row = dict(r)
-            landed = _row_output(root, r.get("output_prefix"))
-            row["output"] = landed
-            if landed and r.get("status") not in ("failed", "cancelled"):
-                row["status"] = "done"
+            row["output"] = _row_output(root, r.get("output_prefix"))
             out.append(row)
         q = (request.query.get("q") or "").lower().strip()
         if q:

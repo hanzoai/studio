@@ -27,8 +27,16 @@ def test_fix_graph_keeps_recipe_invariants():
     ks = g["13"]["inputs"]
     assert ks["cfg"] == 4.0 and ks["steps"] == 30            # proven floor, not the weak 3.0
     assert g["12"]["class_type"] == "CFGNorm"
-    assert g["8"]["inputs"]["reference_latents_method"] == "index_timestep_zero"
-    assert g["6"]["inputs"]["image1"] == ["2", 0]            # scaled ref, never raw
+    # The canonical Qwen edit: NO Flux-Kontext reference-method override (that
+    # `index_timestep_zero` graft onto Qwen conditioning was the noise-stipple cause);
+    # the SAME scaled reference feeds conditioning AND the VAEEncode latent at denoise
+    # 1.0 (matched size → no frame-within-frame border).
+    assert all(n["class_type"] != "FluxKontextMultiReferenceLatentMethod" for n in g.values())
+    assert ks["denoise"] == 1.0
+    assert g[ks["latent_image"][0]]["class_type"] == "VAEEncode"
+    assert g["6"]["inputs"]["image1"] == ["2", 0]           # the scaled reference conditions the edit
+    assert g["10"]["inputs"]["pixels"] == ["2", 0]          # the SAME scaled reference sizes the latent
+    assert g["2"]["class_type"] == "FluxKontextImageScale"
     assert "straps thicker" in g["6"]["inputs"]["prompt"]
     assert g["15"]["inputs"]["filename_prefix"] == "fixes/test"
 

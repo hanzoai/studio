@@ -1014,7 +1014,7 @@ async function sendFix(){const t=$('fixtext').value.trim();if(t.length<3){showFi
     r=await fetch('/v1/library/compose',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({paths:[FIXPATH,...paths],instruction:t,uploads,stack})});
   }
   const j=await r.json().catch(()=>({}));
-  if(r.ok){ $('fixdlg').close(); toast(FIXMODE==='amend'?'Amended — re-queued (position reset)':'Fix queued → see Queue & History'); if(typeof runs==='function')runs(); }
+  if(r.ok){ $('fixdlg').close(); toast(j.note || (FIXMODE==='amend'?'Amended — re-queued (position reset)':'Fix queued → see Queue & History')); if(typeof runs==='function')runs(); }
   else showFixErr('Couldn’t '+(FIXMODE==='amend'?'amend':'queue')+': '+(errMsg(j)||('error '+r.status)));   // stay open so the reason is visible
 }
 async function cancelJob(id){
