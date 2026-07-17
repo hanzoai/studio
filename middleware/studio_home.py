@@ -1151,18 +1151,17 @@ def add_studio_home_routes(routes: web.RouteTableDef, server) -> None:
 
     @routes.get("/v1/gpu-status")
     async def gpu_status(request: web.Request):
-        """Does the caller's org have an online GPU to render on? The UI showed
-        'connect a GPU' even with a GPU connected because it checked /v1/engines
-        (the worker-federation) — but `hanzo gpu connect` registers with the FLEET
-        (gpu-jobs), which is exactly what dispatch uses. Report the SAME source of
-        truth as dispatch (_has_online_gpu) so the UI matches what actually works."""
+        """Is a GPU worker online for the caller's org? Advisory only — it drives the
+        ⚠ warning, never a render decision (dispatch always enqueues to gpu-jobs and
+        waits). Reads the fleet with a SERVICE identity so an org whose BYO GPUs are
+        registered under a sibling org still sees them; the org-scoped user-token read
+        alone reported a false 'no GPU' and drove the whole confusion."""
         try:
-            from middleware.gpu_dispatch import _bearer, _has_online_gpu
+            from middleware.gpu_dispatch import _bearer, has_online_gpu_advisory
         except ImportError:
-            from .middleware.gpu_dispatch import _bearer, _has_online_gpu
+            from .middleware.gpu_dispatch import _bearer, has_online_gpu_advisory
         try:
-            tok = _bearer(request)
-            online = bool(tok and _has_online_gpu(tok))
+            online = has_online_gpu_advisory(_bearer(request))
         except Exception:
             online = False
         return web.json_response({"online": online})

@@ -120,6 +120,40 @@ def _has_online_gpu(tok: str) -> bool:
     return bool(_online_gpu_nodes(tok))
 
 
+# Server credentials that read the WHOLE fleet, not just the caller-org's slice like
+# a user token. KMS-sourced (the SAME envs worker/commerce already use); consulted
+# ONLY by the advisory capacity gate below — never by a render decision.
+_SERVICE_TOKEN_ENVS = ("STUDIO_WORKER_TOKEN", "STUDIO_COMMERCE_TOKEN")
+
+
+def _service_token() -> str:
+    """A service bearer for a fleet read, or "" if none is configured."""
+    for env in _SERVICE_TOKEN_ENVS:
+        v = os.environ.get(env, "").strip()
+        if v:
+            return v if v.lower().startswith("bearer ") else f"Bearer {v}"
+    return ""
+
+
+def has_online_gpu_advisory(user_tok: str) -> bool:
+    """Fleet availability for the UI capacity gate ONLY (the ⚠ warning + the
+    /v1/gpu-status badge) — NEVER a render decision. Reads with a SERVICE identity
+    first so every org sees the TRUE worker availability: a BYO box is often
+    registered under a sibling org and is invisible to an org-scoped user-token read,
+    which made a karma session believe no GPU existed. Falls back to the user token
+    when no service credential is set (local dev). Job tenancy is untouched — dispatch
+    still enqueues under the user token."""
+    for tok in (_service_token(), user_tok):
+        if not tok:
+            continue
+        try:
+            if _has_online_gpu(tok):
+                return True
+        except Exception:
+            continue
+    return False
+
+
 def has_local_models() -> bool:
     """True if THIS instance actually has diffusion models to render with. A cloud
     coordinator pod is model-less — every render is dispatched to the org's GPU
@@ -136,16 +170,31 @@ def has_local_models() -> bool:
 
 
 def dispatch_if_worker(request, org_id: str, prompt_id: str, prompt: dict) -> bool:
-    """If the caller's org has an online GPU node in the fleet, enqueue a
-    studio.render job to gpu-jobs and return True. Return False to run in-pod.
-    Never raises — any failure falls back to local."""
+    """Enqueue this render to the shared GPU lane (gpu-jobs) and return True; return
+    False only to run it in-pod.
+
+    A model-less cloud coordinator NEVER renders locally — it ALWAYS enqueues and
+    lets the job WAIT for a worker, even when the org-scoped fleet read shows none.
+    BYO workers can be registered under a sibling org while draining the SHARED
+    gpu-jobs queue, so an org-blind read (e.g. an org whose GPUs live under a peer
+    org) must not bounce the render onto the GPU-less pod — that self-POST is what
+    died with an instant "Prompt outputs failed validation". A queued job that waits
+    for a worker beats an instant fake failure. A box WITH its own models still
+    renders locally when it sees no online worker (local dev / a worker node).
+
+    Never raises — a genuine enqueue failure falls back, and server.py then returns a
+    retryable 503 on a model-less pod rather than a doomed local validation."""
     try:
         tok = _bearer(request)
-        online = _online_gpu_nodes(tok) if tok else []
-        if not online:
+        if not tok:
             return False
-        # Which node runs it: the single online GPU is definitive; with several the
-        # claimer is decided at pick-up time, so record the ambiguous "gpu".
+        online = _online_gpu_nodes(tok)
+        # No visible worker AND this box can render itself → render locally. No
+        # visible worker on a MODEL-LESS pod → still enqueue and wait (never local).
+        if not online and has_local_models():
+            return False
+        # Which node runs it: a single visible GPU is definitive; with several — or an
+        # org-blind read that saw none — the claimer is decided at pick-up: "gpu".
         node = _node_label(online[0]) if len(online) == 1 else "gpu"
         body = json.dumps({
             "activityId": prompt_id,
