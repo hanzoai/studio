@@ -287,8 +287,9 @@ body.immersive #stage{display:block}
     <button data-tab="templates" onclick="tab('templates')">Templates</button>
     <button data-tab="pipelines" onclick="tab('pipelines')">Workflows</button>
     <button data-tab="runs" onclick="tab('runs')">Queue &amp; History</button>
+    <button data-tab="deleted" onclick="tab('deleted')" title="Deleted content — recoverable">🗑 Deleted</button>
     <span class="sp"></span>
-    <button class="btn" id="selbtn" onclick="toggleSel()" style="padding:6px 12px">Select</button>
+    <button class="btn" id="selbtn" onclick="toggleSel()" style="padding:6px 12px" title="Select many, then delete/recover them together">Select</button>
     <input class="search" id="q" placeholder="Search…" oninput="render()">
   </div>
   <section id="assets">
@@ -325,14 +326,15 @@ body.immersive #stage{display:block}
     <div class="grid" id="svgrid"></div>
   </section>
   <div id="bulkbar"><span id="bulkn">0 selected</span>
-    <button class="mini hot" onclick="stackSel()" title="Group the selected images into a new Stack">🗂 Stack</button>
-    <button class="mini" onclick="moveSelTo(event)" title="Move the selected images into a Stack">Move to Stack…</button>
-    <button class="mini" onclick="openCompose()" title="Combine selected assets into a new one">✦ Compose</button>
-    <button class="mini" onclick="downloadSel()">Download</button>
-    <button class="mini" onclick="tagSel()">Add tags</button>
-    <button class="mini" onclick="bulk('approved')">Approve</button>
-    <button class="mini" onclick="bulk('published')">Publish</button>
-    <button class="mini" onclick="bulk('deleted')">Delete</button>
+    <button class="mini hot" id="bulkrecover" onclick="bulk('draft')" style="display:none">↩ Recover</button>
+    <button class="mini hot" id="bulkstack" onclick="stackSel()" title="Group the selected images into a new Stack">🗂 Stack</button>
+    <button class="mini" id="bulkmove" onclick="moveSelTo(event)" title="Move the selected images into a Stack">Move to Stack…</button>
+    <button class="mini" id="bulkcompose" onclick="openCompose()" title="Combine selected assets into a new one">✦ Compose</button>
+    <button class="mini" id="bulkdownload" onclick="downloadSel()">Download</button>
+    <button class="mini" id="bulktags" onclick="tagSel()">Add tags</button>
+    <button class="mini" id="bulkapprove" onclick="bulk('approved')">Approve</button>
+    <button class="mini" id="bulkpublish" onclick="bulk('published')">Publish</button>
+    <button class="mini" id="bulkdelete" onclick="bulk('deleted')">🗑 Delete selected</button>
     <button class="mini" onclick="clearSel()">Cancel</button>
   </div>
   <section id="templates" hidden>
@@ -458,8 +460,11 @@ function tab(name){document.querySelectorAll('.tabs button').forEach(b=>b.classL
   // Leaving for another tab closes an open Stack detail (it lives over Assets).
   if(CURSTACK){CURSTACK=null;if(SELMODE){SELMODE=false;SEL.clear();updateBulk();}}
   $('stackview').hidden=true;
-  for(const s of ['assets','templates','pipelines','runs'])$(s).hidden=s!==name;
-  if(name==='assets')render();
+  const sec=name==='deleted'?'assets':name;   // Deleted reuses the assets grid, filtered to trash
+  for(const s of ['assets','templates','pipelines','runs'])$(s).hidden=s!==sec;
+  if(name==='deleted'){FILTER='deleted';}
+  else if(name==='assets'&&(FILTER==='deleted'||FILTER==='flagged')){FILTER='all';}
+  if(sec==='assets'){paintChips();render();updateBulk();}
   if(name==='runs')runs(); if(name==='pipelines')pipes(); if(name==='templates')loadOrgTemplates();}
 // ── Org templates: saved graphs, Open in Editor + Render (the ONE dispatch path) ──
 async function loadOrgTemplates(){
@@ -496,14 +501,16 @@ async function load(){
   const grps=[...new Set(TEMPLATES.map(t=>t.grp))];
   $('tgall').innerHTML=grps.map(g=>`<div style="grid-column:1/-1;color:var(--dim);font-size:.8rem;margin:8px 0 2px">${g}</div>`+
     TEMPLATES.filter(t=>t.grp===g).map(tcard).join('')).join('');
+  paintChips(); render();
+}
+function paintChips(){
   const groups=[...new Set(DATA.assets.map(a=>a.design).filter(Boolean))].sort();
   const delN=DATA.assets.filter(a=>a.status==='deleted').length;
   const flagN=DATA.assets.filter(a=>a.status==='flagged').length;
   const chips=['all','marketing',...groups];
-  $('filters').innerHTML=chips.map(g=>`<span class="chip ${g===FILTER?'on':''}" onclick="FILTER='${g}';render()">${g}</span>`).join('')
-    +`<span class="chip ${FILTER==='flagged'?'on':''}" onclick="FILTER='flagged';render()" style="margin-left:auto" title="Renders the quality gate flagged — review and restore">⚑ Flagged${flagN?' ('+flagN+')':''}</span>`
-    +`<span class="chip ${FILTER==='deleted'?'on':''}" onclick="FILTER='deleted';render()">🗑 Deleted${delN?' ('+delN+')':''}</span>`;
-  render();
+  $('filters').innerHTML=chips.map(g=>`<span class="chip ${g===FILTER?'on':''}" onclick="FILTER='${g}';paintChips();render()">${g}</span>`).join('')
+    +`<span class="chip ${FILTER==='flagged'?'on':''}" onclick="FILTER='flagged';paintChips();render()" style="margin-left:auto" title="Renders the quality gate flagged — review and restore">⚑ Flagged${flagN?' ('+flagN+')':''}</span>`;
+  const dt=document.querySelector('[data-tab="deleted"]'); if(dt)dt.textContent='🗑 Deleted'+(delN?' ('+delN+')':'');
 }
 let SELMODE=false; const SEL=new Set();
 // Selection is shared by the gallery and an open Stack — only one view is active
@@ -511,9 +518,12 @@ let SELMODE=false; const SEL=new Set();
 function drawSel(){ CURSTACK?svRender():render(); }
 function toggleSel(){SELMODE=!SELMODE;$('selbtn').classList.toggle('brand',SELMODE);$('svselbtn')&&$('svselbtn').classList.toggle('brand',SELMODE);if(!SELMODE)SEL.clear();updateBulk();drawSel();}
 function clearSel(){SEL.clear();SELMODE=false;$('selbtn').classList.remove('brand');$('svselbtn')&&$('svselbtn').classList.remove('brand');updateBulk();drawSel();}
-function updateBulk(){const on=SELMODE&&SEL.size>0;
+function updateBulk(){const on=SELMODE&&SEL.size>0, del=FILTER==='deleted'&&!CURSTACK;
   $('bulkbar').classList.toggle('on',on&&!CURSTACK);$('bulkn').textContent=SEL.size+' selected';
-  $('svbulk').hidden=!(on&&CURSTACK);$('svbulkn').textContent=SEL.size+' selected';}
+  $('svbulk').hidden=!(on&&CURSTACK);$('svbulkn')&&($('svbulkn').textContent=SEL.size+' selected');
+  $('bulkrecover').style.display=del?'':'none';                                  // trash: bulk-recover only
+  ['bulkstack','bulkmove','bulkcompose','bulkdownload','bulktags','bulkapprove','bulkpublish','bulkdelete'].forEach(id=>{const el=$(id);if(el)el.style.display=del?'none':'';});
+}
 function pick(ev,path){ev.stopPropagation();if(SEL.has(path))SEL.delete(path);else SEL.add(path);updateBulk();drawSel();}
 function render(){
   const q=($('q').value||'').toLowerCase();
@@ -570,12 +580,29 @@ function render(){
 }
 async function bulk(status){
   if(!SEL.size)return;
-  if(status==='deleted'&&!confirm('Move '+SEL.size+' asset(s) to Deleted? (recoverable)'))return;
   const paths=[...SEL];
+  pushUndo(paths.map(p=>({path:p,prev:(DATA.assets.find(x=>x.path===p)||{}).status})));
   for(const p of paths){await fetch('/v1/library/status',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({path:p,status})});
     const a=DATA.assets.find(x=>x.path===p);if(a)a.status=status;}
-  toast(paths.length+' → '+status); clearSel();
+  toast(paths.length+(status==='deleted'?' deleted — ⌘Z to undo':status==='draft'?' recovered':' → '+status)); clearSel(); paintChips();
 }
+// ── Undo: soft-deletes (and any status change) are reversible. Each change stacks
+// the prior state; ⌘Z / Ctrl+Z pops it and writes the status back — no dialogs. ──
+const UNDO=[];
+function pushUndo(items){items=(items||[]).filter(it=>it&&it.path);if(items.length){UNDO.push(items);if(UNDO.length>100)UNDO.shift();}}
+async function undoLast(){
+  const e=UNDO.pop(); if(!e){toast('Nothing to undo');return;}
+  await Promise.all(e.map(it=>fetch('/v1/library/status',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({path:it.path,status:it.prev})})));
+  e.forEach(it=>{const a=DATA.assets.find(x=>x.path===it.path);if(a)a.status=it.prev;});
+  render(); paintChips();
+  toast('Restored '+e.length+(e.length>1?' items':' item')+' — ⌘Z');
+}
+document.addEventListener('keydown',ev=>{
+  if((ev.metaKey||ev.ctrlKey)&&!ev.shiftKey&&(ev.key==='z'||ev.key==='Z')){
+    const t=ev.target||{}; if(/^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName||'')||t.isContentEditable)return;
+    ev.preventDefault(); undoLast();
+  }
+});
 async function bulkFork(){ if(!SEL.size)return; toast('Fork/redo '+SEL.size+' — re-running each with a fresh seed');
   for(const p of [...SEL]){const rr=await fetch('/v1/library/rerun',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({path:p})});
     if(!rr.ok&&await healStale(await rr.json().catch(()=>({}))))return;}
@@ -869,14 +896,14 @@ async function saveTemplate(){const nm=$('tmplname').value.trim();if(!nm){toast(
   $('tmpldlg').close();toast(r.ok?('★ Saved "'+nm+'" — see Templates'):('Failed: '+(errMsg(j)||('error '+r.status))));
   if(r.ok&&!$('templates').hidden)loadOrgTemplates();
 }
-async function setSt(i,status){const a=DATA.assets[i];const r=await fetch('/v1/library/status',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({path:a.path,status})});if(r.ok){a.status=status;render();toast(`${a.path.split('/').pop()} → ${status}`);}else toast('Failed');}
+async function setSt(i,status){const a=DATA.assets[i];const prev=a.status;const r=await fetch('/v1/library/status',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({path:a.path,status})});if(r.ok){pushUndo([{path:a.path,prev}]);a.status=status;render();paintChips();toast(`${a.path.split('/').pop()} → ${status} — ⌘Z`);}else toast('Failed');}
 // Optimistic trash: mark deleted locally + re-render immediately (feels instant),
 // then persist. On failure, revert. This is the always-visible 🗑 on each card.
 async function quickDel(path){
   const a=DATA.assets.find(x=>x.path===path); if(!a)return;
-  const prev=a.status; a.status='deleted'; render(); toast('Moved to Deleted');
+  const prev=a.status; pushUndo([{path,prev}]); a.status='deleted'; render(); paintChips(); toast('Moved to Deleted — ⌘Z to undo');
   try{const r=await fetch('/v1/library/status',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({path,status:'deleted'})});
-    if(!r.ok)throw 0;}catch(_){a.status=prev;render();toast('Delete failed — restored');}
+    if(!r.ok)throw 0;}catch(_){a.status=prev;UNDO.pop();render();paintChips();toast('Delete failed — restored');}
 }
 async function rerun(i){const a=DATA.assets[i];toast('Queueing re-run…');const r=await fetch('/v1/library/rerun',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({path:a.path})});const j=await r.json();toast(r.ok?`Re-run queued — see Runs`:'Failed');}
 // ── Fix surface: base image + up to 4 references (history picks + drag/drop

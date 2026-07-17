@@ -1037,7 +1037,8 @@ def add_studio_home_routes(routes: web.RouteTableDef, server) -> None:
             if p.suffix.lower() == ".png":
                 row["prov"] = _provenance(p)
             assets.append(row)
-        return web.json_response({"org": org, "assets": assets, "workflows": _workflows(org)})
+        return web.json_response({"org": org, "assets": assets, "workflows": _workflows(org)},
+                                 headers={"Cache-Control": "no-store"})   # mutable: a delete must never be masked by a cached copy
 
     @routes.get("/v1/library/file")
     async def get_asset_file(request: web.Request):
