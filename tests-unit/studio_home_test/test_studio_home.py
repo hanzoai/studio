@@ -657,3 +657,97 @@ async def test_worklog_search_matches_paths_and_refs_not_just_prompt(tmp_path, m
     assert await ids("brighten") == ["r2"]      # prompt search still works
     assert await ids("nomatch") == []
     await client.close()
+
+
+# ── Queue/History surface: favorites, stacks, ratings-with-notes, flow templates ──
+@pytest.mark.asyncio
+async def test_favorites_toggle_and_tenant_isolation(tmp_path, monkeypatch):
+    _orgaware(tmp_path, monkeypatch)
+    client = await _client(_FakeServer())
+    # empty to start
+    assert (await (await client.get("/v1/favorites", headers={"X-Org": "acme"})).json()) == {"org": "acme", "favorites": {}}
+    # favorite a run (key = run id) — echoes back, stamps a ts
+    r = await client.post("/v1/favorites", json={"key": "run-1", "favorite": True}, headers={"X-Org": "acme"})
+    assert r.status == 200 and (await r.json()) == {"ok": True, "key": "run-1", "favorite": True}
+    favs = (await (await client.get("/v1/favorites", headers={"X-Org": "acme"})).json())["favorites"]
+    assert "run-1" in favs and isinstance(favs["run-1"]["ts"], int)
+    # favorite defaults to True when omitted
+    await client.post("/v1/favorites", json={"key": "run-2"}, headers={"X-Org": "acme"})
+    assert set((await (await client.get("/v1/favorites", headers={"X-Org": "acme"})).json())["favorites"]) == {"run-1", "run-2"}
+    # un-favorite removes it (the heart toggles both ways)
+    await client.post("/v1/favorites", json={"key": "run-1", "favorite": False}, headers={"X-Org": "acme"})
+    assert list((await (await client.get("/v1/favorites", headers={"X-Org": "acme"})).json())["favorites"]) == ["run-2"]
+    # validation: empty key -> 400
+    assert (await client.post("/v1/favorites", json={"key": ""}, headers={"X-Org": "acme"})).status == 400
+    # tenant isolation: globex sees none of acme's favorites
+    assert (await (await client.get("/v1/favorites", headers={"X-Org": "globex"})).json())["favorites"] == {}
+    await client.close()
+
+
+@pytest.mark.asyncio
+async def test_stacks_save_normalizes_and_tenant_isolation(tmp_path, monkeypatch):
+    _orgaware(tmp_path, monkeypatch)
+    client = await _client(_FakeServer())
+    assert (await (await client.get("/v1/stacks", headers={"X-Org": "acme"})).json()) == {"org": "acme", "stacks": []}
+    payload = {"stacks": [
+        {"id": "s1", "name": "Karma", "items": ["run-a", "run-b", "run-b", "run-a"], "ts": 100},  # items de-duped
+        {"id": "s2", "items": ["only-one"]},      # < 2 members -> dropped (not a folder)
+        {"id": "", "items": ["x", "y"]},          # no id -> dropped
+        {"name": "bad"},                          # no id -> dropped
+    ]}
+    stacks = (await (await client.post("/v1/stacks", json=payload, headers={"X-Org": "acme"})).json())["stacks"]
+    assert stacks == [{"id": "s1", "name": "Karma", "items": ["run-a", "run-b"], "ts": 100}]
+    # persisted for the org (whole-set replace is the ONE write)
+    assert (await (await client.get("/v1/stacks", headers={"X-Org": "acme"})).json())["stacks"] == stacks
+    # name defaults when omitted
+    r2 = await client.post("/v1/stacks", json={"stacks": [{"id": "s3", "items": ["run-c", "run-d"]}]}, headers={"X-Org": "acme"})
+    assert (await r2.json())["stacks"][0]["name"] == "Stack"
+    # tenant isolation: globex has its own (empty) set, untouched by acme's writes
+    assert (await (await client.get("/v1/stacks", headers={"X-Org": "globex"})).json())["stacks"] == []
+    await client.close()
+
+
+@pytest.mark.asyncio
+async def test_rate_stars_notes_path_and_tenant_isolation(tmp_path, monkeypatch):
+    _orgaware(tmp_path, monkeypatch)
+    # rate resolves via _library_root -> the org needs a library.json
+    (Path(sh.folder_paths.get_org_output_directory("acme")) / "library.json").write_text('{"assets":[]}')
+    (Path(sh.folder_paths.get_org_output_directory("globex")) / "library.json").write_text('{"assets":[]}')
+    client = await _client(_FakeServer())
+    # 0-5 stars + notes + the run's output path, keyed by run id (the flywheel row)
+    r = await client.post("/v1/library/rate", json={
+        "key": "run-1", "stars": 4, "notes": "hands look off", "path": "fixes/x_00001_.png"},
+        headers={"X-Org": "acme"})
+    assert r.status == 200
+    entry = (await r.json())["entry"]
+    assert entry["stars"] == 4 and entry["notes"] == "hands look off" and entry["path"] == "fixes/x_00001_.png"
+    # visible on reopen; a note-only update keeps the stars (partial update)
+    await client.post("/v1/library/rate", json={"key": "run-1", "notes": "better now"}, headers={"X-Org": "acme"})
+    ratings = await (await client.get("/v1/library/ratings", headers={"X-Org": "acme"})).json()
+    assert ratings["run-1"]["stars"] == 4 and ratings["run-1"]["notes"] == "better now"
+    # a 0-star rating is valid (0-5 inclusive)
+    assert (await client.post("/v1/library/rate", json={"key": "run-1", "stars": 0}, headers={"X-Org": "acme"})).status == 200
+    # validation: out of range -> 400; missing key -> 400
+    assert (await client.post("/v1/library/rate", json={"key": "r", "stars": 6}, headers={"X-Org": "acme"})).status == 400
+    assert (await client.post("/v1/library/rate", json={"key": "", "stars": 3}, headers={"X-Org": "acme"})).status == 400
+    # tenant isolation: globex never sees acme's rating
+    assert (await (await client.get("/v1/library/ratings", headers={"X-Org": "globex"})).json()) == {}
+    await client.close()
+
+
+@pytest.mark.asyncio
+async def test_template_accepts_flow_payload_not_just_graph(tmp_path, monkeypatch):
+    _orgaware(tmp_path, monkeypatch)
+    client = await _client(_FakeServer())
+    # a flow template (no node graph) — what "favorite -> turn into a template" saves
+    flow = {"kind": "fix", "prompt": "make the straps thicker", "refs": ["a.png"], "parents": ["a.png"]}
+    r = await client.post("/v1/templates", json={"name": "Thicken Straps", "flow": flow}, headers={"X-Org": "acme"})
+    assert r.status == 200 and (await r.json())["slug"] == "thicken-straps"
+    # lists (not renderable — no runnable graph) and round-trips the captured flow
+    lst = (await (await client.get("/v1/templates", headers={"X-Org": "acme"})).json())["templates"]
+    assert lst[0]["name"] == "Thicken Straps" and lst[0]["renderable"] is False
+    got = await (await client.get("/v1/templates/thicken-straps", headers={"X-Org": "acme"})).json()
+    assert got["flow"] == flow and "graph" not in got
+    # neither graph nor flow -> 400 (a template must capture something)
+    assert (await client.post("/v1/templates", json={"name": "empty"}, headers={"X-Org": "acme"})).status == 400
+    await client.close()

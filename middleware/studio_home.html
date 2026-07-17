@@ -432,7 +432,8 @@ async function bulk(status){
   toast(paths.length+' → '+status); clearSel();
 }
 async function bulkFork(){ if(!SEL.size)return; toast('Fork/redo '+SEL.size+' — re-running each with a fresh seed');
-  for(const p of [...SEL]){await fetch('/v1/library/rerun',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({path:p})});}
+  for(const p of [...SEL]){const rr=await fetch('/v1/library/rerun',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({path:p})});
+    if(!rr.ok&&await healStale(await rr.json().catch(()=>({}))))return;}
   clearSel(); }
 // ── Shared image-upload lane (ONE implementation) ────────────────────────────
 // Every "add a photo" surface (composer "+", Fix dialog, drag/drop, paste) funnels
@@ -440,6 +441,18 @@ async function bulkFork(){ if(!SEL.size)return; toast('Fork/redo '+SEL.size+' �
 // dir (multi-tenant) and returns its name. Errors are RETURNED, never swallowed, so
 // every caller can SHOW them (no-silent-swallow rule).
 function errMsg(j){ if(!j)return ''; const e=j.error; return (e&&(e.message||e))||j.message||''; }
+// One self-heal for a stale-asset dispatch (fix / compose / rerun): the item the user
+// clicked was deduped/renamed/cleaned since the page loaded, so /prompt 400s "unknown
+// asset: <path>". Re-fetch the library, drop the stale selection, and tell them to pick
+// again — never strand them on a raw error. Returns true when it handled the error.
+async function healStale(j){
+  if(!/unknown asset/i.test(errMsg(j)))return false;
+  document.querySelectorAll('dialog[open]').forEach(d=>{try{d.close();}catch(_){}});
+  clearSel(); clearTray();
+  await load();
+  toast('That item changed — library refreshed, pick it again.');
+  return true;
+}
 async function uploadImage(file){
   if(!file||!file.type||!file.type.startsWith('image/'))return {error:'not an image file'};
   const fd=new FormData(); fd.append('image',file,file.name||'upload.png');
@@ -490,7 +503,7 @@ async function genFromTray(){
   }
   const j=await r.json().catch(()=>({}));
   if(r.ok){ toast('Queued → see Queue & History'); $('refprompt').value=''; clearTray(); }
-  else toast('Failed: '+(errMsg(j)||('error '+r.status)));
+  else if(!(await healStale(j))) toast('Failed: '+(errMsg(j)||('error '+r.status)));
 }
 // ── GPU status: fix/compose need an ONLINE GPU worker (Qwen models live there) ──
 let GPU_ONLINE=null, GPU_TS=0;
@@ -518,11 +531,11 @@ async function sendCompose(){
   const r=await fetch('/v1/library/compose',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({paths,instruction:t})});
   const j=await r.json().catch(()=>({}));
   if(r.ok){ $('compdlg').close(); toast(`Compose queued (${j.refs} refs) → see Queue & History`); clearSel(); }
-  else{ $('gpuwarn2').style.display='block'; $('gpuwarn2').textContent='Couldn’t queue: '+(errMsg(j)||('error '+r.status)); }
+  else if(!(await healStale(j))){ $('gpuwarn2').style.display='block'; $('gpuwarn2').textContent='Couldn’t queue: '+(errMsg(j)||('error '+r.status)); }
 }
 function pipes(){ $('wfgrid').innerHTML=(DATA.workflows||[]).map(w=>`<div class="card"><div class="doc">⚙︎ ${w}</div><div class="meta"><div class="row"><a class="mini" href="/?advanced=1&workflow=${encodeURIComponent(w)}">Edit</a><a class="mini hot" href="/?advanced=1&workflow=${encodeURIComponent(w)}&run=1">Run</a></div></div></div>`).join('')||'<div class="empty">No saved workflows for this org yet.</div>'; }
 // ── YouTube-style Queue & History ───────────────────────────────────────────
-let RATINGS={};
+let RATINGS={};let FAVS={};
 const vURL=im=>`/view?filename=${encodeURIComponent(im.filename)}&subfolder=${encodeURIComponent(im.subfolder||'')}&type=${im.type||'output'}`;
 const promptTitle=v=>{ // pull the SaveImage prefix / positive text from the run's graph
   const g=(v.prompt&&v.prompt[2])||{};
@@ -636,6 +649,7 @@ function fixCtx(){ if(!CTX)return; const base=CTX.output||(CTX.parents&&CTX.pare
 async function runs(){
   refreshQueue(); loadNodes();
   RATINGS=await (await fetch('/v1/library/ratings')).json().catch(()=>({}));
+  FAVS=((await (await fetch('/v1/favorites')).json().catch(()=>({}))).favorites)||{};
   // live queue
   let q={queue_running:[],queue_pending:[]}; try{q=await (await fetch('/queue')).json();}catch(_){}
   const qr=q.queue_running||[], qp=q.queue_pending||[];
@@ -680,7 +694,7 @@ async function runs(){
         <span class="t">${r.title}</span>
         <div class="row" style="justify-content:space-between">
           <span class="stars">${stars}</span>
-          <span class="fav ${rt.favorite?'on':''}" onclick="toggleFav('${r.id}','${r.title}')" title="Favorite → save as template">★fav</span>
+          <span class="fav ${FAVS[r.id]?'on':''}" onclick="toggleFav('${r.id}','${r.title}')" title="Favorite → save as template">★fav</span>
         </div>
         <textarea class="notebox" placeholder="Notes for the AI to improve next time…" onblur="rateNote('${r.id}',this.value)">${(rt.notes||'').replace(/</g,'&lt;')}</textarea>
       </div></div>`;}).join('')||'<div class="empty">No runs yet.</div>';
@@ -689,9 +703,9 @@ async function clearQueue(){if(!confirm('Clear all queued jobs?'))return;await f
 async function rate(key,stars){await fetch('/v1/library/rate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({key,stars})});RATINGS[key]={...(RATINGS[key]||{}),stars};runs();}
 async function rateNote(key,notes){await fetch('/v1/library/rate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({key,notes})});toast('Note saved — the AI will use it next time');}
 let FAVKEY=null,FAVTITLE=null;
-async function toggleFav(key,title){const cur=RATINGS[key]||{};const nv=!cur.favorite;
-  await fetch('/v1/library/rate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({key,favorite:nv})});
-  RATINGS[key]={...cur,favorite:nv};
+async function toggleFav(key,title){const nv=!FAVS[key];
+  await fetch('/v1/favorites',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({key,favorite:nv})});
+  if(nv)FAVS[key]={ts:Math.floor(Date.now()/1000)};else delete FAVS[key];
   if(nv){FAVKEY=key;FAVTITLE=title;$('tmplname').value=title;$('tmpldesc').value='';
     $('tmplsteps').innerHTML='This favorited run has an embedded workflow. Saving turns it into a reusable KIND:<br>1 · name it &amp; describe what it makes<br>2 · it appears under Templates for your org<br>3 · run it anytime with new inputs';
     $('tmpldlg').showModal();}

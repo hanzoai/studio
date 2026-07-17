@@ -736,6 +736,51 @@ def _index_upload(org: str, root: Path, rel: str, *, design, kind, role, node) -
     return created
 
 
+def _org_store(org: str, name: str) -> Path:
+    """A per-org metadata file beside worklog.json/library.json (favorites, stacks).
+    The same tenant-scoped output tree every per-org file uses; created on demand so
+    the store works before the org has a library.json."""
+    d = Path(folder_paths.get_org_output_directory(org))
+    d.mkdir(parents=True, exist_ok=True)
+    return d / name
+
+
+def _load_store(p: Path, default):
+    try:
+        return json.loads(p.read_text())
+    except Exception:
+        return default
+
+
+def _save_store(p: Path, data) -> None:
+    """Atomic tmp+replace, the ONE write pattern for per-org metadata."""
+    tmp = p.with_name(p.name + ".tmp")
+    tmp.write_text(json.dumps(data))
+    tmp.replace(p)
+
+
+def _norm_stacks(raw) -> list:
+    """Validate a client stack set: each stack is ``{id, name, items[], ts}`` where
+    items are run ids / library paths (strings), de-duped and capped. A stack needs
+    at least TWO members — a folder of one isn't a folder (it dissolves back to a
+    card). The whole set is bounded so one org can't write an unbounded file."""
+    out = []
+    for s in (raw if isinstance(raw, list) else [])[:200]:
+        if not isinstance(s, dict):
+            continue
+        sid = str(s.get("id") or "").strip()[:64]
+        if not sid:
+            continue
+        seen: set = set()
+        items = [i for i in (str(x)[:512] for x in (s.get("items") or []) if isinstance(x, str))
+                 if i and not (i in seen or seen.add(i))][:200]
+        if len(items) < 2:
+            continue
+        out.append({"id": sid, "name": (str(s.get("name") or "").strip() or "Stack")[:80],
+                    "items": items, "ts": int(s.get("ts") or time.time())})
+    return out
+
+
 def add_studio_home_routes(routes: web.RouteTableDef, server) -> None:
 
     @routes.get("/studio")
@@ -797,12 +842,22 @@ def add_studio_home_routes(routes: web.RouteTableDef, server) -> None:
             return web.json_response({"error": "invalid JSON"}, status=400)
         name = (body.get("name") or "").strip()
         graph = body.get("graph")
+        # A flow template captures a reusable generation FLOW (kind + instruction
+        # pattern + references) rather than a node graph — what "favorite → turn into
+        # a template" saves for a chat/run. Either a graph or a flow makes a template.
+        flow = body.get("flow")
         slug = _template_slug(name)
         if not slug:
             return web.json_response({"error": "name required"}, status=400)
-        if not isinstance(graph, dict) or not graph:
-            return web.json_response({"error": "graph required"}, status=400)
-        rec = {"name": name, "slug": slug, "graph": graph, "ts": int(time.time())}
+        has_graph = isinstance(graph, dict) and bool(graph)
+        has_flow = isinstance(flow, dict) and bool(flow)
+        if not has_graph and not has_flow:
+            return web.json_response({"error": "graph or flow required"}, status=400)
+        rec = {"name": name, "slug": slug, "ts": int(time.time())}
+        if has_graph:
+            rec["graph"] = graph
+        if has_flow:
+            rec["flow"] = flow
         d = _templates_root(_org_of(request))
         tmp = d / (slug + ".json.tmp")
         tmp.write_text(json.dumps(rec))
@@ -1331,11 +1386,66 @@ def add_studio_home_routes(routes: web.RouteTableDef, server) -> None:
             entry["stars"] = stars
         if "notes" in body:
             entry["notes"] = str(body.get("notes") or "")[:2000]
-        if body.get("favorite") is not None:
-            entry["favorite"] = bool(body.get("favorite"))
+        if "path" in body:
+            # The run's landed output, stored beside the rating so the flywheel row
+            # carries {path, stars, note, ts} keyed by run id — the AI can load the
+            # image it's being told to do differently next time.
+            entry["path"] = str(body.get("path") or "")[:512]
         entry["updatedAt"] = int(time.time())
         data[key] = entry
         tmp = root / "ratings.json.tmp"
         tmp.write_text(json.dumps(data, indent=1))
         tmp.replace(rf)
         return web.json_response({"ok": True, "key": key, "entry": entry})
+
+    # ── Favorites: the heart toggle. A per-org set of saved runs/flows, keyed by run
+    # id (or output path) exactly like ratings — but a SEPARATE concern: a favorite is
+    # the user's bookmark (→ "turn this into a template"), a rating is quality feedback
+    # for the AI. One store each; a run can be either, both, or neither. ─────────────
+    @routes.get("/v1/favorites")
+    async def get_favorites(request: web.Request):
+        org = _org_of(request)
+        favs = _load_store(_org_store(org, "favorites.json"), {})
+        return web.json_response({"org": org, "favorites": favs if isinstance(favs, dict) else {}})
+
+    @routes.post("/v1/favorites")
+    async def set_favorite(request: web.Request):
+        org = _org_of(request)
+        try:
+            body = await request.json()
+        except Exception:
+            return web.json_response({"error": "invalid JSON"}, status=400)
+        key = (body.get("key") or "").strip()[:512]
+        if not key:
+            return web.json_response({"error": "key required"}, status=400)
+        fav = bool(body.get("favorite", True))
+        p = _org_store(org, "favorites.json")
+        data = _load_store(p, {})
+        if not isinstance(data, dict):
+            data = {}
+        if fav:
+            data[key] = {"ts": int(time.time())}
+        else:
+            data.pop(key, None)
+        _save_store(p, data)
+        return web.json_response({"ok": True, "key": key, "favorite": fav})
+
+    # ── Stacks: iOS-folder groupings of runs (drag-hold). The client owns the
+    # arrangement and POSTs the whole normalized set; the server bounds + validates
+    # it and drops empty stacks. Per-org file, so a stack is inherently tenant-owned.
+    @routes.get("/v1/stacks")
+    async def get_stacks(request: web.Request):
+        org = _org_of(request)
+        stacks = _load_store(_org_store(org, "stacks.json"), [])
+        return web.json_response({"org": org, "stacks": stacks if isinstance(stacks, list) else []})
+
+    @routes.post("/v1/stacks")
+    async def save_stacks(request: web.Request):
+        org = _org_of(request)
+        try:
+            body = await request.json()
+        except Exception:
+            return web.json_response({"error": "invalid JSON"}, status=400)
+        stacks = _norm_stacks(body.get("stacks"))
+        _save_store(_org_store(org, "stacks.json"), stacks)
+        return web.json_response({"org": org, "stacks": stacks})

@@ -23,7 +23,8 @@ test:
         tests-unit/folder_paths_test \
         tests-unit/middleware_test \
         tests-unit/app_test \
-        tests-unit/prompt_server_test
+        tests-unit/prompt_server_test \
+        tests-unit/studio_home_test
 
 # Deploy: roll the freshly-built image onto the studio Service CR.
 deploy:
