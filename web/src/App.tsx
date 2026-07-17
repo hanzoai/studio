@@ -5,13 +5,14 @@ import {
 } from './api'
 
 // Studio-chat: the specialized chat surface. You say what to create; the cloud
-// /v1/chat "create" capability drives studio's render tools (fix/compose) and the
+// /v1/agent "create" preset drives studio's render tools (fix/compose) and the
 // outputs land in the library strip. Increment 1 uses a minimal own-UI; the next
 // increment swaps the transcript/composer for @hanzo/chat's <Chat> on @hanzo/gui.
 
 export function App() {
   const [session, setSession] = useState<Session>({})
   const [messages, setMessages] = useState<ChatMessage[]>([])
+  const [conversationId, setConversationId] = useState<string>()
   const [input, setInput] = useState('')
   const [busy, setBusy] = useState(false)
   const [assets, setAssets] = useState<Asset[]>([])
@@ -44,7 +45,8 @@ export function App() {
     const next = [...messages, { role: 'user' as const, content: text }]
     setMessages(next); setInput(''); setBusy(true)
     try {
-      const r = await chat(next)
+      const r = await chat(next, conversationId)
+      setConversationId(r.conversationId)
       const note = r.actions.length
         ? `\n\n${r.actions.map(a => a.error ? `⚠︎ ${a.name}: ${a.error}` : `▸ ${a.name} dispatched`).join('\n')}`
         : ''
