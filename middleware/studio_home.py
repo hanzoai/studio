@@ -1199,7 +1199,11 @@ def add_studio_home_routes(routes: web.RouteTableDef, server) -> None:
             out.append(row)
         q = (request.query.get("q") or "").lower().strip()
         if q:
-            out = [r for r in out if q in (r.get("prompt", "") or "").lower() or q in (r.get("kind", "") or "")]
+            # search prompt + kind + the render's paths (output_prefix/output) + refs, so
+            # an ingested render with an empty prompt is still findable by its filename.
+            out = [r for r in out if q in " ".join(str(x) for x in
+                   [r.get("prompt", ""), r.get("kind", ""), r.get("output_prefix", ""),
+                    r.get("output", ""), *(r.get("refs") or [])]).lower()]
         return web.json_response({"org": org, "items": out[:200]})
 
     @routes.get("/v1/worklog/lineage")

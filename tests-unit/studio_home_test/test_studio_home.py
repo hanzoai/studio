@@ -566,3 +566,25 @@ async def test_library_upload_indexes_into_assets_and_worklog(tmp_path, monkeypa
     wl3 = await (await client.get("/v1/worklog", headers={"X-Org": "acme"})).json()
     assert sum(1 for x in wl3["items"] if x["output_prefix"] == "renders/shot.png") == 1
     await client.close()
+
+
+@pytest.mark.asyncio
+async def test_worklog_search_matches_paths_and_refs_not_just_prompt(tmp_path, monkeypatch):
+    _orgaware(tmp_path, monkeypatch)
+    (Path(sh.folder_paths.get_org_output_directory("acme")) / "library.json").write_text('{"assets":[]}')
+    # an ingested render: empty prompt, findable only by its filename / ref
+    sh.worklog.record("acme", kind="render", prompt="", refs=["srcphoto.png"], uploads=[],
+                      parents=[], output_prefix="renders/model_shot.png", pid="r1", status="done")
+    sh.worklog.record("acme", kind="fix", prompt="brighten the sky", refs=[], uploads=[],
+                      parents=[], output_prefix="fixes/x", pid="r2")
+    client = await _client(_FakeServer())
+
+    async def ids(q):
+        r = await client.get("/v1/worklog?q=" + q, headers={"X-Org": "acme"})
+        return [it["id"] for it in (await r.json())["items"]]
+
+    assert await ids("model_shot") == ["r1"]   # by output filename, empty prompt
+    assert await ids("srcphoto") == ["r1"]      # by reference
+    assert await ids("brighten") == ["r2"]      # prompt search still works
+    assert await ids("nomatch") == []
+    await client.close()
