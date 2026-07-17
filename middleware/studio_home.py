@@ -51,11 +51,6 @@ log = logging.getLogger("studio.home")
 
 _HTML = Path(__file__).with_name("studio_home.html")
 _ASSET_DIR = Path(__file__).parent
-# The studio-chat SPA (web/, a Vite bundle on @hanzo/ai talking to /v1/agent) built
-# into the image at /app/web/dist and served AT /studio. When the build is absent
-# (dev checkout, an image that skipped the web stage) /studio falls back to the
-# legacy studio_home.html so the route is never a dark page.
-_WEB_DIST = Path(__file__).resolve().parents[1] / "web" / "dist"
 _STATUSES = ("draft", "approved", "queued", "published", "deleted")
 _PROV_CACHE: dict[str, tuple[float, dict]] = {}  # abspath -> (mtime, provenance)
 
@@ -742,30 +737,13 @@ def add_studio_home_routes(routes: web.RouteTableDef, server) -> None:
 
     @routes.get("/studio")
     async def studio_home(request: web.Request):
-        # no-store: the SPA HTML changes every release; without this, browsers
+        # no-store: the home HTML changes every release; without this, browsers
         # (and any proxy) heuristically cache it and serve a STALE page after a
         # deploy — which is why UI fixes appeared "not working" to a user still
-        # running yesterday's cached page. The page is tiny; always serve fresh.
-        # Hashed assets keep their own immutable cache. Serve the studio-chat SPA
-        # when built into the image; fall back to the legacy home otherwise.
-        index = _WEB_DIST / "index.html"
-        html = index.read_text() if index.is_file() else _HTML.read_text()
-        return web.Response(text=html, content_type="text/html",
+        # running yesterday's cached page. Always serve fresh; the page is small
+        # and its shell.js/shell.css keep their own cache.
+        return web.Response(text=_HTML.read_text(), content_type="text/html",
                             headers={"Cache-Control": "no-store, must-revalidate"})
-
-    @routes.get("/studio/assets/{name}")
-    async def studio_asset(request: web.Request):
-        # The studio-chat SPA's hashed bundle (the hash IS the version → immutable).
-        name = request.match_info["name"]
-        assets = (_WEB_DIST / "assets").resolve()
-        f = (assets / name).resolve()
-        if f.parent != assets or not f.is_file():
-            return web.Response(status=404)
-        ctype = ("text/javascript" if name.endswith(".js")
-                 else "text/css" if name.endswith(".css")
-                 else "application/octet-stream")
-        return web.Response(body=f.read_bytes(), content_type=ctype,
-                            headers={"Cache-Control": "public, max-age=31536000, immutable"})
 
     @routes.get("/studio/shell.js")
     async def shell_js(request: web.Request):
