@@ -290,6 +290,7 @@ body.immersive #stage{display:block}
     <button data-tab="deleted" onclick="tab('deleted')" title="Deleted content — recoverable">🗑 Deleted</button>
     <span class="sp"></span>
     <button class="btn" id="selbtn" onclick="toggleSel()" style="padding:6px 12px" title="Select many, then delete/recover them together">Select</button>
+    <button class="btn" onclick="dedup()" style="padding:6px 12px" title="Move exact-duplicate images to Deleted (recoverable, ⌘Z to undo)">Dedupe</button>
     <input class="search" id="q" placeholder="Search…" oninput="render()">
   </div>
   <section id="assets">
@@ -906,6 +907,18 @@ async function quickDel(path){
     if(!r.ok)throw 0;}catch(_){a.status=prev;UNDO.pop();render();paintChips();toast('Delete failed — restored');}
 }
 async function rerun(i){const a=DATA.assets[i];toast('Queueing re-run…');const r=await fetch('/v1/library/rerun',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({path:a.path})});const j=await r.json();toast(r.ok?`Re-run queued — see Runs`:'Failed');}
+// Dedupe: server hashes visible assets, soft-deletes exact byte-identical copies
+// (keeps one), returns the moved paths so ⌘Z undoes the whole sweep at once.
+async function dedup(){
+  toast('Scanning for exact duplicates…');
+  let r; try{ r=await (await fetch('/v1/library/dedup',{method:'POST'})).json(); }catch(_){ toast('Dedup failed'); return; }
+  const moved=r.deleted||[];
+  if(!moved.length){ toast('No exact duplicates found'); return; }
+  pushUndo(moved.map(m=>({path:m.path,prev:m.prev})));
+  moved.forEach(m=>{const a=DATA.assets.find(x=>x.path===m.path); if(a)a.status='deleted';});
+  render(); paintChips();
+  toast('Removed '+moved.length+' duplicate'+(moved.length>1?'s':'')+' → Trash · ⌘Z to undo');
+}
 // ── Fix surface: base image + up to 4 references (history picks + drag/drop
 // uploads). No references → the single-image edit (/v1/library/fix); any
 // reference → the multi-input compose (/v1/library/compose) — same proven Qwen

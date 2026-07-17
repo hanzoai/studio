@@ -1226,6 +1226,42 @@ def add_studio_home_routes(routes: web.RouteTableDef, server) -> None:
                 return web.json_response({"ok": True, "path": rel, "status": status})
         return web.json_response({"error": "asset not in library"}, status=404)
 
+    @routes.post("/v1/library/dedup")
+    async def dedup(request: web.Request):
+        """Soft-delete exact-content duplicates — keep one per byte-identical cluster,
+        move the rest to Deleted (recoverable, files kept). Content hash, so only TRUE
+        duplicates go; distinct re-renders (different seeds) are untouched. Returns the
+        moved paths so the UI can offer a one-shot undo."""
+        import hashlib
+        org = _org_of(request)
+        root = _library_root(org)
+        if root is None:
+            return web.json_response({"removed": 0, "deleted": []},
+                                     headers={"Cache-Control": "no-store"})
+        lib = _load_library(root)
+        seen: set[str] = set()
+        moved = []
+        for a in sorted(lib.get("assets", []), key=lambda x: x.get("path", "")):
+            if a.get("status") == "deleted":
+                continue
+            p = _safe_asset(root, a.get("path", ""))
+            if p is None:
+                continue
+            try:
+                h = hashlib.md5(p.read_bytes()).hexdigest()
+            except OSError:
+                continue
+            if h in seen:
+                moved.append({"path": a["path"], "prev": a.get("status", "draft")})
+                a["status"] = "deleted"
+                a["updatedAt"] = int(time.time())
+            else:
+                seen.add(h)
+        if moved:
+            _save_library(root, lib)
+        return web.json_response({"removed": len(moved), "deleted": moved},
+                                 headers={"Cache-Control": "no-store"})
+
     @routes.post("/v1/library/tags")
     async def add_tags(request: web.Request):
         """Merge tags onto a set of library assets (the bulk 'Add tags' action). Tags
