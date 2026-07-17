@@ -24,6 +24,11 @@ header .beta{font-size:.62rem;color:var(--dim);border:1px solid var(--line);bord
 header .sp{flex:1}
 header .lnk{color:var(--dim);font-size:.85rem;text-decoration:none}
 header .user{display:flex;align-items:center;gap:8px;border:1px solid var(--line);border-radius:99px;padding:3px 11px 3px 4px;cursor:pointer}
+#acctmenu{position:fixed;top:52px;right:12px;background:#0e0e12;border:1px solid var(--line);border-radius:12px;padding:6px;display:none;z-index:60;min-width:210px;box-shadow:0 16px 44px #000a}
+#acctmenu.on{display:block}
+#acctmenu .hd{padding:8px 12px;color:var(--dim);font-size:.78rem;border-bottom:1px solid var(--line);margin-bottom:4px}
+#acctmenu .mi{display:flex;align-items:center;gap:8px;padding:10px 12px;border-radius:8px;cursor:pointer;font-size:.88rem;color:var(--txt);text-decoration:none}
+#acctmenu .mi:hover{background:#ffffff10}
 header .user .av{width:24px;height:24px;border-radius:50%;background:#26262e;display:flex;align-items:center;justify-content:center;font-size:.72rem;font-weight:600}
 header .user .nm{font-size:.82rem;color:var(--dim)}
 .btn{border:1px solid var(--line);background:var(--panel);color:var(--txt);border-radius:8px;padding:7px 13px;font-size:.85rem;cursor:pointer}
@@ -184,6 +189,7 @@ body.immersive #stage{display:block}
   <button class="btn" onclick="load()">Refresh</button>
   <div class="user" id="user" title="Account"><span class="av" id="av">·</span><span class="nm" id="org">…</span></div>
 </header>
+<div id="acctmenu"><div class="hd" id="acctwho">Account</div><a class="mi" href="https://hanzo.id" target="_blank" rel="noopener">Manage account ↗</a><a class="mi" href="/logout">Sign out</a></div>
 <div id="tophover"></div>
 <div id="livebar" class="idle">
   <span id="lbstatus" class="lb-q">Checking queue…</span>
@@ -807,6 +813,8 @@ async function cancelJob(id){
   wireDrop($('fixdlg'),uploadFixFiles); wirePaste($('fixdlg'),uploadFixFiles);
   const af=$('attachfile');
   af.addEventListener('change',e=>{attachFiles(e.target.files);e.target.value='';});
+  const uc=$('user'); if(uc){uc.addEventListener('click',e=>{e.stopPropagation();$('acctwho').textContent=($('org').textContent||'').trim()||'Account';$('acctmenu').classList.toggle('on');});
+    document.addEventListener('click',e=>{const m=$('acctmenu');if(m&&m.classList.contains('on')&&!m.contains(e.target))m.classList.remove('on');});}
   const box=document.querySelector('.prompt'); if(box){ wireDrop(box,attachFiles); wirePaste(box,attachFiles); }
 })();
 function zoom(u){$('zoomimg').src=u;$('zoom').style.display='flex';}
