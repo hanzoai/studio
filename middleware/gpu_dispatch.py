@@ -129,6 +129,10 @@ def dispatch_if_worker(request, org_id: str, prompt_id: str, prompt: dict) -> bo
             # sample) can exceed 600s; the worker heartbeats each step, so this is
             # the ceiling for a genuinely long single render, not idle slack.
             "heartbeatTimeout": "1200s",
+            # Liveness is the heartbeat above; this cap only bounds a live-but-stuck
+            # render. Unset, the tasks default (~1h) reaped real renders mid-run and
+            # the queue re-ran them for hours.
+            "startToCloseTimeout": "14400s",
             "input": {
                 "prompt": prompt,
                 "org": org_id,
