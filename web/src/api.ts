@@ -10,7 +10,11 @@
 // VITE_STUDIO_API / VITE_AGENT_API override the bases for local dev.
 
 const BASE = (import.meta.env.VITE_STUDIO_API ?? '').replace(/\/$/, '')
-const AGENT_API = (import.meta.env.VITE_AGENT_API ?? 'https://api.hanzo.ai').replace(/\/$/, '')
+// Default: same-origin through the studio's /v1/agent bridge — the host-only
+// session cookie authorizes it and the middleware forwards the bearer, so no
+// parent-domain cookie and no gateway CORS dependency. VITE_AGENT_API points
+// straight at the gateway for direct mode.
+const AGENT_API = (import.meta.env.VITE_AGENT_API ?? '').replace(/\/$/, '')
 
 async function j<T>(url: string, init?: RequestInit): Promise<T> {
   const r = await fetch(url, { credentials: 'include', ...init })
