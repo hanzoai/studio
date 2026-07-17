@@ -505,7 +505,7 @@ async def test_library_upload_roundtrip_dedup_and_tenant_isolation(tmp_path, mon
     assert (await r2.json()) == {"ok": True, "existed": True, "path": "renders/r1.png"}
     # tenant isolation: org B never sees org A's file; its own upload is a separate tree
     assert (await client.get("/v1/library/file?path=renders/r1.png", headers={"X-Org": "globex"})).status == 404
-    rg = await client.post("/v1/library/upload?name=r1.png", data=b"\x89PNGglobex",
+    rg = await client.post("/v1/library/upload?name=r1.png", data=b"\x89PNG\r\n\x1a\nglobex",
                            headers={"X-Org": "globex", "Content-Type": "application/octet-stream"})
     assert (await rg.json())["path"] == "renders/r1.png"
     # org A's bytes are untouched by org B's same-named upload
@@ -523,7 +523,7 @@ async def test_library_upload_rejects_traversal_bad_name_and_oversize(tmp_path, 
     # non-image name -> 400
     assert (await client.post("/v1/library/upload?name=notes.txt", data=b"hi", headers=hdr)).status == 400
     # a traversal-y NAME is neutralized to its basename, lands safely under renders/
-    r = await client.post("/v1/library/upload?name=../../evil.png", data=b"\x89PNGevil", headers=hdr)
+    r = await client.post("/v1/library/upload?name=../../evil.png", data=b"\x89PNG\r\n\x1a\nevil", headers=hdr)
     assert (await r.json())["path"] == "renders/evil.png"
     assert (Path(sh.folder_paths.get_org_output_directory("acme")) / "renders" / "evil.png").is_file()
     # size cap -> 413

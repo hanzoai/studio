@@ -977,10 +977,19 @@ def add_studio_home_routes(routes: web.RouteTableDef, server) -> None:
             name = os.path.basename(request.query.get("name", ""))
         if not name or os.path.splitext(name)[1].lower() not in _UPLOAD_EXT:
             return web.json_response({"error": "image name required (.png/.jpg/.jpeg/.webp)"}, status=400)
+        if name.startswith("."):
+            # `._foo.png` (AppleDouble fork) and other dotfiles pass the extension
+            # check but are not renders.
+            return web.json_response({"error": "hidden file"}, status=400)
         if not data:
             return web.json_response({"error": "empty body"}, status=400)
         if len(data) > _MAX_UPLOAD:
             return web.json_response({"error": "file too large"}, status=413)
+        if not (data[:8] == b"\x89PNG\r\n\x1a\n"
+                or data[:3] == b"\xff\xd8\xff"
+                or (data[:4] == b"RIFF" and data[8:12] == b"WEBP")):
+            # The name lies sometimes; the bytes never do.
+            return web.json_response({"error": "not an image"}, status=400)
         out_root = Path(folder_paths.get_org_output_directory(org))
         dest = (out_root / sub / name).resolve()
         if not str(dest).startswith(str(out_root.resolve()) + os.sep):
