@@ -18,7 +18,17 @@ const AGENT_API = (import.meta.env.VITE_AGENT_API ?? '').replace(/\/$/, '')
 
 async function j<T>(url: string, init?: RequestInit): Promise<T> {
   const r = await fetch(url, { credentials: 'include', ...init })
-  if (!r.ok) throw new Error(`${url} -> ${r.status}`)
+  if (!r.ok) {
+    // Surface the server's own message — a 402 says "add credits at
+    // pay.hanzo.ai", which beats a bare status code.
+    let msg = `${url} -> ${r.status}`
+    try {
+      const b = await r.json()
+      const m = b?.error?.message ?? b?.error ?? b?.message
+      if (typeof m === 'string' && m) msg = m
+    } catch { /* keep the status line */ }
+    throw new Error(msg)
+  }
   return r.json() as Promise<T>
 }
 
