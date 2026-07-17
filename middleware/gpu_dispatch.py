@@ -9,6 +9,7 @@ shared keys. Falls back to the in-pod queue when there is no live worker.
 import base64
 import json
 import os
+import time
 import urllib.request
 
 import folder_paths
@@ -92,11 +93,22 @@ def _node_label(m: dict) -> str:
 
 def _fleet_machines(tok: str) -> list:
     """The caller-org's machines from the cloud fleet. The token scopes the fleet to
-    the caller's org, so this is inherently tenant-isolated."""
-    req = urllib.request.Request(f"{CLOUD}/v1/machines", headers={"Authorization": tok})
-    d = json.loads(urllib.request.urlopen(req, timeout=10).read())
-    ms = d.get("machines", [])
-    return ms if isinstance(ms, list) else []
+    the caller's org, so this is inherently tenant-isolated. Retried a few times so a
+    transient edge fault (502, TLS reset, timeout) does NOT read as "no GPU" and
+    bounce the render onto the model-less pod — the cause of intermittent
+    "Prompt outputs failed validation"."""
+    last = None
+    for attempt in range(3):
+        try:
+            req = urllib.request.Request(f"{CLOUD}/v1/machines", headers={"Authorization": tok})
+            d = json.loads(urllib.request.urlopen(req, timeout=10).read())
+            ms = d.get("machines", [])
+            return ms if isinstance(ms, list) else []
+        except Exception as e:  # any transient fault (HTTP/TLS/timeout/non-JSON) is retryable
+            last = e
+            if attempt < 2:
+                time.sleep(0.4 * (attempt + 1))
+    raise last
 
 
 def _online_gpu_nodes(tok: str) -> list:
@@ -106,6 +118,21 @@ def _online_gpu_nodes(tok: str) -> list:
 def _has_online_gpu(tok: str) -> bool:
     """True if the caller's org has an online GPU machine in the cloud fleet."""
     return bool(_online_gpu_nodes(tok))
+
+
+def has_local_models() -> bool:
+    """True if THIS instance actually has diffusion models to render with. A cloud
+    coordinator pod is model-less — every render is dispatched to the org's GPU
+    worker; a box WITH a GPU has models and can render locally. Lets the /prompt
+    intercept turn a failed dispatch on a model-less pod into a clear "worker
+    unavailable, retry" instead of a cryptic "not in []" validation error."""
+    try:
+        for kind in ("diffusion_models", "checkpoints"):
+            if folder_paths.get_filename_list(kind):
+                return True
+    except Exception:
+        pass
+    return False
 
 
 def dispatch_if_worker(request, org_id: str, prompt_id: str, prompt: dict) -> bool:

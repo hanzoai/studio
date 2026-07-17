@@ -1100,11 +1100,21 @@ class PromptServer():
                 # every checkpoint-referencing graph ("not in []").
                 if not args.worker_mode:
                     try:
-                        from middleware.gpu_dispatch import dispatch_if_worker
+                        from middleware.gpu_dispatch import dispatch_if_worker, has_local_models
                     except ImportError:  # package-style checkout
-                        from .middleware.gpu_dispatch import dispatch_if_worker
+                        from .middleware.gpu_dispatch import dispatch_if_worker, has_local_models
                     if dispatch_if_worker(request, org_id, prompt_id, prompt):
                         return web.json_response({"prompt_id": prompt_id, "number": number, "node_errors": {}})
+                    # Dispatch didn't happen. On a model-less coordinator pod, local
+                    # validation is GUARANTEED to fail with a cryptic "not in []" —
+                    # the render belongs on the org's GPU worker, momentarily
+                    # unreachable. Return a clear, retryable error instead of the
+                    # doomed validation. A box WITH models falls through and renders.
+                    if not has_local_models():
+                        return web.json_response({"error": {
+                            "type": "gpu_worker_unavailable",
+                            "message": "GPU render worker is momentarily unavailable — please retry.",
+                            "details": "", "extra_info": {}}, "node_errors": {}}, status=503)
 
                 valid = await execution.validate_prompt(prompt_id, prompt, partial_execution_targets)
                 extra_data = {}
