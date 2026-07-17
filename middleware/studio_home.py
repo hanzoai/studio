@@ -688,7 +688,7 @@ async def _wallet(request: web.Request, org: str) -> dict:
     return out
 
 
-_MAX_UPLOAD = 30 * 1024 * 1024        # 30 MB — a sane ceiling for one render
+_MAX_UPLOAD = 100 * 1024 * 1024       # 100 MB — 4k masters run 30-60MB; the cap must hold the largest real render
 _UPLOAD_EXT = (".png", ".jpg", ".jpeg", ".webp")
 _SUBPATH_RE = re.compile(r"[A-Za-z0-9_-]+(?:/[A-Za-z0-9_-]+)*")
 
