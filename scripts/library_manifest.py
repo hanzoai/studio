@@ -93,6 +93,11 @@ def scan(root: str) -> list[str]:
     found: list[str] = []
     for base, _dirs, files in os.walk(root):
         for f in files:
+            if f.startswith("."):
+                # Dotfiles are never assets: `._foo.png` AppleDouble forks ride
+                # along with mac transfers, carry an image extension, and are
+                # resource-fork bytes that render 0x0 in the library.
+                continue
             ext = os.path.splitext(f)[1].lower()
             full = os.path.join(base, f)
             rel = os.path.relpath(full, root)

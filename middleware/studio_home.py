@@ -149,6 +149,10 @@ def _save_library(root: Path, lib: dict) -> None:
 
 def _safe_asset(root: Path, rel: str) -> Path | None:
     p = (root / rel).resolve()
+    if p.name.startswith("."):
+        # Dotfiles are never assets (AppleDouble forks carry image extensions
+        # but serve resource-fork bytes) — refuse them everywhere at once.
+        return None
     return p if p.is_file() and str(p).startswith(str(root.resolve())) else None
 
 
