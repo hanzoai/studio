@@ -138,9 +138,13 @@ def build(root: str) -> dict:
         if norm == MANIFEST_NAME:
             continue
         info = classify(norm, slugs)
-        if info is None:
-            continue
         prev = prior.get(norm, {})
+        if info is None:
+            # Taxonomy enriches, never gates: an image outside the naming
+            # scheme is still an asset. Dropping it here erased every
+            # ingest-indexed render on each sweep cycle.
+            info = {"design": prev.get("design"), "kind": prev.get("kind") or "render",
+                    "role": prev.get("role")}
         entry = {
             "path": norm,
             "design": info["design"],
