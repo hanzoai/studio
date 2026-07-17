@@ -84,6 +84,7 @@ body.immersive{padding-top:0}
 .st{font-size:.66rem;font-weight:600;border-radius:99px;padding:2px 8px;text-transform:uppercase;letter-spacing:.4px}
 .st.draft{background:#2a2a31;color:var(--dim)}.st.approved{background:rgba(61,220,132,.15);color:var(--ok)}
 .st.queued{background:rgba(255,182,72,.15);color:var(--warn)}.st.published{background:rgba(106,165,255,.18);color:var(--pub)}
+.st.flagged{background:rgba(255,86,86,.16);color:#ff8a8a}
 .mini{border:1px solid var(--line);background:none;color:var(--dim);border-radius:7px;padding:4px 9px;font-size:.72rem;cursor:pointer}
 .mini:hover{color:var(--txt);border-color:var(--dim)} .mini.hot{color:#111;background:var(--brand);border-color:var(--brand);font-weight:600}
 .empty{color:var(--dim);padding:44px;text-align:center}
@@ -371,9 +372,11 @@ async function load(){
     TEMPLATES.filter(t=>t.grp===g).map(tcard).join('')).join('');
   const groups=[...new Set(DATA.assets.map(a=>a.design).filter(Boolean))].sort();
   const delN=DATA.assets.filter(a=>a.status==='deleted').length;
+  const flagN=DATA.assets.filter(a=>a.status==='flagged').length;
   const chips=['all','marketing',...groups];
   $('filters').innerHTML=chips.map(g=>`<span class="chip ${g===FILTER?'on':''}" onclick="FILTER='${g}';render()">${g}</span>`).join('')
-    +`<span class="chip ${FILTER==='deleted'?'on':''}" onclick="FILTER='deleted';render()" style="margin-left:auto">🗑 Deleted${delN?' ('+delN+')':''}</span>`;
+    +`<span class="chip ${FILTER==='flagged'?'on':''}" onclick="FILTER='flagged';render()" style="margin-left:auto" title="Renders the quality gate flagged — review and restore">⚑ Flagged${flagN?' ('+flagN+')':''}</span>`
+    +`<span class="chip ${FILTER==='deleted'?'on':''}" onclick="FILTER='deleted';render()">🗑 Deleted${delN?' ('+delN+')':''}</span>`;
   render();
 }
 let SELMODE=false; const SEL=new Set();
@@ -384,9 +387,12 @@ function pick(ev,path){ev.stopPropagation();if(SEL.has(path))SEL.delete(path);el
 function render(){
   const q=($('q').value||'').toLowerCase();
   const showDel=FILTER==='deleted';
+  const showFlag=FILTER==='flagged';
+  const review=showDel||showFlag;                       // a status-review view (trash / quality gate)
   let rows=DATA.assets.filter(a=>{
     if(showDel)return a.status==='deleted';
-    if(a.status==='deleted')return false;               // hide trashed from normal views
+    if(showFlag)return a.status==='flagged';
+    if(a.status==='deleted'||a.status==='flagged')return false;  // hide trashed + gate-flagged from normal views
     return FILTER==='all'?true:FILTER==='marketing'?(a.path||'').startsWith('marketing/'):a.design===FILTER;
   });
   if(q)rows=rows.filter(a=>(a.path||'').toLowerCase().includes(q));
@@ -401,7 +407,7 @@ function render(){
     return `<div class="card ${SELMODE?'sel-mode':''} ${picked?'picked':''}" ${cardClick}>
       <div class="pick">${picked?'✓':''}</div>
       ${img&&!SELMODE?`<button class="addref ${inTray?'on':''}" title="Add to next generation" onclick="event.stopPropagation();addRef('${pe}')">${inTray?'✓':'+'}</button>`:''}
-      ${img&&!SELMODE&&!showDel?`<button class="delx" title="Move to Deleted (recoverable)" onclick="event.stopPropagation();quickDel('${pe}')">🗑</button>`:''}
+      ${img&&!SELMODE&&!review?`<button class="delx" title="Move to Deleted (recoverable)" onclick="event.stopPropagation();quickDel('${pe}')">🗑</button>`:''}
       ${img?`<div class="im" style="background-image:url('${thumbURL(a)}')" ${SELMODE?'':`onclick="zoom('${imgURL(a)}')"`}></div>`
            :`<div class="doc">${(a.path||'').split('/').pop()}</div>`}
       <div class="meta">
@@ -409,13 +415,13 @@ function render(){
         <span class="sub">${a.design||a.kind||''}${prov}</span>
         <div class="row"><span class="st ${a.status}">${a.status}</span></div>
         ${SELMODE?'':`<div class="row tools">
-          ${showDel?`<button class="mini" onclick="setSt(${i},'draft')">Recover</button>`:`
+          ${review?`<button class="mini" onclick="setSt(${i},'draft')">${showDel?'Recover':'Restore'}</button>`:`
           ${a.status!=='approved'?`<button class="mini" onclick="setSt(${i},'approved')">Approve</button>`:''}
           ${a.status!=='published'?`<button class="mini" onclick="setSt(${i},'published')">Publish</button>`:''}
           ${img?`<button class="mini" onclick="rerun(${i})">Re-run</button><button class="mini" onclick="openLineage('${pe}')" title="Show this image's versions (what it came from + later fixes)">Versions</button><button class="mini hot" onclick="openFix(${i})">Fix</button>`:''}
           <button class="mini" onclick="setSt(${i},'deleted')" title="Move to Deleted (recoverable)">🗑</button>`}
         </div>`}
-      </div></div>`;}).join('')||`<div class="empty">${showDel?'Deleted is empty.':'No assets in this view yet.'}</div>`;
+      </div></div>`;}).join('')||`<div class="empty">${showDel?'Deleted is empty.':showFlag?'Nothing flagged — the quality gate has passed every render.':'No assets in this view yet.'}</div>`;
 }
 async function bulk(status){
   if(!SEL.size)return;

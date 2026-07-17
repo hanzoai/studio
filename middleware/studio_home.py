@@ -45,13 +45,13 @@ import aiohttp
 from aiohttp import web
 
 import folder_paths
-from middleware import worklog
+from middleware import quality_gate, worklog
 
 log = logging.getLogger("studio.home")
 
 _HTML = Path(__file__).with_name("studio_home.html")
 _ASSET_DIR = Path(__file__).parent
-_STATUSES = ("draft", "approved", "queued", "published", "deleted")
+_STATUSES = ("draft", "approved", "queued", "published", "deleted", "flagged")
 _PROV_CACHE: dict[str, tuple[float, dict]] = {}  # abspath -> (mtime, provenance)
 
 _NEG = ("ghosting, double exposure, duplicated body, transparent fabric, sheer "
@@ -707,17 +707,19 @@ def _row_output(root: Path | None, output_prefix: str | None) -> str | None:
     return landed
 
 
-def _index_upload(org: str, root: Path, rel: str, *, design, kind, role, node) -> None:
+def _index_upload(org: str, root: Path, rel: str, *, design, kind, role, node) -> bool:
     """Event-driven index at the ingest point so a just-stored render is INSTANTLY
     findable — in Assets (a library.json entry) and in Queue & History (a done
     work-log row carrying its source node) — without waiting for the manifest sweeper.
     Atomic per-org writes like every other metadata file; upserts by path so a
-    re-render of the same name never duplicates the asset."""
+    re-render of the same name never duplicates the asset. Returns True when a NEW
+    asset row was created (a newly-surfaced render) — the quality gate's trigger."""
     now_iso = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
     lib = _load_library(root)
     assets = lib.setdefault("assets", [])
     ex = next((a for a in assets if a.get("path") == rel), None)
-    if ex is None:
+    created = ex is None
+    if created:
         assets.append({"path": rel, "design": design, "kind": kind, "role": role,
                        "status": "draft", "tags": [], "updatedAt": now_iso})
     else:
@@ -731,6 +733,7 @@ def _index_upload(org: str, root: Path, rel: str, *, design, kind, role, node) -
                        output_prefix=rel, node=node, status="done",
                        lane=("gpu" if node not in ("upload", "studio pod") else "local"),
                        pid="up-" + uuid.uuid4().hex[:12])
+    return created
 
 
 def add_studio_home_routes(routes: web.RouteTableDef, server) -> None:
@@ -1004,27 +1007,29 @@ def add_studio_home_routes(routes: web.RouteTableDef, server) -> None:
         if not str(dest).startswith(str(out_root.resolve()) + os.sep):
             return web.json_response({"error": "invalid path"}, status=400)
         rel = f"{sub}/{name}"
-        if dest.is_file() and dest.stat().st_size == len(data):
-            # Identical bytes: skip the write but STILL index — files can exist
-            # without rows (an interrupted mirror, a restored store), and the
-            # index upsert is idempotent by path. Recovery depends on this.
-            _index_upload(org, out_root, rel,
-                          design=request.query.get("design") or None,
-                          kind=request.query.get("kind") or "render",
-                          role=request.query.get("role") or None,
-                          node=request.query.get("node") or "upload")
-            return web.json_response({"ok": True, "existed": True, "path": rel})
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        tmp = dest.with_name(dest.name + ".tmp")
-        tmp.write_bytes(data)
-        tmp.replace(dest)
+        # Identical bytes: skip the write but STILL index — files can exist without
+        # rows (an interrupted mirror, a restored store), and the index upsert is
+        # idempotent by path. Recovery depends on this.
+        existed = dest.is_file() and dest.stat().st_size == len(data)
+        if not existed:
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            tmp = dest.with_name(dest.name + ".tmp")
+            tmp.write_bytes(data)
+            tmp.replace(dest)
         # index at ingest → instantly findable in Assets + Queue & History (with node)
-        _index_upload(org, out_root, rel,
-                      design=request.query.get("design") or None,
-                      kind=request.query.get("kind") or "render",
-                      role=request.query.get("role") or None,
-                      node=request.query.get("node") or "upload")
-        return web.json_response({"ok": True, "path": rel})
+        created = _index_upload(org, out_root, rel,
+                                design=request.query.get("design") or None,
+                                kind=request.query.get("kind") or "render",
+                                role=request.query.get("role") or None,
+                                node=request.query.get("node") or "upload")
+        if created:
+            # A newly-surfaced render: judge its quality out-of-band (never blocks
+            # this response). A clear FAIL flags it out of the default library.
+            quality_gate.schedule(request, org, out_root, rel)
+        resp = {"ok": True, "path": rel}
+        if existed:
+            resp["existed"] = True
+        return web.json_response(resp)
 
     @routes.get("/v1/gpu-status")
     async def gpu_status(request: web.Request):

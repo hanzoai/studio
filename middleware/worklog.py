@@ -119,6 +119,28 @@ def set_status(org: str, pid: str, status: str, note: str | None = None) -> bool
     return hit
 
 
+def add_event(org: str, output_prefix: str, s: str, note: str | None = None) -> bool:
+    """Append one event to the row(s) carrying this landed output — an annotation,
+    not a lifecycle move. The render completed (its status is terminal); a later
+    judgment like the quality gate flagging it records an event without touching
+    that status. Keyed by output like ``has_output``. Returns True if a row was
+    annotated."""
+    if not output_prefix:
+        return False
+    rows = load(org)
+    now = int(time.time())
+    hit = False
+    for r in rows:
+        if r.get("output_prefix") == output_prefix or r.get("output") == output_prefix:
+            r.setdefault("events", []).append(
+                {"s": s, "ts": now, **({"note": note} if note else {})})
+            r["updatedAt"] = now
+            hit = True
+    if hit:
+        _save(org, rows)
+    return hit
+
+
 def mark_started(org: str, pid: str, at: int) -> bool:
     """Stamp when a job first begins rendering (first seen at the head of its lane).
     Idempotent: only the first observation sets started_at. Feeds duration = finished

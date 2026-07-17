@@ -44,7 +44,7 @@ def test_safe_asset_blocks_traversal(tmp_path):
 
 
 def test_status_vocab_matches_library_lifecycle():
-    assert sh._STATUSES == ("draft", "approved", "queued", "published", "deleted")
+    assert sh._STATUSES == ("draft", "approved", "queued", "published", "deleted", "flagged")
 
 
 def test_resolve_uploads_keeps_only_safe_existing_images(tmp_path, monkeypatch):
@@ -566,6 +566,75 @@ async def test_library_upload_indexes_into_assets_and_worklog(tmp_path, monkeypa
     wl3 = await (await client.get("/v1/worklog", headers={"X-Org": "acme"})).json()
     assert sum(1 for x in wl3["items"] if x["output_prefix"] == "renders/shot.png") == 1
     await client.close()
+
+
+@pytest.mark.asyncio
+async def test_upload_schedules_quality_gate_only_for_new_renders(tmp_path, monkeypatch):
+    """The gate fires at the ingest choke point exactly when a NEW asset row is
+    created — a fresh render, or a restored-store file with no row yet — and never
+    again for an identical re-post (dedup). Wiring only; the judgment runs
+    out-of-band and is unit-tested against quality_gate.run."""
+    import aiohttp
+    _orgaware(tmp_path, monkeypatch)
+    root = Path(sh.folder_paths.get_org_output_directory("acme"))
+    (root / "library.json").write_text('{"assets":[]}')
+    calls = []
+    monkeypatch.setattr(sh.quality_gate, "schedule",
+                        lambda request, org, r, rel: calls.append((org, rel)))
+    client = await _client(_FakeServer())
+    png = b"\x89PNG\r\n\x1a\n" + b"gate-bytes"
+
+    form = aiohttp.FormData()
+    form.add_field("image", png, filename="g.png", content_type="image/png")
+    r = await client.post("/v1/library/upload", data=form, headers={"X-Org": "acme"})
+    assert (await r.json())["path"] == "renders/g.png"
+    assert calls == [("acme", "renders/g.png")]            # fresh render → judged once
+
+    form2 = aiohttp.FormData()
+    form2.add_field("image", png, filename="g.png", content_type="image/png")
+    r2 = await client.post("/v1/library/upload", data=form2, headers={"X-Org": "acme"})
+    assert (await r2.json()).get("existed") is True
+    assert calls == [("acme", "renders/g.png")]            # identical re-post → NOT re-judged
+
+    # a file already on disk but with no library row (restored store) → a new row → judged
+    png2 = b"\x89PNG\r\n\x1a\n" + b"restored"
+    (root / "renders" / "old.png").write_bytes(png2)
+    form3 = aiohttp.FormData()
+    form3.add_field("image", png2, filename="old.png", content_type="image/png")
+    r3 = await client.post("/v1/library/upload", data=form3, headers={"X-Org": "acme"})
+    assert (await r3.json()).get("existed") is True        # bytes already there (dedup write)
+    assert calls == [("acme", "renders/g.png"), ("acme", "renders/old.png")]
+    await client.close()
+
+
+@pytest.mark.asyncio
+async def test_status_route_accepts_flagged_and_restores(tmp_path, monkeypatch):
+    """The one lifecycle route gains ``flagged`` (so the gate's status is a first-
+    class one) and drives the UI's Restore back to draft. /v1/library still returns
+    every status — the UI hides flagged; the backend never filters it away."""
+    _orgaware(tmp_path, monkeypatch)
+    root = Path(sh.folder_paths.get_org_output_directory("acme"))
+    (root / "a.png").write_bytes(b"\x89PNG")
+    (root / "library.json").write_text(json.dumps({"assets": [{"path": "a.png", "status": "draft"}]}))
+    client = await _client(_FakeServer())
+    r = await client.post("/v1/library/status", json={"path": "a.png", "status": "flagged"}, headers={"X-Org": "acme"})
+    assert r.status == 200 and (await r.json())["status"] == "flagged"
+    lib = await (await client.get("/v1/library", headers={"X-Org": "acme"})).json()
+    assert next(x for x in lib["assets"] if x["path"] == "a.png")["status"] == "flagged"
+    r2 = await client.post("/v1/library/status", json={"path": "a.png", "status": "draft"}, headers={"X-Org": "acme"})
+    assert r2.status == 200 and (await r2.json())["status"] == "draft"
+    assert (await client.post("/v1/library/status", json={"path": "a.png", "status": "bogus"}, headers={"X-Org": "acme"})).status == 400
+    await client.close()
+
+
+def test_studio_home_hides_flagged_and_offers_review():
+    """UI contract: flagged is hidden from the normal grid exactly like deleted, and
+    reachable for review + restore. /v1/library returns all statuses, so the grid is
+    the filter — this locks the change I made to it."""
+    html = sh._HTML.read_text()
+    assert "a.status==='deleted'||a.status==='flagged'" in html   # hidden from normal views
+    assert "FILTER='flagged'" in html                             # the Flagged review filter
+    assert "showDel?'Recover':'Restore'" in html                  # restore affordance
 
 
 @pytest.mark.asyncio
