@@ -728,10 +728,14 @@ def _index_upload(org: str, root: Path, rel: str, *, design, kind, role, node) -
     else:
         ex.update(design=design, kind=kind, role=role, updatedAt=now_iso)
     _save_library(root, lib)
-    worklog.record(org, kind="render", prompt="", refs=[], uploads=[], parents=[],
-                   output_prefix=rel, node=node, status="done",
-                   lane=("gpu" if node not in ("upload", "studio pod") else "local"),
-                   pid="up-" + uuid.uuid4().hex[:12])
+    # The worklog upserts by output too: re-ingesting identical bytes (an
+    # interrupted mirror, a restored store) must repair a missing row, never
+    # stack a second one.
+    if not worklog.has_output(org, rel):
+        worklog.record(org, kind="render", prompt="", refs=[], uploads=[], parents=[],
+                       output_prefix=rel, node=node, status="done",
+                       lane=("gpu" if node not in ("upload", "studio pod") else "local"),
+                       pid="up-" + uuid.uuid4().hex[:12])
 
 
 def add_studio_home_routes(routes: web.RouteTableDef, server) -> None:
@@ -1023,6 +1027,14 @@ def add_studio_home_routes(routes: web.RouteTableDef, server) -> None:
             return web.json_response({"error": "invalid path"}, status=400)
         rel = f"{sub}/{name}"
         if dest.is_file() and dest.stat().st_size == len(data):
+            # Identical bytes: skip the write but STILL index — files can exist
+            # without rows (an interrupted mirror, a restored store), and the
+            # index upsert is idempotent by path. Recovery depends on this.
+            _index_upload(org, out_root, rel,
+                          design=request.query.get("design") or None,
+                          kind=request.query.get("kind") or "render",
+                          role=request.query.get("role") or None,
+                          node=request.query.get("node") or "upload")
             return web.json_response({"ok": True, "existed": True, "path": rel})
         dest.parent.mkdir(parents=True, exist_ok=True)
         tmp = dest.with_name(dest.name + ".tmp")

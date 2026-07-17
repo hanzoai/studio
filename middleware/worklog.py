@@ -59,6 +59,13 @@ def _save(org: str, rows: list[dict]) -> None:
     tmp.replace(p)
 
 
+def has_output(org: str, output_prefix: str) -> bool:
+    """Whether any row already carries this landed output — the ingest upsert
+    key (re-ingesting identical bytes must repair, never duplicate)."""
+    return any(r.get("output_prefix") == output_prefix or r.get("output") == output_prefix
+               for r in load(org))
+
+
 def record(org: str, *, kind: str, prompt: str, refs: list, uploads: list,
            parents: list, output_prefix: str, params: dict | None = None,
            pid: str | None = None, lane: str | None = None, node: str | None = None,
