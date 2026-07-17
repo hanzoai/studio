@@ -101,8 +101,8 @@ dialog::backdrop{background:rgba(0,0,0,.6)} dialog textarea{width:100%;backgroun
 .card .tools{max-height:0;overflow:hidden;opacity:0;transition:.15s}
 .card:hover .tools{max-height:60px;opacity:1;margin-top:2px}
 .card .meta{gap:5px}
-.card .pick{position:absolute;top:8px;left:9px;width:20px;height:20px;border-radius:5px;border:1.5px solid #fff;background:rgba(0,0,0,.5);display:none;align-items:center;justify-content:center;font-size:.8rem;color:#111;z-index:3}
-.card{position:relative} .sel-mode .pick{display:flex} .picked .pick{background:var(--brand)}
+.card .pick{position:absolute;top:8px;left:9px;width:20px;height:20px;border-radius:5px;border:1.5px solid #fff;background:rgba(0,0,0,.5);display:none;align-items:center;justify-content:center;font-size:.8rem;color:#111;z-index:3;cursor:pointer}
+.card{position:relative} .card:hover .pick,.sel-mode .pick{display:flex} .picked .pick{background:var(--brand)}
 /* YouTube-style queue + history */
 .qcol{margin-bottom:26px} .qh{font-size:.9rem;font-weight:600;margin-bottom:10px;color:var(--txt);display:flex;align-items:center;gap:8px}
 .qlist{display:flex;flex-direction:column;gap:8px}
@@ -181,6 +181,7 @@ body.immersive #stage{display:block}
 }
 /* touch: no hover-reveal — always show card tools on touch devices */
 @media (hover:none){
+  .card .pick{display:flex}
   .card .tools{max-height:none;opacity:1;margin-top:2px}
 }
 /* ── Stacks: Procreate-style gallery folders ─────────────────────────────────── */
@@ -289,7 +290,7 @@ body.immersive #stage{display:block}
     <button data-tab="runs" onclick="tab('runs')">Queue &amp; History</button>
     <button data-tab="deleted" onclick="tab('deleted')" title="Deleted content — recoverable">🗑 Deleted</button>
     <span class="sp"></span>
-    <button class="btn" id="selbtn" onclick="toggleSel()" style="padding:6px 12px" title="Select many, then delete/recover them together">Select</button>
+    <button class="btn" id="selbtn" onclick="toggleSel()" style="padding:6px 12px" title="Select images — or tap the circle on any image — then delete, stack, or move them together">Select</button>
     <button class="btn" onclick="dedup()" style="padding:6px 12px" title="Move exact-duplicate images to Deleted (recoverable, ⌘Z to undo)">Dedupe</button>
     <input class="search" id="q" placeholder="Search…" oninput="render()">
   </div>
@@ -522,15 +523,20 @@ let SELMODE=false; const SEL=new Set();
 // Selection is shared by the gallery and an open Stack — only one view is active
 // at a time, so the SAME SEL/SELMODE drives whichever is showing (drawSel()).
 function drawSel(){ CURSTACK?svRender():render(); }
-function toggleSel(){SELMODE=!SELMODE;$('selbtn').classList.toggle('brand',SELMODE);$('svselbtn')&&$('svselbtn').classList.toggle('brand',SELMODE);if(!SELMODE)SEL.clear();updateBulk();drawSel();}
-function clearSel(){SEL.clear();SELMODE=false;$('selbtn').classList.remove('brand');$('svselbtn')&&$('svselbtn').classList.remove('brand');updateBulk();drawSel();}
+function selUI(){const on=SELMODE,b1=$('selbtn'),b2=$('svselbtn');
+  b1.classList.toggle('brand',on);b1.textContent=on?'Done':'Select';
+  if(b2){b2.classList.toggle('brand',on);b2.textContent=on?'Done':'Select';}}
+function toggleSel(){SELMODE=!SELMODE;if(!SELMODE)SEL.clear();selUI();updateBulk();drawSel();}
+function clearSel(){SEL.clear();SELMODE=false;selUI();updateBulk();drawSel();}
 function updateBulk(){const on=SELMODE&&SEL.size>0, del=FILTER==='deleted'&&!CURSTACK;
   $('bulkbar').classList.toggle('on',on&&!CURSTACK);$('bulkn').textContent=SEL.size+' selected';
   $('svbulk').hidden=!(on&&CURSTACK);$('svbulkn')&&($('svbulkn').textContent=SEL.size+' selected');
   $('bulkrecover').style.display=del?'':'none';                                  // trash: bulk-recover only
   ['bulkstack','bulkmove','bulkcompose','bulkdownload','bulktags','bulkapprove','bulkpublish','bulkdelete'].forEach(id=>{const el=$(id);if(el)el.style.display=del?'none':'';});
 }
-function pick(ev,path){ev.stopPropagation();if(SEL.has(path))SEL.delete(path);else SEL.add(path);updateBulk();drawSel();}
+function pick(ev,path){ev.stopPropagation();if(SEL.has(path))SEL.delete(path);else SEL.add(path);if(!SEL.size){clearSel();return;}updateBulk();drawSel();}
+// The ○ on any image: selects it and enters selection implicitly — no mode hunt.
+function pickToggle(ev,path){if(!SELMODE){SELMODE=true;selUI();}pick(ev,path);}
 function render(){
   const q=($('q').value||'').toLowerCase();
   const showDel=FILTER==='deleted';
@@ -564,7 +570,7 @@ function render(){
     const dnd=(!SELMODE&&img&&!showDel)?`draggable="true" ondragstart="dragStart(event,'${pe}')" ondragend="dragEnd(event)" ondragover="dragOverCard(event)" ondragleave="dragLeaveCard(event)" ondrop="dropOnCard(event,'${pe}')"`:'';
     return `<div class="card ${SELMODE?'sel-mode':''} ${picked?'picked':''}" data-path="${pe}" ${dnd} ${cardClick}>
       <div class="droplbl">Create Stack</div>
-      <div class="pick">${picked?'✓':''}</div>
+      <div class="pick" role="checkbox" aria-checked="${picked}" aria-label="Select image" onclick="pickToggle(event,'${pe}')">${picked?'✓':''}</div>
       ${img&&!SELMODE?`<button class="addref ${inTray?'on':''}" title="Add to next generation" onclick="event.stopPropagation();addRef('${pe}')">${inTray?'✓':'+'}</button>`:''}
       ${img&&!SELMODE&&!review?`<button class="delx" title="Move to Deleted (recoverable)" onclick="event.stopPropagation();quickDel('${pe}')">🗑</button>`:''}
       ${img?`<div class="im" style="background-image:url('${thumbURL(a)}')" ${SELMODE?'':`onclick="zoom('${imgURL(a)}')"`}></div>`
@@ -1185,13 +1191,13 @@ async function tagSel(){if(!SEL.size)return;const t=await ask('Add tags (comma-s
 // ── Stack detail view ─────────────────────────────────────────────────────────
 async function openStack(id){
   const s=await fetchStack(id);if(!s){toast('Stack not found');await load();return;}
-  CURSTACK=s;SEL.clear();SELMODE=false;$('svselbtn').classList.remove('brand');
+  CURSTACK=s;SEL.clear();SELMODE=false;selUI();
   document.querySelectorAll('.tabs button').forEach(b=>b.classList.toggle('on',b.dataset.tab==='assets'));
   for(const x of ['assets','templates','pipelines','runs'])$(x).hidden=true;
   $('stackview').hidden=false;$('svname').value=s.name||'';$('svdesc').value=s.description||'';
   updateBulk();svRender();announce('Opened Stack '+(s.name||'')+', '+s.count+' images');window.scrollTo({top:0,behavior:'smooth'});
 }
-function closeStack(){CURSTACK=null;SEL.clear();SELMODE=false;$('svselbtn').classList.remove('brand');$('stackview').hidden=true;$('assets').hidden=false;updateBulk();render();}
+function closeStack(){CURSTACK=null;SEL.clear();SELMODE=false;selUI();$('stackview').hidden=true;$('assets').hidden=false;updateBulk();render();}
 function svRender(){
   const s=CURSTACK;if(!s)return;
   $('svcount').textContent=s.count+' image'+(s.count===1?'':'s')+(s.updatedAt?(' · updated '+ago(s.updatedAt)):'');
@@ -1211,7 +1217,7 @@ function svCard(path,idx){
   const dnd=(!SELMODE)?`draggable="true" ondragstart="svDragStart(event,${idx})" ondragend="svDragEnd(event)" ondragover="svDragOver(event,${idx})" ondragleave="dragLeaveCard(event)" ondrop="svDrop(event,${idx})"`:'';
   const thumb='/v1/library/file?thumb=1&path='+encodeURIComponent(path);
   return `<div class="card ${SELMODE?'sel-mode':''} ${picked?'picked':''} ${iscover?'iscover':''}" data-path="${pe}" data-idx="${idx}" ${dnd} ${cardClick} aria-label="${esc(path.split('/').pop())}${iscover?' (cover)':''}">
-    <div class="droplbl">Reorder</div><div class="pick">${picked?'✓':''}</div>${iscover?'<span class="covertag">Cover</span>':''}
+    <div class="droplbl">Reorder</div><div class="pick" role="checkbox" aria-checked="${picked}" aria-label="Select image" onclick="pickToggle(event,'${pe}')">${picked?'✓':''}</div>${iscover?'<span class="covertag">Cover</span>':''}
     ${img?`<div class="im" style="background-image:url('${thumb}')" ${SELMODE?'':`onclick="svOpen(${idx})"`}></div>`:`<div class="doc">${esc(path.split('/').pop())}</div>`}
     <div class="meta"><span class="t">${esc(path.split('/').pop())}</span>
       ${a?`<div class="row"><span class="st ${a.status}">${a.status}</span></div>`:'<span class="sub">unavailable — asset deleted</span>'}
