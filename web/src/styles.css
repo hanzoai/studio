@@ -42,7 +42,13 @@ body { background: var(--bg); color: var(--text); font: 15px/1.5 -apple-system, 
 .empty { color: var(--dim); font-size: 13px; }
 
 @media (max-width: 820px) {
-  .body { grid-template-columns: 1fr; }
-  .rail { display: none; }
+  /* Chat fills; the library drops UNDER it as a compact strip so renders stay
+     reachable on a phone. Empty (no jobs, no assets) it hides entirely — the
+     `active` class is set only when there is something to show — so the empty
+     chat state stays clean. */
+  .body { grid-template-columns: 1fr; grid-template-rows: minmax(0, 1fr) auto; }
   .chat { border-right: 0; }
+  .rail { display: none; }
+  .rail.active { display: block; border-top: 1px solid var(--line); max-height: 42vh; overflow-y: auto; }
+  .rail.active .grid { grid-template-columns: repeat(auto-fill, minmax(84px, 1fr)); }
 }

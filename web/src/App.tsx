@@ -92,7 +92,7 @@ export function App() {
           </div>
         </section>
 
-        <aside className="rail">
+        <aside className={`rail${assets.length || jobs.length ? ' active' : ''}`}>
           {jobs.length > 0 && (
             <div className="queue">
               <div className="rail-h">Rendering ({jobs.length})</div>
