@@ -1,3 +1,12 @@
+# ── studio-chat SPA (web/) ── the /v1/agent chat UI served at /studio. Built here
+# so the image is self-contained; the small Vite bundle lands at /app/web/dist.
+FROM node:20-slim AS web
+WORKDIR /web
+COPY web/package.json web/package-lock.json* ./
+RUN npm ci 2>/dev/null || npm install
+COPY web/ ./
+RUN npm run build
+
 FROM python:3.11-slim AS base
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -24,6 +33,9 @@ RUN chmod +x /tmp/branding/apply-branding.sh && /tmp/branding/apply-branding.sh 
 
 # Copy application code
 COPY . .
+
+# The studio-chat SPA built above → served at /studio by middleware/studio_home.py.
+COPY --from=web /web/dist ./web/dist
 
 # Vendor the Hanzo Studio custom-node packs (segmentation, controlnet, ipadapter,
 # upscaling, video, utils) at their pinned commits and install their deps with the
