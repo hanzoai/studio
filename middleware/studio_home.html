@@ -183,6 +183,73 @@ body.immersive #stage{display:block}
 @media (hover:none){
   .card .tools{max-height:none;opacity:1;margin-top:2px}
 }
+/* ── Stacks: Procreate-style gallery folders ─────────────────────────────────── */
+.card[draggable=true]{cursor:grab}
+.card.dragging{opacity:.4}
+.card.drop-target,.stackcard.drop-target{outline:2px solid var(--brand);outline-offset:-2px}
+.card .droplbl,.stackcard .droplbl{position:absolute;inset:0;display:none;align-items:center;justify-content:center;
+  background:rgba(10,10,11,.66);color:var(--txt);font-size:.82rem;font-weight:600;z-index:6;text-align:center;padding:8px;border-radius:13px}
+.card.drop-target .droplbl,.stackcard.drop-target .droplbl{display:flex}
+/* Stack card: a cover with two offset layers behind → the "stacked" look */
+.stackcard{position:relative;background:var(--panel);border:1px solid var(--line);border-radius:13px;
+  display:flex;flex-direction:column;cursor:pointer;transition:.12s}
+.stackcard:hover{border-color:#3a3a48;transform:translateY(-2px)}
+.stackcard .layers{position:relative;aspect-ratio:2/3;margin:0}
+.stackcard .layers .lyr{position:absolute;inset:0;background:#0f0f12 center/cover no-repeat;border-radius:11px;border:1px solid var(--line)}
+.stackcard .layers .l2{transform:translate(6px,6px) rotate(1.4deg);filter:brightness(.6)}
+.stackcard .layers .l1{transform:translate(3px,3px) rotate(-1deg);filter:brightness(.8)}
+.stackcard .layers .l0{box-shadow:0 6px 18px #0007}
+.stackcard .layers .noc{display:flex;align-items:center;justify-content:center;color:var(--dim);font-size:1.6rem}
+.stackcard .stk-badge{position:absolute;top:9px;right:9px;background:rgba(10,10,11,.78);border:1px solid var(--line);
+  border-radius:99px;padding:2px 9px;font-size:.72rem;font-weight:600;z-index:4;display:flex;gap:5px;align-items:center}
+.stackcard .stk-fold{position:absolute;top:9px;left:9px;font-size:.9rem;z-index:4;opacity:.9}
+.stackcard .meta{padding:10px 12px;display:flex;flex-direction:column;gap:4px}
+.stackcard .t{font-size:.85rem;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.stackcard .sub{font-size:.7rem;color:var(--dim)}
+.stackcard .ovf{position:absolute;bottom:52px;right:9px;width:28px;height:28px;border-radius:8px;border:1px solid var(--line);
+  background:rgba(10,10,11,.7);color:var(--txt);font-size:1rem;cursor:pointer;z-index:5;display:none;align-items:center;justify-content:center;line-height:1}
+.stackcard:hover .ovf{display:flex}
+/* a floating overflow menu (stack card + detail) */
+.ovfmenu{position:fixed;background:#0e0e12;border:1px solid var(--line);border-radius:11px;padding:6px;z-index:60;min-width:190px;box-shadow:0 16px 44px #000b}
+.ovfmenu .mi{display:flex;align-items:center;gap:9px;padding:9px 12px;border-radius:8px;cursor:pointer;font-size:.85rem;color:var(--txt)}
+.ovfmenu .mi:hover{background:#ffffff12} .ovfmenu .mi.danger{color:#ff8f8f} .ovfmenu .sep{height:1px;background:var(--line);margin:4px 6px}
+/* ── Stack detail view ───────────────────────────────────────────────────────── */
+#stackview[hidden]{display:none}
+#svbulk[hidden]{display:none}   /* .row's display:flex would otherwise beat [hidden] */
+.sv-head{display:flex;align-items:center;gap:12px;margin:8px 0 6px;flex-wrap:wrap}
+.sv-back{border:1px solid var(--line);background:var(--panel);color:var(--txt);border-radius:8px;padding:7px 12px;font-size:.85rem;cursor:pointer}
+.sv-name{font-size:1.5rem;font-weight:600;background:none;border:none;border-bottom:1px solid transparent;color:var(--txt);font-family:inherit;padding:2px 2px;min-width:120px;max-width:60vw}
+.sv-name:hover,.sv-name:focus{border-bottom-color:var(--line);outline:none}
+.sv-count{color:var(--dim);font-size:.82rem}
+.sv-desc{width:100%;max-width:820px;background:none;border:none;color:var(--dim);font:inherit;font-size:.85rem;resize:none;margin:2px 0 10px;outline:none}
+.sv-desc:focus{color:var(--txt)}
+.sv-tools{display:flex;gap:8px;margin-left:auto;flex-wrap:wrap}
+.card .setcover,.card .stkmove{position:absolute;top:8px;left:9px}
+.card .rmx{position:absolute;top:8px;left:9px;width:26px;height:26px;border-radius:50%;border:none;background:rgba(0,0,0,.6);color:#fff;font-size:.9rem;cursor:pointer;z-index:4;line-height:1;opacity:.85}
+.card .rmx:hover{background:var(--warn);color:#111;opacity:1}
+.card.iscover{outline:2px solid #ffcf4a;outline-offset:-2px}
+.card .covertag{position:absolute;bottom:52px;left:9px;background:rgba(255,207,74,.9);color:#111;font-size:.62rem;font-weight:700;border-radius:5px;padding:1px 6px;z-index:4;text-transform:uppercase;letter-spacing:.4px}
+/* loading skeleton */
+.skel{background:var(--panel);border:1px solid var(--line);border-radius:13px;overflow:hidden}
+.skel .im{aspect-ratio:2/3;background:linear-gradient(100deg,#141419 30%,#1c1c24 50%,#141419 70%);background-size:200% 100%;animation:sh 1.2s infinite}
+.skel .ln{height:9px;margin:10px 12px;border-radius:5px;background:#1c1c24}
+@keyframes sh{0%{background-position:200% 0}100%{background-position:-200% 0}}
+/* delete-stack confirmation choices */
+.delchoice{display:flex;flex-direction:column;gap:9px;margin:14px 0}
+.delchoice label{display:flex;gap:10px;align-items:flex-start;border:1px solid var(--line);border-radius:10px;padding:11px 13px;cursor:pointer}
+.delchoice label:hover{border-color:var(--dim)}
+.delchoice input{margin-top:3px}
+.delchoice .dt{font-size:.86rem;font-weight:600} .delchoice .dd{font-size:.76rem;color:var(--dim);margin-top:2px}
+/* "Save outputs to" destination selector */
+.destrow{display:flex;align-items:center;gap:8px;margin:10px 0 2px;flex-wrap:wrap}
+.destrow .dl{font-size:.7rem;text-transform:uppercase;letter-spacing:.05em;color:var(--dim)}
+.destsel{background:#0f0f12;color:var(--txt);border:1px solid var(--line);border-radius:8px;padding:6px 10px;font:inherit;font-size:.82rem}
+.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);border:0}
+@media (max-width:600px){
+  .stackcard .ovf{display:flex}       /* touch: overflow always tappable */
+  .sv-tools{margin-left:0;width:100%}
+  .sv-name{max-width:70vw}
+}
 </style>
 <header>
   <svg class="logo" viewBox="0 0 520 520" xmlns="http://www.w3.org/2000/svg"><rect width="520" height="520" rx="120" fill="#111"/><g transform="translate(100,100) scale(4.78)" fill="#fff"><path d="M22.21 67V44.6369H0V67H22.21Z"/><path d="M66.7038 22.3184H22.2534L0.0878906 44.6367H44.4634L66.7038 22.3184Z"/><path d="M22.21 0H0V22.3184H22.21V0Z"/><path d="M66.7198 0H44.5098V22.3184H66.7198V0Z"/><path d="M66.7198 67V44.6369H44.5098V67H66.7198Z"/></g></svg>
@@ -224,12 +291,47 @@ body.immersive #stage{display:block}
     <button class="btn" id="selbtn" onclick="toggleSel()" style="padding:6px 12px">Select</button>
     <input class="search" id="q" placeholder="Search…" oninput="render()">
   </div>
-  <section id="assets"><div class="chips" id="filters"></div><div class="grid" id="agrid"></div></section>
+  <section id="assets">
+    <div class="chips" id="filters"></div>
+    <div class="row" id="stackbar" style="margin:-6px 0 14px;gap:10px">
+      <button class="mini" onclick="newStackPrompt()" title="Create an empty Stack">🗂 New Stack</button>
+      <label class="row" style="gap:6px;color:var(--dim);font-size:.78rem;cursor:pointer" title="Auto-create a Stack for each multi-image generation">
+        <input type="checkbox" id="autostack" onchange="setAutoStack(this.checked)"> Auto-stack batch generations</label>
+    </div>
+    <div class="grid" id="agrid" aria-label="Gallery: Stacks and images"></div>
+  </section>
+  <section id="stackview" hidden aria-label="Stack detail">
+    <div class="sv-head">
+      <button class="sv-back" onclick="closeStack()" aria-label="Back to Gallery">← Gallery</button>
+      <input class="sv-name" id="svname" aria-label="Stack name" onchange="renameCurStack(this.value)">
+      <span class="sv-count" id="svcount"></span>
+      <div class="sv-tools">
+        <button class="mini" onclick="pickAddImages()">＋ Add images</button>
+        <input id="svaddfile" type="file" accept="image/*" multiple hidden>
+        <button class="mini" onclick="shareCurStack()" title="Copy a link to this Stack">↗ Share</button>
+        <button class="mini" onclick="toggleSel()" id="svselbtn">Select</button>
+        <button class="mini" id="svovf" onclick="stackMenu(CURSTACK,event,true)" aria-haspopup="menu">⋯</button>
+      </div>
+    </div>
+    <textarea class="sv-desc" id="svdesc" rows="1" placeholder="Add a description…" aria-label="Stack description" onchange="describeCurStack(this.value)"></textarea>
+    <div id="svbulk" class="row" hidden style="gap:8px;margin:0 0 12px">
+      <span id="svbulkn" style="font-size:.82rem;color:var(--dim)">0 selected</span>
+      <button class="mini" onclick="svMoveTo()">Move to Stack…</button>
+      <button class="mini" onclick="svDownload()">Download</button>
+      <button class="mini" onclick="svRemoveSel()">Remove from Stack</button>
+      <button class="mini" onclick="svDeleteSel()">Delete</button>
+      <button class="mini" onclick="clearSel()">Cancel</button>
+    </div>
+    <div class="grid" id="svgrid"></div>
+  </section>
   <div id="bulkbar"><span id="bulkn">0 selected</span>
-    <button class="mini hot" onclick="openCompose()" title="Combine selected assets into a new one">✦ Compose new</button>
+    <button class="mini hot" onclick="stackSel()" title="Group the selected images into a new Stack">🗂 Stack</button>
+    <button class="mini" onclick="moveSelTo(event)" title="Move the selected images into a Stack">Move to Stack…</button>
+    <button class="mini" onclick="openCompose()" title="Combine selected assets into a new one">✦ Compose</button>
+    <button class="mini" onclick="downloadSel()">Download</button>
+    <button class="mini" onclick="tagSel()">Add tags</button>
     <button class="mini" onclick="bulk('approved')">Approve</button>
     <button class="mini" onclick="bulk('published')">Publish</button>
-    <button class="mini" onclick="bulkFork()">Fork / redo</button>
     <button class="mini" onclick="bulk('deleted')">Delete</button>
     <button class="mini" onclick="clearSel()">Cancel</button>
   </div>
@@ -258,7 +360,11 @@ body.immersive #stage{display:block}
   <button class="mini" onclick="clearTray()">Clear</button>
 </div>
 <div id="toast"></div>
-<div id="zoom" onclick="this.style.display='none'"><img id="zoomimg"></div>
+<div id="zoom" onclick="zoomBg(event)">
+  <button class="viewbtn" id="zprev" onclick="event.stopPropagation();svStep(-1)" style="position:absolute;left:18px;top:50%;transform:translateY(-50%);display:none;font-size:1.4rem" aria-label="Previous image">‹</button>
+  <img id="zoomimg" onclick="event.stopPropagation()">
+  <button class="viewbtn" id="znext" onclick="event.stopPropagation();svStep(1)" style="position:absolute;right:18px;top:50%;transform:translateY(-50%);display:none;font-size:1.4rem" aria-label="Next image">›</button>
+</div>
 <dialog id="fixdlg">
   <h3 id="fixtitle" style="font-size:1rem">Fix with chat</h3>
   <p id="fixdesc" style="color:var(--dim);font-size:.83rem;margin-top:6px">Describe the change — a new render is queued from this image. Add reference photos (drag in, or pick from your history) to guide it.</p>
@@ -267,6 +373,7 @@ body.immersive #stage{display:block}
   <input id="fixfile" type="file" accept="image/*" multiple hidden>
   <textarea id="fixtext" placeholder="e.g. make the straps thicker, smooth the skin"></textarea>
   <div id="gpuwarn" style="display:none;color:var(--warn);font-size:.78rem;margin:-4px 0 8px"></div>
+  <div class="destrow"><span class="dl">Save outputs to</span><select class="destsel" id="fixdest"></select></div>
   <div id="fixerr" class="dlgerr"></div>
   <div class="row" style="justify-content:space-between">
     <button class="mini" id="fixhistbtn" onclick="toggleFixHistory()">+ From history</button>
@@ -301,8 +408,21 @@ body.immersive #stage{display:block}
   <div class="row" id="compthumbs" style="margin:10px 0 0;flex-wrap:wrap"></div>
   <textarea id="comptext" placeholder="e.g. combine these — garment from #1 on the model + pose from #2, studio white background"></textarea>
   <div id="gpuwarn2" style="display:none;color:var(--warn);font-size:.78rem;margin:-4px 0 8px"></div>
+  <div class="destrow"><span class="dl">Save outputs to</span><select class="destsel" id="compdest"></select></div>
   <div class="row" style="justify-content:flex-end"><button class="mini" onclick="compdlg.close()">Cancel</button><button class="mini hot" onclick="sendCompose()">Generate</button></div>
 </dialog>
+<dialog id="delstackdlg" aria-label="Delete Stack">
+  <h3 style="font-size:1rem">Delete Stack</h3>
+  <p style="color:var(--dim);font-size:.83rem;margin-top:6px">What should happen to the images inside this Stack?</p>
+  <div class="delchoice">
+    <label><input type="radio" name="delmode" value="only" checked>
+      <span><span class="dt">Delete Stack Only</span><span class="dd">The images return to your main gallery. Nothing is deleted.</span></span></label>
+    <label><input type="radio" name="delmode" value="images">
+      <span><span class="dt">Delete Stack and Images</span><span class="dd">The Stack and its images move to Deleted (recoverable).</span></span></label>
+  </div>
+  <div class="row" style="justify-content:flex-end;gap:6px"><button class="mini" onclick="delstackdlg.close()">Cancel</button><button class="mini hot" onclick="confirmDeleteStack()">Delete</button></div>
+</dialog>
+<div id="live" class="sr-only" aria-live="polite" role="status"></div>
 <script>
 // ── Template / KIND catalog — everything Studio supports ─────────────────────
 const TEMPLATES=[
@@ -335,7 +455,11 @@ const imgURL=a=>`/v1/library/file?path=${encodeURIComponent(a.path)}`;
 const thumbURL=a=>`/v1/library/file?thumb=1&path=${encodeURIComponent(a.path)}`;
 function tcard(x){return `<div class="tcard" onclick="pickTemplate('${x.k}','${x.t.replace(/'/g,"")}')"><div class="ic">${x.ic}</div><div class="tl">${x.t}</div><div class="td">${x.d}</div></div>`;}
 function tab(name){document.querySelectorAll('.tabs button').forEach(b=>b.classList.toggle('on',b.dataset.tab===name));
+  // Leaving for another tab closes an open Stack detail (it lives over Assets).
+  if(CURSTACK){CURSTACK=null;if(SELMODE){SELMODE=false;SEL.clear();updateBulk();}}
+  $('stackview').hidden=true;
   for(const s of ['assets','templates','pipelines','runs'])$(s).hidden=s!==name;
+  if(name==='assets')render();
   if(name==='runs')runs(); if(name==='pipelines')pipes(); if(name==='templates')loadOrgTemplates();}
 // ── Org templates: saved graphs, Open in Editor + Render (the ONE dispatch path) ──
 async function loadOrgTemplates(){
@@ -365,6 +489,8 @@ function create(){const p=$('pin').value.trim(); const t=$('tmpl').textContent;
 }
 async function load(){
   const r=await fetch('/v1/library'); DATA=await r.json(); $('org').textContent=DATA.org||'';
+  await loadStacks();
+  if(CURSTACK){ const fresh=STACKS.find(s=>s.id===CURSTACK.id); if(fresh){CURSTACK=await fetchStack(CURSTACK.id); svRender();} else closeStack(); }
   $('tcards').innerHTML=TEMPLATES.slice(0,7).map(tcard).join('');
   // Templates tab: grouped by category
   const grps=[...new Set(TEMPLATES.map(t=>t.grp))];
@@ -380,23 +506,37 @@ async function load(){
   render();
 }
 let SELMODE=false; const SEL=new Set();
-function toggleSel(){SELMODE=!SELMODE;$('selbtn').classList.toggle('brand',SELMODE);if(!SELMODE)SEL.clear();updateBulk();render();}
-function clearSel(){SEL.clear();SELMODE=false;$('selbtn').classList.remove('brand');updateBulk();render();}
-function updateBulk(){$('bulkbar').classList.toggle('on',SELMODE&&SEL.size>0);$('bulkn').textContent=SEL.size+' selected';}
-function pick(ev,path){ev.stopPropagation();if(SEL.has(path))SEL.delete(path);else SEL.add(path);updateBulk();render();}
+// Selection is shared by the gallery and an open Stack — only one view is active
+// at a time, so the SAME SEL/SELMODE drives whichever is showing (drawSel()).
+function drawSel(){ CURSTACK?svRender():render(); }
+function toggleSel(){SELMODE=!SELMODE;$('selbtn').classList.toggle('brand',SELMODE);$('svselbtn')&&$('svselbtn').classList.toggle('brand',SELMODE);if(!SELMODE)SEL.clear();updateBulk();drawSel();}
+function clearSel(){SEL.clear();SELMODE=false;$('selbtn').classList.remove('brand');$('svselbtn')&&$('svselbtn').classList.remove('brand');updateBulk();drawSel();}
+function updateBulk(){const on=SELMODE&&SEL.size>0;
+  $('bulkbar').classList.toggle('on',on&&!CURSTACK);$('bulkn').textContent=SEL.size+' selected';
+  $('svbulk').hidden=!(on&&CURSTACK);$('svbulkn').textContent=SEL.size+' selected';}
+function pick(ev,path){ev.stopPropagation();if(SEL.has(path))SEL.delete(path);else SEL.add(path);updateBulk();drawSel();}
 function render(){
   const q=($('q').value||'').toLowerCase();
   const showDel=FILTER==='deleted';
   const showFlag=FILTER==='flagged';
   const review=showDel||showFlag;                       // a status-review view (trash / quality gate)
+  // Stacks (Procreate folders) lead the gallery in the "all" view; a member asset
+  // lives INSIDE its Stack, so it's hidden from the loose grid (never in a review view).
+  let scards='';
+  if(!review&&FILTER==='all'){
+    let sview=activeStacks();
+    if(q)sview=sview.filter(s=>(s.name||'').toLowerCase().includes(q));
+    scards=sview.map(stackCard).join('');
+  }
   let rows=DATA.assets.filter(a=>{
     if(showDel)return a.status==='deleted';
     if(showFlag)return a.status==='flagged';
     if(a.status==='deleted'||a.status==='flagged')return false;  // hide trashed + gate-flagged from normal views
+    if(STACKSET.has(a.path))return false;               // stacked → shown inside its Stack
     return FILTER==='all'?true:FILTER==='marketing'?(a.path||'').startsWith('marketing/'):a.design===FILTER;
   });
   if(q)rows=rows.filter(a=>(a.path||'').toLowerCase().includes(q));
-  $('agrid').innerHTML=rows.map(a=>{
+  const cards=rows.map(a=>{
     const i=DATA.assets.indexOf(a);
     const img=/\.(png|jpe?g|webp)$/i.test(a.path||'');
     const prov=a.prov&&a.prov.workflow?` · ${a.prov.workflow}`:'';
@@ -404,7 +544,10 @@ function render(){
     const cardClick=SELMODE?`onclick="pick(event,'${a.path.replace(/'/g,"\\'")}')"`:'';
     const inTray=trayHasLib(a.path);
     const pe=a.path.replace(/'/g,"\\'");
-    return `<div class="card ${SELMODE?'sel-mode':''} ${picked?'picked':''}" ${cardClick}>
+    // Drag one image onto another → Create Stack; onto a Stack card → Add to Stack.
+    const dnd=(!SELMODE&&img&&!showDel)?`draggable="true" ondragstart="dragStart(event,'${pe}')" ondragend="dragEnd(event)" ondragover="dragOverCard(event)" ondragleave="dragLeaveCard(event)" ondrop="dropOnCard(event,'${pe}')"`:'';
+    return `<div class="card ${SELMODE?'sel-mode':''} ${picked?'picked':''}" data-path="${pe}" ${dnd} ${cardClick}>
+      <div class="droplbl">Create Stack</div>
       <div class="pick">${picked?'✓':''}</div>
       ${img&&!SELMODE?`<button class="addref ${inTray?'on':''}" title="Add to next generation" onclick="event.stopPropagation();addRef('${pe}')">${inTray?'✓':'+'}</button>`:''}
       ${img&&!SELMODE&&!review?`<button class="delx" title="Move to Deleted (recoverable)" onclick="event.stopPropagation();quickDel('${pe}')">🗑</button>`:''}
@@ -418,10 +561,12 @@ function render(){
           ${review?`<button class="mini" onclick="setSt(${i},'draft')">${showDel?'Recover':'Restore'}</button>`:`
           ${a.status!=='approved'?`<button class="mini" onclick="setSt(${i},'approved')">Approve</button>`:''}
           ${a.status!=='published'?`<button class="mini" onclick="setSt(${i},'published')">Publish</button>`:''}
+          <button class="mini" onclick="addToStackPrompt('${pe}',event)" title="Add this image to a Stack">🗂 Stack</button>
           ${img?`<button class="mini" onclick="rerun(${i})">Re-run</button><button class="mini" onclick="openLineage('${pe}')" title="Show this image's versions (what it came from + later fixes)">Versions</button><button class="mini hot" onclick="openFix(${i})">Fix</button>`:''}
           <button class="mini" onclick="setSt(${i},'deleted')" title="Move to Deleted (recoverable)">🗑</button>`}
         </div>`}
-      </div></div>`;}).join('')||`<div class="empty">${showDel?'Deleted is empty.':showFlag?'Nothing flagged — the quality gate has passed every render.':'No assets in this view yet.'}</div>`;
+      </div></div>`;}).join('');
+  $('agrid').innerHTML=(scards+cards)||`<div class="empty">${showDel?'Deleted is empty.':showFlag?'Nothing flagged — the quality gate has passed every render.':'No assets in this view yet.'}</div>`;
 }
 async function bulk(status){
   if(!SEL.size)return;
@@ -521,6 +666,7 @@ async function openCompose(){
   const paths=[...SEL]; $('compn').textContent=paths.length;
   $('compthumbs').innerHTML=paths.map((p,i)=>`<div style="text-align:center"><img src="/v1/library/file?thumb=1&path=${encodeURIComponent(p)}" style="width:64px;height:96px;object-fit:cover;border-radius:6px;border:1px solid var(--line)"><div style="font-size:.62rem;color:var(--dim)">#${i+1}</div></div>`).join('');
   $('comptext').value='';
+  fillDest($('compdest'), CURSTACK?CURSTACK.id:'');
   $('gpuwarn2').style.display=(await gpuOnline())?'none':'block';
   $('gpuwarn2').textContent='⚠ No GPU worker online — this queues but renders only when a BYO-GPU (e.g. spark) is connected.';
   $('compdlg').showModal();
@@ -528,7 +674,8 @@ async function openCompose(){
 async function sendCompose(){
   const t=$('comptext').value.trim(); if(t.length<3){toast('Describe how to combine them');return;}
   const paths=[...SEL]; toast('Composing from '+paths.length+' assets…');
-  const r=await fetch('/v1/library/compose',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({paths,instruction:t})});
+  const stack=await resolveDest($('compdest'));
+  const r=await fetch('/v1/library/compose',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({paths,instruction:t,stack})});
   const j=await r.json().catch(()=>({}));
   if(r.ok){ $('compdlg').close(); toast(`Compose queued (${j.refs} refs) → see Queue & History`); clearSel(); }
   else if(!(await healStale(j))){ $('gpuwarn2').style.display='block'; $('gpuwarn2').textContent='Couldn’t queue: '+(errMsg(j)||('error '+r.status)); }
@@ -786,6 +933,7 @@ async function openFixPath(path,prompt){FIXMODE='fix';AMENDID=null;ORIGREFS=[];M
   $('fixtitle').textContent='Fix with chat';
   $('fixdesc').textContent='Describe the change — a new render is queued from this image. Add reference photos (drag in, or pick from your history) to guide it.';
   $('fixhist').style.display='none'; drawFixRefs();
+  fillDest($('fixdest'), stackIdOf(path)||'');   // a fix/variation defaults into the source image's Stack
   $('gpuwarn').style.display=(await gpuOnline())?'none':'block';
   $('gpuwarn').textContent='⚠ No GPU worker online — this queues but renders only when a BYO-GPU (e.g. spark) is connected.';
   $('fixdlg').showModal();}
@@ -797,6 +945,7 @@ async function openAmend(id){
   $('fixtitle').textContent='Edit queued job';
   $('fixdesc').textContent='Change the prompt and/or add references. Saving cancels the queued job and re-queues it with the amendment — it re-enters the queue, so its position resets.';
   $('fixhist').style.display='none'; drawFixRefs();
+  fillDest($('fixdest'), CURSTACK?CURSTACK.id:'');
   $('gpuwarn').style.display='none';
   $('fixdlg').showModal();
 }
@@ -804,13 +953,14 @@ async function sendFix(){const t=$('fixtext').value.trim();if(t.length<3){showFi
   showFixErr(''); toast(FIXMODE==='amend'?'Amending…':'Queueing fix…');
   const paths=FIXREFS.filter(x=>x.kind==='lib').map(x=>x.ref);
   const uploads=FIXREFS.filter(x=>x.kind==='up').map(x=>x.ref);
+  const stack=await resolveDest($('fixdest'));
   let r;
   if(FIXMODE==='amend'){ // atomic swap: cancel the queued job + re-dispatch amended
-    r=await fetch('/v1/queue/amend',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({prompt_id:AMENDID,instruction:t,paths,uploads})});
+    r=await fetch('/v1/queue/amend',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({prompt_id:AMENDID,instruction:t,paths,uploads,stack})});
   }else if(!FIXREFS.length){ // single base image → the proven edit path
-    r=await fetch('/v1/library/fix',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({path:FIXPATH,instruction:t})});
+    r=await fetch('/v1/library/fix',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({path:FIXPATH,instruction:t,stack})});
   }else{               // base + references → multi-reference compose
-    r=await fetch('/v1/library/compose',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({paths:[FIXPATH,...paths],instruction:t,uploads})});
+    r=await fetch('/v1/library/compose',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({paths:[FIXPATH,...paths],instruction:t,uploads,stack})});
   }
   const j=await r.json().catch(()=>({}));
   if(r.ok){ $('fixdlg').close(); toast(FIXMODE==='amend'?'Amended — re-queued (position reset)':'Fix queued → see Queue & History'); if(typeof runs==='function')runs(); }
@@ -837,7 +987,9 @@ async function cancelJob(id){
     document.addEventListener('click',e=>{const m=$('acctmenu');if(m&&m.classList.contains('on')&&!m.contains(e.target))m.classList.remove('on');});}
   const box=document.querySelector('.prompt'); if(box){ wireDrop(box,attachFiles); wirePaste(box,attachFiles); }
 })();
-function zoom(u){$('zoomimg').src=u;$('zoom').style.display='flex';}
+function zoom(u){const z=$('zoom');z.classList.remove('stackctx');$('zprev').style.display='none';$('znext').style.display='none';$('zoomimg').src=u;z.style.display='flex';}
+function zoomBg(){closeZoom();}
+function closeZoom(){const z=$('zoom');z.style.display='none';z.classList.remove('stackctx');$('zprev').style.display='none';$('znext').style.display='none';SVI=-1;}
 const ta=$('pin'); ta.addEventListener('input',()=>{ta.style.height='auto';ta.style.height=Math.min(ta.scrollHeight,180)+'px';});
 async function loadSession(){
   let s={}; try{ s=await (await fetch('/v1/session')).json(); }catch(e){ return; }
@@ -887,10 +1039,242 @@ async function updateLivebar(){
     st.innerHTML=`<span class="lb-q">Idle — nothing generating.</span>${gpu?'':' <span class="lb-eta">· connect a GPU to generate</span>'}`;
   }
 }
+// ══ Stacks — Procreate-style gallery folders ═══════════════════════════════════
+// Stacks are an ORGANIZATIONAL layer over the library: an image lives in at most
+// one Stack; removing it returns it to the gallery (never deletes). The SQLite
+// store (/v1/stacks…) is the source of truth for arrangement; assets stay as-is.
+let STACKS=[], STACKSET=new Set(), CURSTACK=null, DRAG=null, SVDRAG=null, SVI=-1, DELSTACK=null;
+const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const qq=s=>String(s==null?'':s).replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+const assetByPath=p=>DATA.assets.find(a=>a.path===p);
+const stackIdOf=p=>{for(const s of STACKS)if((s.assetIds||[]).includes(p))return s.id;return null;};
+// Archived Stacks stay OUT of the gallery/pickers, but their members stay hidden
+// from the loose grid (STACKSET is built from ALL Stacks) — archive != unstack.
+const activeStacks=()=>STACKS.filter(s=>!s.archivedAt);
+function ago(ts){if(!ts)return '';let d=Math.max(0,Date.now()/1000-ts);if(d<60)return 'just now';if(d<3600)return Math.floor(d/60)+'m ago';if(d<86400)return Math.floor(d/3600)+'h ago';return Math.floor(d/86400)+'d ago';}
+function announce(m){const l=$('live');if(l)l.textContent=m;}
+function dl(url,name){const a=document.createElement('a');a.href=url;a.download=name||'';document.body.appendChild(a);a.click();a.remove();}
+async function loadStacks(){
+  try{const d=await (await fetch('/v1/stacks')).json();STACKS=d.stacks||[];}catch(_){STACKS=[];}
+  STACKSET=new Set();for(const s of STACKS)for(const id of (s.assetIds||[]))STACKSET.add(id);
+  try{const st=await (await fetch('/v1/stacks/settings')).json();const cb=$('autostack');if(cb)cb.checked=!!st.autoStack;}catch(_){}
+}
+async function fetchStack(id){try{const r=await fetch('/v1/stacks/'+encodeURIComponent(id));if(!r.ok)return null;return await r.json();}catch(_){return null;}}
+// ── Stack card in the gallery: layered cover + name + count + last-updated ──────
+function stackCard(s){
+  const cov=s.coverAssetId?thumbURL({path:s.coverAssetId}):'';
+  const lyr=cov?`<div class="lyr l2" style="background-image:url('${cov}')"></div><div class="lyr l1" style="background-image:url('${cov}')"></div><div class="lyr l0" style="background-image:url('${cov}')"></div>`
+              :`<div class="lyr l0 noc">🗂</div>`;
+  const n=s.count,label=`Open Stack: ${esc(s.name)}, ${n} image${n===1?'':'s'}`;
+  return `<div class="stackcard" role="button" tabindex="0" aria-label="${label}"
+     onclick="openStack('${qq(s.id)}')" onkeydown="stackKey(event,'${qq(s.id)}')"
+     ondragover="dragOverStack(event)" ondragleave="dragLeaveCard(event)" ondrop="dropOnStack(event,'${qq(s.id)}')">
+     <div class="droplbl">Add to Stack</div>
+     <button class="ovf" aria-label="Stack menu" onclick="event.stopPropagation();stackMenu('${qq(s.id)}',event,false)">⋯</button>
+     <div class="layers"><span class="stk-badge">▤ ${n}</span>${lyr}</div>
+     <div class="meta"><span class="t">${esc(s.name)}</span><span class="sub">${n} image${n===1?'':'s'} · ${ago(s.updatedAt)}</span></div>
+  </div>`;
+}
+function stackKey(e,id){if(e.key==='Enter'||e.key===' '){e.preventDefault();openStack(id);}}
+// ── Gallery drag & drop: image→image = Create Stack, image→card = Add to Stack ──
+function clearDropHi(){document.querySelectorAll('.drop-target').forEach(el=>el.classList.remove('drop-target'));}
+function dragStart(e,path){DRAG=path;try{e.dataTransfer.setData('text/plain',path);e.dataTransfer.effectAllowed='copyMove';}catch(_){}e.currentTarget.classList.add('dragging');}
+function dragEnd(e){e.currentTarget.classList.remove('dragging');clearDropHi();DRAG=null;}
+function dragOverCard(e){if(!DRAG)return;const c=e.currentTarget;if(c.dataset.path===DRAG)return;e.preventDefault();c.classList.add('drop-target');}
+function dragLeaveCard(e){e.currentTarget.classList.remove('drop-target');}
+async function dropOnCard(e,path){e.preventDefault();e.currentTarget.classList.remove('drop-target');const src=DRAG;DRAG=null;if(!src||src===path)return;createStackFromDrag(src,path);}
+function dragOverStack(e){if(!DRAG)return;e.preventDefault();e.currentTarget.classList.add('drop-target');}
+async function dropOnStack(e,id){e.preventDefault();e.currentTarget.classList.remove('drop-target');const src=DRAG;DRAG=null;if(!src)return;await addAssetsToStack(id,[src]);}
+// ── Create / add ────────────────────────────────────────────────────────────────
+async function createStack(name,ids){
+  const r=await fetch('/v1/stacks',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,assetIds:ids})});
+  if(!r.ok){toast('Couldn’t create Stack');return null;}
+  const s=await r.json();await load();toast('Stack created: '+(s.name||'Untitled Stack'));announce('Stack created');return s;
+}
+async function createStackFromDrag(a,b){const name=prompt('Name this Stack','Untitled Stack');if(name===null)return;await createStack(name||'Untitled Stack',[a,b]);}
+async function newStackPrompt(){const name=prompt('Name this Stack','Untitled Stack');if(name===null)return;const s=await createStack(name||'Untitled Stack',[]);if(s)openStack(s.id);}
+async function addAssetsToStack(id,ids){
+  const r=await fetch('/v1/stacks/'+encodeURIComponent(id)+'/assets',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({assetIds:ids})});
+  if(!r.ok){toast('Couldn’t add to Stack');return null;}
+  const s=await r.json();await load();if(CURSTACK&&CURSTACK.id===id){CURSTACK=s;svRender();}toast('Added to Stack');announce('Added to Stack');return s;
+}
+function addToStackPrompt(path,ev){ev&&ev.stopPropagation();
+  const items=activeStacks().map(s=>({label:'🗂 '+s.name,on:()=>addAssetsToStack(s.id,[path])}));
+  items.push({sep:true});
+  items.push({label:'＋ New Stack…',on:async()=>{const n=prompt('Name this Stack','Untitled Stack');if(n===null)return;await createStack(n||'Untitled Stack',[path]);}});
+  floatMenu(items,ev);
+}
+// ── Multi-select bulk (gallery) ───────────────────────────────────────────────
+async function stackSel(){if(!SEL.size)return;const name=prompt('Name this Stack','Untitled Stack');if(name===null)return;const ids=[...SEL];const s=await createStack(name||'Untitled Stack',ids);if(s){clearSel();openStack(s.id);}}
+function moveSelTo(ev){if(!SEL.size)return;const ids=[...SEL];
+  const items=activeStacks().map(s=>({label:'🗂 '+s.name,on:async()=>{await addAssetsToStack(s.id,ids);clearSel();}}));
+  items.push({sep:true});
+  items.push({label:'＋ New Stack…',on:async()=>{const n=prompt('Name this Stack','Untitled Stack');if(n===null)return;const s=await createStack(n||'Untitled Stack',ids);if(s){clearSel();openStack(s.id);}}});
+  items.push({label:'↩ Back to main gallery',on:async()=>{await returnToGallery(ids);clearSel();}});
+  floatMenu(items,ev);
+}
+async function returnToGallery(ids){
+  const by={};for(const p of ids){const sid=stackIdOf(p);if(sid)(by[sid]=by[sid]||[]).push(p);}
+  for(const sid in by)await fetch('/v1/stacks/'+encodeURIComponent(sid)+'/assets',{method:'DELETE',headers:{'Content-Type':'application/json'},body:JSON.stringify({assetIds:by[sid]})});
+  await load();toast('Returned to gallery');
+}
+function downloadSel(){if(!SEL.size)return;for(const p of [...SEL])dl(imgURL({path:p}),p.split('/').pop());toast('Downloading '+SEL.size);}
+async function tagSel(){if(!SEL.size)return;const t=prompt('Add tags (comma-separated)');if(t===null)return;const tags=t.split(',').map(x=>x.trim()).filter(Boolean);if(!tags.length)return;
+  const r=await fetch('/v1/library/tags',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({paths:[...SEL],tags})});toast(r.ok?('Tagged '+SEL.size):'Tag failed');clearSel();await load();}
+// ── Stack detail view ─────────────────────────────────────────────────────────
+async function openStack(id){
+  const s=await fetchStack(id);if(!s){toast('Stack not found');await load();return;}
+  CURSTACK=s;SEL.clear();SELMODE=false;$('svselbtn').classList.remove('brand');
+  document.querySelectorAll('.tabs button').forEach(b=>b.classList.toggle('on',b.dataset.tab==='assets'));
+  for(const x of ['assets','templates','pipelines','runs'])$(x).hidden=true;
+  $('stackview').hidden=false;$('svname').value=s.name||'';$('svdesc').value=s.description||'';
+  updateBulk();svRender();announce('Opened Stack '+(s.name||'')+', '+s.count+' images');window.scrollTo({top:0,behavior:'smooth'});
+}
+function closeStack(){CURSTACK=null;SEL.clear();SELMODE=false;$('svselbtn').classList.remove('brand');$('stackview').hidden=true;$('assets').hidden=false;updateBulk();render();}
+function svRender(){
+  const s=CURSTACK;if(!s)return;
+  $('svcount').textContent=s.count+' image'+(s.count===1?'':'s')+(s.updatedAt?(' · updated '+ago(s.updatedAt)):'');
+  if(!s.assets.length){
+    $('svgrid').innerHTML=`<div class="empty" style="grid-column:1/-1">This Stack is empty.
+      <div class="row" style="justify-content:center;margin-top:12px;gap:8px">
+        <button class="mini hot" onclick="pickAddImages()">Add images</button>
+        <button class="mini" onclick="document.getElementById('pin').scrollIntoView({behavior:'smooth'});document.getElementById('pin').focus()">Generate images</button>
+        <button class="mini" onclick="closeStack()">Return to Gallery</button></div></div>`;
+    return;
+  }
+  $('svgrid').innerHTML=s.assets.map((m,idx)=>svCard(m.assetId,idx)).join('');
+}
+function svCard(path,idx){
+  const a=assetByPath(path),img=/\.(png|jpe?g|webp)$/i.test(path),picked=SEL.has(path),pe=qq(path),iscover=CURSTACK.coverAssetId===path;
+  const cardClick=SELMODE?`onclick="pick(event,'${pe}')"`:'';
+  const dnd=(!SELMODE)?`draggable="true" ondragstart="svDragStart(event,${idx})" ondragend="svDragEnd(event)" ondragover="svDragOver(event,${idx})" ondragleave="dragLeaveCard(event)" ondrop="svDrop(event,${idx})"`:'';
+  const thumb='/v1/library/file?thumb=1&path='+encodeURIComponent(path);
+  return `<div class="card ${SELMODE?'sel-mode':''} ${picked?'picked':''} ${iscover?'iscover':''}" data-path="${pe}" data-idx="${idx}" ${dnd} ${cardClick} aria-label="${esc(path.split('/').pop())}${iscover?' (cover)':''}">
+    <div class="droplbl">Reorder</div><div class="pick">${picked?'✓':''}</div>${iscover?'<span class="covertag">Cover</span>':''}
+    ${img?`<div class="im" style="background-image:url('${thumb}')" ${SELMODE?'':`onclick="svOpen(${idx})"`}></div>`:`<div class="doc">${esc(path.split('/').pop())}</div>`}
+    <div class="meta"><span class="t">${esc(path.split('/').pop())}</span>
+      ${a?`<div class="row"><span class="st ${a.status}">${a.status}</span></div>`:'<span class="sub">unavailable — asset deleted</span>'}
+      ${SELMODE?'':`<div class="row tools">
+        <button class="mini" onclick="setCover('${pe}')">Set cover</button>
+        <button class="mini" onclick="svRemove(['${pe}'])" title="Return to gallery">Remove</button>
+        <button class="mini hot" onclick="svFix('${pe}')" title="Create variations in this Stack">Fix</button>
+        <button class="mini" onclick="svImgMenu('${pe}',${idx},event)" aria-haspopup="menu">⋯</button>
+      </div>`}
+    </div></div>`;
+}
+function svImgMenu(path,idx,ev){ev&&ev.stopPropagation();
+  floatMenu([
+    {label:'👁 Open',on:()=>svOpen(idx)},
+    {label:'⭐ Set as cover',on:()=>setCover(path)},
+    {label:'↔ Move to Stack…',on:()=>moveOneTo(path,ev)},
+    {label:'⬇ Download',on:()=>dl(imgURL({path}),path.split('/').pop())},
+    {label:'⧉ Duplicate (re-render here)',on:()=>rerunInStack(path)},
+    {label:'↻ Re-run',on:()=>rerunInStack(path)},
+    {label:'✨ Create variations',on:()=>svFix(path)},
+    {label:'ℹ Metadata / source workflow',on:()=>openLineage(path)},
+    {sep:true},
+    {label:'↩ Remove from Stack',on:()=>svRemove([path])},
+    {label:'🗑 Delete image',danger:true,on:()=>svDeleteImg(path)},
+  ],ev);
+}
+async function setCover(path){const r=await fetch('/v1/stacks/'+encodeURIComponent(CURSTACK.id),{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({cover:path})});if(r.ok){CURSTACK=await r.json();svRender();await loadStacks();toast('Cover updated');}else toast('Couldn’t set cover');}
+async function svRemove(paths){const r=await fetch('/v1/stacks/'+encodeURIComponent(CURSTACK.id)+'/assets',{method:'DELETE',headers:{'Content-Type':'application/json'},body:JSON.stringify({assetIds:paths})});if(r.ok){CURSTACK=await r.json();svRender();await loadStacks();toast('Removed — back in gallery');announce('Removed from Stack');}else toast('Couldn’t remove');}
+function svRemoveSel(){if(!SEL.size)return;const ids=[...SEL];SEL.clear();SELMODE=false;updateBulk();svRemove(ids);}
+function svFix(path){if(!assetByPath(path)){toast('Image unavailable');return;}openFixPath(path,'');}
+async function rerunInStack(path){toast('Queueing into this Stack…');const r=await fetch('/v1/library/rerun',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({path,stack:CURSTACK.id})});toast(r.ok?'Queued → lands in this Stack':'Failed');}
+async function svDeleteImg(path){if(!confirm('Delete this image? (recoverable in Deleted)'))return;
+  await fetch('/v1/library/status',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({path,status:'deleted'})});
+  await fetch('/v1/stacks/'+encodeURIComponent(CURSTACK.id)+'/assets',{method:'DELETE',headers:{'Content-Type':'application/json'},body:JSON.stringify({assetIds:[path]})});
+  CURSTACK=await fetchStack(CURSTACK.id);await load();svRender();toast('Deleted');}
+function svDeleteSel(){if(!SEL.size)return;if(!confirm('Delete '+SEL.size+' image(s)? (recoverable)'))return;const ids=[...SEL];SEL.clear();SELMODE=false;updateBulk();
+  (async()=>{for(const p of ids)await fetch('/v1/library/status',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({path:p,status:'deleted'})});
+    await fetch('/v1/stacks/'+encodeURIComponent(CURSTACK.id)+'/assets',{method:'DELETE',headers:{'Content-Type':'application/json'},body:JSON.stringify({assetIds:ids})});
+    CURSTACK=await fetchStack(CURSTACK.id);await load();svRender();toast('Deleted');})();}
+function svDownload(){if(!SEL.size)return;for(const p of [...SEL])dl(imgURL({path:p}),p.split('/').pop());toast('Downloading '+SEL.size);}
+function svMoveTo(){if(!SEL.size)return;moveSelTo({clientX:innerWidth/2,clientY:130,stopPropagation(){}});}
+function moveOneTo(path,ev){const items=activeStacks().filter(s=>s.id!==CURSTACK.id).map(s=>({label:'🗂 '+s.name,on:()=>addAssetsToStack(s.id,[path])}));items.push({sep:true});items.push({label:'＋ New Stack…',on:async()=>{const n=prompt('Name this Stack','Untitled Stack');if(n===null)return;await createStack(n||'Untitled Stack',[path]);}});floatMenu(items,ev);}
+// ── Reorder inside a Stack (optimistic; rollback on a failed save) ─────────────
+function svDragStart(e,idx){SVDRAG=idx;e.currentTarget.classList.add('dragging');try{e.dataTransfer.effectAllowed='move';e.dataTransfer.setData('text/plain',String(idx));}catch(_){}}
+function svDragEnd(e){e.currentTarget.classList.remove('dragging');clearDropHi();SVDRAG=null;}
+function svDragOver(e,idx){if(SVDRAG===null)return;e.preventDefault();e.currentTarget.classList.add('drop-target');}
+async function svDrop(e,idx){e.preventDefault();e.currentTarget.classList.remove('drop-target');if(SVDRAG===null||SVDRAG===idx){SVDRAG=null;return;}
+  const before=CURSTACK.assets,arr=before.slice(),[m]=arr.splice(SVDRAG,1);arr.splice(idx,0,m);SVDRAG=null;
+  CURSTACK.assets=arr;svRender();                                    // optimistic
+  const r=await fetch('/v1/stacks/'+encodeURIComponent(CURSTACK.id)+'/order',{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({assetIds:arr.map(x=>x.assetId)})});
+  if(!r.ok){CURSTACK.assets=before;svRender();toast('Couldn’t save order — reverted');}
+  else{CURSTACK=await r.json();svRender();announce('Order saved');}
+}
+// ── In-Stack image viewer with previous / next (preserves Stack context) ───────
+function svOpen(i){if(!CURSTACK||!CURSTACK.assets[i])return;SVI=i;const path=CURSTACK.assets[i].assetId;
+  $('zoomimg').src=imgURL({path});const z=$('zoom');z.classList.add('stackctx');
+  $('zprev').style.display=$('znext').style.display=CURSTACK.assets.length>1?'block':'none';z.style.display='flex';
+  announce('Image '+(i+1)+' of '+CURSTACK.assets.length);}
+function svStep(d){if(SVI<0||!CURSTACK)return;const n=CURSTACK.assets.length;SVI=(SVI+d+n)%n;svOpen(SVI);}
+// ── Header actions: rename / describe / add images / share / settings ─────────
+async function patchStack(id,fields){const r=await fetch('/v1/stacks/'+encodeURIComponent(id),{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify(fields)});if(!r.ok){toast('Update failed');return null;}const s=await r.json();if(CURSTACK&&CURSTACK.id===id){CURSTACK=s;$('svname').value=s.name;}await loadStacks();if(!CURSTACK)render();return s;}
+async function renameCurStack(v){if(!CURSTACK)return;await patchStack(CURSTACK.id,{name:(v||'').trim()||'Untitled Stack'});toast('Renamed');}
+async function renameStack(id){const s=STACKS.find(x=>x.id===id);const n=prompt('Rename Stack',(s&&s.name)||'');if(n===null)return;await patchStack(id,{name:n.trim()||'Untitled Stack'});toast('Renamed');}
+async function describeCurStack(v){if(!CURSTACK)return;await patchStack(CURSTACK.id,{description:v||''});}
+function shareLink(url){if(navigator.clipboard&&navigator.clipboard.writeText)navigator.clipboard.writeText(url).then(()=>toast('Link copied'),()=>prompt('Copy this link',url));else prompt('Copy this link',url);}
+function shareStack(id){shareLink(location.origin+location.pathname+'#stack='+id);}
+function shareCurStack(){if(CURSTACK)shareStack(CURSTACK.id);}
+function downloadStack(id){(async()=>{const st=(CURSTACK&&CURSTACK.id===id)?CURSTACK:await fetchStack(id);if(!st)return;for(const m of st.assets)dl(imgURL({path:m.assetId}),m.assetId.split('/').pop());toast('Downloading '+st.assets.length);})();}
+async function archiveStack(id){const r=await fetch('/v1/stacks/'+encodeURIComponent(id),{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({archived:true})});if(r.ok){if(CURSTACK&&CURSTACK.id===id)closeStack();await load();toast('Archived');}else toast('Couldn’t archive');}
+async function unstackStack(id){if(!confirm('Unstack? The container is removed and every image returns to the gallery.'))return;const r=await fetch('/v1/stacks/'+encodeURIComponent(id)+'/unstack',{method:'POST'});if(r.ok){if(CURSTACK&&CURSTACK.id===id)closeStack();await load();toast('Unstacked — images preserved');announce('Unstacked');}else toast('Couldn’t unstack');}
+function pickAddImages(){if(!CURSTACK)return;const f=$('svaddfile');f.onchange=async e=>{const files=e.target.files;if(!files||!files.length)return;toast('Adding '+files.length+' image(s)…');const added=[];
+  for(const file of files){const fd=new FormData();fd.append('image',file,file.name||'upload.png');try{const r=await fetch('/v1/library/upload',{method:'POST',body:fd});const j=await r.json().catch(()=>({}));if(r.ok&&j.path)added.push(j.path);}catch(_){}}
+  if(added.length)await addAssetsToStack(CURSTACK.id,added);else toast('No images added');e.target.value='';};f.click();}
+function setAutoStack(on){fetch('/v1/stacks/settings',{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({autoStack:!!on})}).then(()=>toast(on?'Batch generations will auto-stack':'Auto-stack off'),()=>toast('Couldn’t save setting'));}
+// ── Delete-Stack confirmation ─────────────────────────────────────────────────
+function deleteStackPrompt(id){DELSTACK=id;const r=document.querySelector('input[name=delmode][value=only]');if(r)r.checked=true;$('delstackdlg').showModal();}
+async function confirmDeleteStack(){const id=DELSTACK;if(!id)return;const mode=(document.querySelector('input[name=delmode]:checked')||{}).value||'only';
+  const r=await fetch('/v1/stacks/'+encodeURIComponent(id)+'?mode='+mode,{method:'DELETE'});$('delstackdlg').close();DELSTACK=null;
+  if(r.ok){if(CURSTACK&&CURSTACK.id===id)closeStack();await load();toast(mode==='images'?'Stack deleted; images moved to Deleted':'Stack deleted; images returned to gallery');}
+  else toast('Couldn’t delete');}
+// ── Stack overflow menu ───────────────────────────────────────────────────────
+function stackMenu(id,ev,isDetail){ev&&ev.stopPropagation();
+  floatMenu([
+    {label:'📂 Open',on:()=>openStack(id)},
+    {label:'✏ Rename',on:()=>renameStack(id)},
+    {label:'⭐ Change cover',on:()=>{if(CURSTACK&&CURSTACK.id===id)toast('Open an image’s ⋯ → Set as cover');else openStack(id).then(()=>toast('Open an image’s ⋯ → Set as cover'));}},
+    {label:'＋ Add images',on:()=>{if(CURSTACK&&CURSTACK.id===id)pickAddImages();else openStack(id).then(pickAddImages);}},
+    {label:'↗ Share (copy link)',on:()=>shareStack(id)},
+    {label:'⬇ Download Stack',on:()=>downloadStack(id)},
+    {label:'🗄 Archive',on:()=>archiveStack(id)},
+    {sep:true},
+    {label:'📤 Unstack (keep images)',on:()=>unstackStack(id)},
+    {label:'🗑 Delete Stack',danger:true,on:()=>deleteStackPrompt(id)},
+  ],ev);
+}
+// ── "Save outputs to" destination selector (generation integration) ───────────
+function fillDest(sel,selected){if(!sel)return;let h='<option value="">Main Gallery</option>';for(const s of activeStacks())h+=`<option value="${esc(s.id)}">🗂 ${esc(s.name)}</option>`;h+='<option value="__new__">＋ New Stack…</option>';sel.innerHTML=h;sel.value=(selected&&STACKS.some(s=>s.id===selected))?selected:'';}
+async function resolveDest(sel){if(!sel)return '';const v=sel.value;if(v==='__new__'){const n=prompt('Name the new Stack','Untitled Stack');if(n===null)return '';const s=await createStack(n||'Untitled Stack',[]);return s?s.id:'';}return v||'';}
+// ── Floating menu primitive (stack + image overflow, move/add pickers) ─────────
+function closeFloat(){if(window._float){window._float.remove();window._float=null;}document.removeEventListener('click',floatOff);document.removeEventListener('keydown',floatEsc);}
+function floatOff(e){if(window._float&&!window._float.contains(e.target))closeFloat();}
+function floatEsc(e){if(e.key==='Escape')closeFloat();}
+function floatMenu(items,ev){closeFloat();
+  const m=document.createElement('div');m.className='ovfmenu';m.setAttribute('role','menu');
+  m.innerHTML=items.map((it,i)=>it.sep?'<div class="sep"></div>':`<div class="mi ${it.danger?'danger':''}" role="menuitem" tabindex="0" data-i="${i}">${esc(it.label)}</div>`).join('');
+  document.body.appendChild(m);
+  const x=(ev&&ev.clientX)||140,y=(ev&&ev.clientY)||140;
+  m.style.left=Math.max(8,Math.min(x,innerWidth-m.offsetWidth-8))+'px';m.style.top=Math.max(8,Math.min(y,innerHeight-m.offsetHeight-8))+'px';
+  m.querySelectorAll('.mi').forEach(el=>{const it=items[+el.dataset.i];const run=()=>{closeFloat();try{it.on(ev);}catch(e){toast('Action failed');}};el.onclick=run;el.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();run();}};});
+  window._float=m;const first=m.querySelector('.mi');first&&first.focus();
+  setTimeout(()=>{document.addEventListener('click',floatOff);document.addEventListener('keydown',floatEsc);},0);
+}
+// keyboard: Escape cancels an in-flight drag / closes the viewer; arrows page the viewer
+document.addEventListener('keydown',e=>{
+  if(e.key==='Escape'){if(DRAG){DRAG=null;clearDropHi();}if($('zoom').style.display==='flex')closeZoom();}
+  if($('zoom').classList.contains('stackctx')){if(e.key==='ArrowLeft')svStep(-1);else if(e.key==='ArrowRight')svStep(1);}
+});
+// deep link: #stack=<id> opens that Stack after the gallery loads (Share target)
+function openStackFromHash(){const m=(location.hash||'').match(/stack=([A-Za-z0-9]+)/);if(m)openStack(m[1]);}
 // header auto-hide (immersive) — reveal on top-hover / mouse near top
 document.getElementById('tophover').addEventListener('mouseenter',()=>document.querySelector('header').classList.add('reveal'));
 document.addEventListener('mousemove',e=>{if(e.clientY<8)document.querySelector('header').classList.add('reveal');else if(e.clientY>90&&document.body.classList.contains('immersive'))document.querySelector('header').classList.remove('reveal');});
-load(); loadSession(); updateLivebar(); setInterval(updateLivebar, 5000);
+load().then(openStackFromHash); loadSession(); updateLivebar(); setInterval(updateLivebar, 5000);
+window.addEventListener('hashchange',openStackFromHash);
 // Queue transparency: refresh positions/ETAs while the queue view is open (sane
 // cadence, no hammering); node badges less often; tick the running item's elapsed.
 setInterval(()=>{ if(!$('runs').hidden)refreshQueue(); }, 6000);

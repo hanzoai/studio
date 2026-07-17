@@ -684,27 +684,9 @@ async def test_favorites_toggle_and_tenant_isolation(tmp_path, monkeypatch):
     await client.close()
 
 
-@pytest.mark.asyncio
-async def test_stacks_save_normalizes_and_tenant_isolation(tmp_path, monkeypatch):
-    _orgaware(tmp_path, monkeypatch)
-    client = await _client(_FakeServer())
-    assert (await (await client.get("/v1/stacks", headers={"X-Org": "acme"})).json()) == {"org": "acme", "stacks": []}
-    payload = {"stacks": [
-        {"id": "s1", "name": "Karma", "items": ["run-a", "run-b", "run-b", "run-a"], "ts": 100},  # items de-duped
-        {"id": "s2", "items": ["only-one"]},      # < 2 members -> dropped (not a folder)
-        {"id": "", "items": ["x", "y"]},          # no id -> dropped
-        {"name": "bad"},                          # no id -> dropped
-    ]}
-    stacks = (await (await client.post("/v1/stacks", json=payload, headers={"X-Org": "acme"})).json())["stacks"]
-    assert stacks == [{"id": "s1", "name": "Karma", "items": ["run-a", "run-b"], "ts": 100}]
-    # persisted for the org (whole-set replace is the ONE write)
-    assert (await (await client.get("/v1/stacks", headers={"X-Org": "acme"})).json())["stacks"] == stacks
-    # name defaults when omitted
-    r2 = await client.post("/v1/stacks", json={"stacks": [{"id": "s3", "items": ["run-c", "run-d"]}]}, headers={"X-Org": "acme"})
-    assert (await r2.json())["stacks"][0]["name"] == "Stack"
-    # tenant isolation: globex has its own (empty) set, untouched by acme's writes
-    assert (await (await client.get("/v1/stacks", headers={"X-Org": "globex"})).json())["stacks"] == []
-    await client.close()
+# Stacks are now the per-org SQLite store (Procreate folders) — the full REST
+# surface, tenancy, one-stack-per-asset, order persistence and delete semantics
+# live in test_stacks.py, which supersedes the earlier JSON whole-set store.
 
 
 @pytest.mark.asyncio

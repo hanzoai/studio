@@ -45,7 +45,7 @@ import aiohttp
 from aiohttp import web
 
 import folder_paths
-from middleware import quality_gate, worklog
+from middleware import quality_gate, stacks_store, worklog
 
 log = logging.getLogger("studio.home")
 
@@ -66,6 +66,18 @@ def _home_default() -> bool:
 def _org_of(request: web.Request) -> str:
     user = request.get("iam_user") or {}
     return user.get("org_id") or os.environ.get("STUDIO_ORG_ID") or "default"
+
+
+def _owner_of(request: web.Request) -> str:
+    """The acting user (IAM subject) — a Stack's owner_id / added_by. Best-effort;
+    Stacks are org-scoped, so this is provenance, not an access boundary."""
+    return (request.get("iam_user") or {}).get("sub") or ""
+
+
+def _workspace_of(request: web.Request) -> str | None:
+    """The active project = a Stack's workspace_id, or None when unscoped (the
+    same ``studio_active_project`` cookie the session/workflow scope reads)."""
+    return request.cookies.get("studio_active_project") or None
 
 
 def _library_root(org: str) -> Path | None:
@@ -140,6 +152,25 @@ def _save_library(root: Path, lib: dict) -> None:
     tmp = root / "library.json.tmp"
     tmp.write_text(json.dumps(lib, indent=1, sort_keys=False))
     tmp.replace(root / "library.json")
+
+
+def _soft_delete_assets(org: str, asset_ids: list[str]) -> None:
+    """Trash a set of library assets (status=deleted) — the SAME soft-delete the
+    gallery's 🗑 uses. Files are never unlinked; Deleted stays recoverable. This is
+    what "Delete Stack and Images" maps to (Stacks own no lifecycle of their own)."""
+    root = _library_root(org)
+    if root is None:
+        return
+    ids = set(asset_ids)
+    lib = _load_library(root)
+    changed = False
+    for a in lib.get("assets", []):
+        if a.get("path") in ids and a.get("status") != "deleted":
+            a["status"] = "deleted"
+            a["updatedAt"] = int(time.time())
+            changed = True
+    if changed:
+        _save_library(root, lib)
 
 
 def _safe_asset(root: Path, rel: str) -> Path | None:
@@ -448,7 +479,8 @@ async def _dispatch(request, server, org: str, graph: dict, *, kind: str, prompt
 
 
 async def dispatch_fix(request: web.Request, server, org: str, rel: str,
-                       instruction: str, upload: str | None = None) -> dict:
+                       instruction: str, upload: str | None = None,
+                       stack: str | None = None) -> dict:
     """Run the proven Qwen single-image edit. The base image is EITHER a library
     asset (``rel``, staged into the org input dir) OR an image the caller just
     uploaded via ``/upload/image`` (``upload``, already resident there) — so a fresh
@@ -477,11 +509,14 @@ async def dispatch_fix(request: web.Request, server, org: str, rel: str,
                           kind="fix", prompt=instruction, refs=[ref_name],
                           uploads=[upload] if upload else [], parents=[] if upload else [rel],
                           output_prefix=f"fixes/{stem}")
+    if stack:
+        stacks_store.route_prefix(org, f"fixes/{stem}", stack, added_by=_owner_of(request))
     return {"ok": True, "prompt_id": pid, "output_prefix": f"fixes/{stem}"}
 
 
 async def dispatch_compose(request: web.Request, server, org: str, paths: list,
-                           instruction: str, uploads: list | None = None) -> dict:
+                           instruction: str, uploads: list | None = None,
+                           stack: str | None = None) -> dict:
     """Stage 2-5 references and run the multi-input Qwen graph. References are
     library assets (``paths``, staged into the org input dir) and/or images the
     caller just uploaded via ``/upload/image`` (``uploads``, already resident in
@@ -511,6 +546,8 @@ async def dispatch_compose(request: web.Request, server, org: str, paths: list,
     pid = await _dispatch(request, server, org, _compose_graph(ref_names, instruction, f"composes/{stem}"),
                           kind="compose", prompt=instruction, refs=ref_names,
                           uploads=uploaded, parents=list(paths), output_prefix=f"composes/{stem}")
+    if stack:
+        stacks_store.route_prefix(org, f"composes/{stem}", stack, added_by=_owner_of(request))
     return {"ok": True, "prompt_id": pid, "output_prefix": f"composes/{stem}", "refs": len(ref_names)}
 
 
@@ -520,7 +557,7 @@ class NotOwned(DispatchError):
 
 async def dispatch_amend(request: web.Request, server, org: str, prompt_id: str,
                          instruction: str, paths: list | None = None,
-                         uploads: list | None = None) -> dict:
+                         uploads: list | None = None, stack: str | None = None) -> dict:
     """Amend a still-queued job as an honest ATOMIC SWAP: queued graphs are
     immutable, so cancel the original and re-dispatch with the amended prompt and an
     augmented reference set. The original's references (already staged in the org
@@ -565,8 +602,39 @@ async def dispatch_amend(request: web.Request, server, org: str, prompt_id: str,
     all_uploads = list(dict.fromkeys(list(orig.get("uploads") or []) + new_uploads))
     pid = await _dispatch(request, server, org, graph, kind=kind, prompt=instruction,
                           refs=refs, uploads=all_uploads, parents=parents, output_prefix=out)
+    if stack:
+        stacks_store.route_prefix(org, out, stack, added_by=_owner_of(request))
     return {"ok": True, "prompt_id": pid, "amended_from": prompt_id,
             "output_prefix": out, "refs": len(refs)}
+
+
+def _short_prompt(prompt: str) -> str:
+    """A few words of a prompt → a readable auto-stack name stem."""
+    words = re.findall(r"[A-Za-z0-9']+", prompt or "")
+    return (" ".join(words[:6])[:48]).strip() or "Batch"
+
+
+def _dest_stack(org: str, stack, *, prompt: str, multi: bool, owner: str, workspace) -> str | None:
+    """Resolve where a dispatch's outputs are organized. An explicit Stack id (the
+    'Save outputs to → Existing/New Stack' choice, the client having created a New
+    Stack first) wins. Otherwise, when the org's 'auto-stack batch generations'
+    setting is on AND the job is multi-output, mint a '<short prompt> — <date>'
+    Stack. Returns the Stack id, or None (Main Gallery / single output / setting off)."""
+    sid = (stack or "").strip() if isinstance(stack, str) else None
+    if sid:
+        return sid
+    if multi and stacks_store.get_setting(org, "auto_stack_batches", False):
+        name = f"{_short_prompt(prompt)} — {time.strftime('%Y-%m-%d')}"
+        return stacks_store.create(org, name, [], owner=owner, workspace=workspace)["id"]
+    return None
+
+
+def _graph_is_batch(graph: dict) -> bool:
+    """A graph whose latent asks for more than one image — a multi-output job."""
+    for n in (graph or {}).values():
+        if isinstance(n, dict) and int(n.get("inputs", {}).get("batch_size", 1) or 1) > 1:
+            return True
+    return False
 
 
 def _workflows(org: str) -> list[str]:
@@ -733,6 +801,10 @@ def _index_upload(org: str, root: Path, rel: str, *, design, kind, role, node) -
                        output_prefix=rel, node=node, status="done",
                        lane=("gpu" if node not in ("upload", "studio pod") else "local"),
                        pid="up-" + uuid.uuid4().hex[:12])
+    # If this render was dispatched with a "save outputs to Stack" destination, the
+    # landed output joins that Stack now — ALL outputs of a multi-output job do, so
+    # membership is assigned at the ONE ingest point (never in the source of truth).
+    stacks_store.absorb(org, rel)
     return created
 
 
@@ -759,29 +831,14 @@ def _save_store(p: Path, data) -> None:
     tmp.replace(p)
 
 
-def _norm_stacks(raw) -> list:
-    """Validate a client stack set: each stack is ``{id, name, items[], ts}`` where
-    items are run ids / library paths (strings), de-duped and capped. A stack needs
-    at least TWO members — a folder of one isn't a folder (it dissolves back to a
-    card). The whole set is bounded so one org can't write an unbounded file."""
-    out = []
-    for s in (raw if isinstance(raw, list) else [])[:200]:
-        if not isinstance(s, dict):
-            continue
-        sid = str(s.get("id") or "").strip()[:64]
-        if not sid:
-            continue
-        seen: set = set()
-        items = [i for i in (str(x)[:512] for x in (s.get("items") or []) if isinstance(x, str))
-                 if i and not (i in seen or seen.add(i))][:200]
-        if len(items) < 2:
-            continue
-        out.append({"id": sid, "name": (str(s.get("name") or "").strip() or "Stack")[:80],
-                    "items": items, "ts": int(s.get("ts") or time.time())})
-    return out
-
-
 def add_studio_home_routes(routes: web.RouteTableDef, server) -> None:
+
+    # Stacks — Procreate-style gallery folders — are their own concern (per-org
+    # SQLite, the full REST surface), registered here through injected tenancy
+    # resolvers + the library soft-deleter so the module stays decoupled.
+    stacks_store.add_stacks_routes(
+        routes, server, org_of=_org_of, owner_of=_owner_of,
+        workspace_of=_workspace_of, soft_delete_assets=_soft_delete_assets)
 
     @routes.get("/studio")
     async def studio_home(request: web.Request):
@@ -905,13 +962,18 @@ def add_studio_home_routes(routes: web.RouteTableDef, server) -> None:
             if isinstance(n, dict) and n.get("class_type") == "SaveImage":
                 out_prefix = n.get("inputs", {}).get("filename_prefix", "") or out_prefix
         out_prefix = out_prefix or f"templates/{slug}"
+        sid = _dest_stack(org, body.get("stack"), prompt=rec.get("name", slug),
+                          multi=_graph_is_batch(prompt), owner=_owner_of(request),
+                          workspace=_workspace_of(request))
         try:
             pid = await _dispatch(request, server, org, _reseed(json.loads(json.dumps(prompt))),
                                   kind="template", prompt=rec.get("name", slug), refs=[], uploads=[],
                                   parents=[], output_prefix=out_prefix)
         except DispatchError as e:
             return web.json_response({"error": str(e)}, status=400)
-        return web.json_response({"ok": True, "prompt_id": pid, "slug": slug})
+        if sid:
+            stacks_store.route_prefix(org, out_prefix, sid, added_by=_owner_of(request))
+        return web.json_response({"ok": True, "prompt_id": pid, "slug": slug, "stack": sid})
 
     @routes.get("/v1/templates/{name}")
     async def get_template(request: web.Request):
@@ -1164,6 +1226,30 @@ def add_studio_home_routes(routes: web.RouteTableDef, server) -> None:
                 return web.json_response({"ok": True, "path": rel, "status": status})
         return web.json_response({"error": "asset not in library"}, status=404)
 
+    @routes.post("/v1/library/tags")
+    async def add_tags(request: web.Request):
+        """Merge tags onto a set of library assets (the bulk 'Add tags' action). Tags
+        enrich; they never gate. One atomic per-org write, upsert by path."""
+        body = await request.json()
+        paths = [p for p in (body.get("paths") or []) if isinstance(p, str)]
+        tags = [t.strip()[:40] for t in (body.get("tags") or []) if isinstance(t, str) and t.strip()]
+        if not paths or not tags:
+            return web.json_response({"error": "paths and tags required"}, status=400)
+        root = _library_root(_org_of(request))
+        if root is None:
+            return web.json_response({"error": "no library for org"}, status=404)
+        want = set(paths)
+        lib = _load_library(root)
+        n = 0
+        for a in lib.get("assets", []):
+            if a.get("path") in want:
+                merged = list(dict.fromkeys((a.get("tags") or []) + tags))
+                a["tags"] = merged
+                a["updatedAt"] = int(time.time())
+                n += 1
+        _save_library(root, lib)
+        return web.json_response({"ok": True, "updated": n, "tags": tags})
+
     @routes.post("/v1/library/rerun")
     async def rerun(request: web.Request):
         body = await request.json()
@@ -1191,16 +1277,24 @@ def add_studio_home_routes(routes: web.RouteTableDef, server) -> None:
                 t = n.get("inputs", {}).get("prompt") or n.get("inputs", {}).get("text") or ""
                 if t and t != _NEG:
                     instr = t
+        count = max(1, min(int(body.get("count", 1)), 4))
+        # Save-outputs-to destination: an explicit Stack, or an auto-stack when the
+        # org opted in and this is a batch (count>1). Every rerun shares out_prefix,
+        # so one routing rule captures all its landed outputs.
+        sid = _dest_stack(org, body.get("stack"), prompt=instr, multi=count > 1,
+                          owner=_owner_of(request), workspace=_workspace_of(request))
         ids = []
         try:
-            for _ in range(max(1, min(int(body.get("count", 1)), 4))):
+            for _ in range(count):
                 ids.append(await _dispatch(
                     request, server, org, _reseed(json.loads(json.dumps(graph))),
                     kind="rerun", prompt=instr, refs=[], uploads=[], parents=[rel],
                     output_prefix=out_prefix))
         except DispatchError as e:
             return web.json_response({"error": str(e)}, status=400)
-        return web.json_response({"ok": True, "prompt_ids": ids})
+        if sid:
+            stacks_store.route_prefix(org, out_prefix, sid, added_by=_owner_of(request))
+        return web.json_response({"ok": True, "prompt_ids": ids, "stack": sid})
 
     @routes.post("/v1/queue/cancel")
     async def cancel_job(request: web.Request):
@@ -1222,7 +1316,7 @@ def add_studio_home_routes(routes: web.RouteTableDef, server) -> None:
         try:
             return web.json_response(await dispatch_amend(
                 request, server, _org_of(request), body.get("prompt_id", ""),
-                body.get("instruction", ""), body.get("paths"), body.get("uploads")))
+                body.get("instruction", ""), body.get("paths"), body.get("uploads"), body.get("stack")))
         except NotOwned as e:
             return web.json_response({"error": str(e)}, status=404)
         except DispatchError as e:
@@ -1333,7 +1427,7 @@ def add_studio_home_routes(routes: web.RouteTableDef, server) -> None:
         try:
             return web.json_response(await dispatch_fix(
                 request, server, _org_of(request), body.get("path", ""),
-                body.get("instruction", ""), body.get("upload")))
+                body.get("instruction", ""), body.get("upload"), body.get("stack")))
         except DispatchError as e:
             return web.json_response({"error": str(e)}, status=400)
 
@@ -1346,7 +1440,7 @@ def add_studio_home_routes(routes: web.RouteTableDef, server) -> None:
         try:
             return web.json_response(await dispatch_compose(
                 request, server, _org_of(request), body.get("paths") or [],
-                body.get("instruction", ""), body.get("uploads")))
+                body.get("instruction", ""), body.get("uploads"), body.get("stack")))
         except DispatchError as e:
             return web.json_response({"error": str(e)}, status=400)
 
@@ -1429,23 +1523,3 @@ def add_studio_home_routes(routes: web.RouteTableDef, server) -> None:
             data.pop(key, None)
         _save_store(p, data)
         return web.json_response({"ok": True, "key": key, "favorite": fav})
-
-    # ── Stacks: iOS-folder groupings of runs (drag-hold). The client owns the
-    # arrangement and POSTs the whole normalized set; the server bounds + validates
-    # it and drops empty stacks. Per-org file, so a stack is inherently tenant-owned.
-    @routes.get("/v1/stacks")
-    async def get_stacks(request: web.Request):
-        org = _org_of(request)
-        stacks = _load_store(_org_store(org, "stacks.json"), [])
-        return web.json_response({"org": org, "stacks": stacks if isinstance(stacks, list) else []})
-
-    @routes.post("/v1/stacks")
-    async def save_stacks(request: web.Request):
-        org = _org_of(request)
-        try:
-            body = await request.json()
-        except Exception:
-            return web.json_response({"error": "invalid JSON"}, status=400)
-        stacks = _norm_stacks(body.get("stacks"))
-        _save_store(_org_store(org, "stacks.json"), stacks)
-        return web.json_response({"org": org, "stacks": stacks})

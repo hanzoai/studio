@@ -111,6 +111,25 @@ shared Hanzo IAM (standard OIDC code flow). No embedding.
   compete safely. Tested: `middleware_test/tasks_queue_test.py` (incl.
   crash-recovery across instances). Future (federation.md §6): a remote queue
   backend served by Hanzo Tasks + a Go/unified-binary (HIP-0106) migration.
+- **Stacks** (`middleware/stacks_store.py`, `middleware/studio_home.py`): Procreate-
+  style gallery folders — a per-org SQLite store (`orgs/<org>/stacks.db`, WAL, every
+  mutation under `BEGIN IMMEDIATE`, the same `tasks_queue.py` pattern) that is ONLY an
+  organizational layer; assets stay the source of truth (library.json + files). Schema
+  = the spec's `stacks` + `stack_assets` join; `UNIQUE(asset_id)` ⇒ one Stack per
+  asset. Tenancy is structural (one DB file per org → cross-org 404s by construction).
+  REST (`/v1` house style): `GET/POST /v1/stacks`, `GET/PATCH/DELETE /v1/stacks/:id`
+  (`?mode=only|images`), `POST|DELETE /v1/stacks/:id/assets`, `PATCH /v1/stacks/:id/order`,
+  `POST /v1/stacks/:id/unstack`, `GET/PATCH /v1/stacks/settings`; registered via
+  injected resolvers (org/owner/workspace + the library soft-deleter) so the module
+  stays decoupled. Remove ≠ delete (returns to the gallery); Delete-Stack defaults to
+  preserving; "…and Images" maps to the library soft-delete (`status=deleted`, files
+  kept). Generation integration: `fix/compose/rerun/template` accept a `stack` id and
+  the ingest point (`_index_upload` → `stacks_store.absorb`) assigns membership when
+  outputs land (ALL outputs of a multi-output job); a per-org `auto_stack_batches`
+  setting auto-creates `"<prompt> — <date>"` Stacks. UI is the vanilla-JS home
+  (`studio_home.html`): layered cards, drag/multi-select/mobile-tap parity (no DnD ever
+  required), a11y labels + live region. Tested: `studio_home_test/test_stacks.py`
+  (routes, tenancy, one-per-asset, order persistence, delete/unstack, ingest→absorb).
 - **Engine selector** (`middleware/engine_selector.py`): `/v1/engines` lists
   execution targets for the org (`local` + registered compute_config workers) and
   `PUT /v1/engines/default` sets a per-org default (stored on
