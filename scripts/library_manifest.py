@@ -91,12 +91,13 @@ def classify(relpath: str, slugs: set[str]) -> dict | None:
 def scan(root: str) -> list[str]:
     """All manifestable image paths (relative to root), sorted for stable diffs."""
     found: list[str] = []
-    for base, _dirs, files in os.walk(root):
+    for base, dirs, files in os.walk(root):
+        # Hidden segments are never assets — one rule covering AppleDouble
+        # forks (._foo.png) AND cache trees (.thumbs/ thumbnails indexed as
+        # library rows sent thumb paths into the fix dispatcher).
+        dirs[:] = [d for d in dirs if not d.startswith(".")]
         for f in files:
             if f.startswith("."):
-                # Dotfiles are never assets: `._foo.png` AppleDouble forks ride
-                # along with mac transfers, carry an image extension, and are
-                # resource-fork bytes that render 0x0 in the library.
                 continue
             ext = os.path.splitext(f)[1].lower()
             full = os.path.join(base, f)
