@@ -425,6 +425,11 @@ body.immersive #stage{display:block}
   </div>
   <div class="row" style="justify-content:flex-end;gap:6px"><button class="mini" onclick="delstackdlg.close()">Cancel</button><button class="mini hot" onclick="confirmDeleteStack()">Delete</button></div>
 </dialog>
+<dialog id="askdlg">
+  <h3 id="askttl" style="font-size:1rem"></h3>
+  <input id="askin" aria-label="Value" style="width:100%;margin-top:12px;background:#0f0f12;border:1px solid var(--line);border-radius:8px;padding:8px 10px;color:inherit;font:inherit">
+  <div class="row" style="justify-content:flex-end;gap:6px;margin-top:14px"><button class="mini" id="askno">Cancel</button><button class="mini hot" id="askok">OK</button></div>
+</dialog>
 <div id="live" class="sr-only" aria-live="polite" role="status"></div>
 <script>
 // ── Template / KIND catalog — everything Studio supports ─────────────────────
@@ -874,7 +879,7 @@ async function runs(){
         <textarea class="notebox" placeholder="Notes for the AI to improve next time…" onblur="rateNote('${r.id}',this.value)">${(rt.notes||'').replace(/</g,'&lt;')}</textarea>
       </div></div>`;}).join('')||'<div class="empty">No runs yet.</div>';
 }
-async function clearQueue(){if(!confirm('Clear all queued jobs?'))return;await fetch('/queue',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({clear:true})});toast('Queue cleared');runs();}
+async function clearQueue(){if(!await ask('Clear all queued jobs?'))return;await fetch('/queue',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({clear:true})});toast('Queue cleared');runs();}
 async function rate(key,stars){await fetch('/v1/library/rate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({key,stars})});RATINGS[key]={...(RATINGS[key]||{}),stars};runs();}
 async function rateNote(key,notes){await fetch('/v1/library/rate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({key,notes})});toast('Note saved — the AI will use it next time');}
 let FAVKEY=null,FAVTITLE=null;
@@ -1007,7 +1012,7 @@ async function sendFix(){const t=$('fixtext').value.trim();if(t.length<3){showFi
   else showFixErr('Couldn’t '+(FIXMODE==='amend'?'amend':'queue')+': '+(errMsg(j)||('error '+r.status)));   // stay open so the reason is visible
 }
 async function cancelJob(id){
-  if(!confirm('Cancel this job?'))return;
+  if(!await ask('Cancel this job?'))return;
   const r=await fetch('/v1/queue/cancel',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({prompt_id:id})});
   const j=await r.json().catch(()=>({}));
   if(r.ok)toast('Cancelled'+(j.canceled==='gpu'?' — if it was already rendering on your GPU it may still finish':''));
@@ -1093,6 +1098,22 @@ const stackIdOf=p=>{for(const s of STACKS)if((s.assetIds||[]).includes(p))return
 const activeStacks=()=>STACKS.filter(s=>!s.archivedAt);
 function ago(ts){if(!ts)return '';let d=Math.max(0,Date.now()/1000-ts);if(d<60)return 'just now';if(d<3600)return Math.floor(d/60)+'m ago';if(d<86400)return Math.floor(d/3600)+'h ago';return Math.floor(d/86400)+'d ago';}
 function announce(m){const l=$('live');if(l)l.textContent=m;}
+// In-page ask (name input or confirm): browsers can suppress native prompt()/
+// confirm(), which silently cancels the action — a <dialog> cannot be suppressed.
+// ask(title) → true|null; ask(title, default) → string|null.
+function ask(title,def){return new Promise(res=>{
+  const d=$('askdlg'),i=$('askin');let settled=false;
+  // 'close' dispatches from a queued task: one from a PRIOR ask can land after
+  // this one reopened the dialog — then d.open is true and the event is stale.
+  const onclose=()=>{if(!d.open)fin(null);};
+  const fin=v=>{if(settled)return;settled=true;d.removeEventListener('close',onclose);res(v);if(d.open)d.close();};
+  $('askttl').textContent=title;i.hidden=def===undefined;i.value=def===undefined?'':def;
+  $('askok').onclick=()=>fin(def===undefined?true:i.value);
+  $('askno').onclick=()=>fin(null);
+  i.onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();fin(i.value);}};
+  d.addEventListener('close',onclose);
+  d.showModal();if(!i.hidden){i.focus();i.select();}
+});}
 function dl(url,name){const a=document.createElement('a');a.href=url;a.download=name||'';document.body.appendChild(a);a.click();a.remove();}
 async function loadStacks(){
   try{const d=await (await fetch('/v1/stacks')).json();STACKS=d.stacks||[];}catch(_){STACKS=[];}
@@ -1131,8 +1152,8 @@ async function createStack(name,ids){
   if(!r.ok){toast('Couldn’t create Stack');return null;}
   const s=await r.json();await load();toast('Stack created: '+(s.name||'Untitled Stack'));announce('Stack created');return s;
 }
-async function createStackFromDrag(a,b){const name=prompt('Name this Stack','Untitled Stack');if(name===null)return;await createStack(name||'Untitled Stack',[a,b]);}
-async function newStackPrompt(){const name=prompt('Name this Stack','Untitled Stack');if(name===null)return;const s=await createStack(name||'Untitled Stack',[]);if(s)openStack(s.id);}
+async function createStackFromDrag(a,b){const name=await ask('Name this Stack','Untitled Stack');if(name===null)return;await createStack(name||'Untitled Stack',[a,b]);}
+async function newStackPrompt(){const name=await ask('Name this Stack','Untitled Stack');if(name===null)return;const s=await createStack(name||'Untitled Stack',[]);if(s)openStack(s.id);}
 async function addAssetsToStack(id,ids){
   const r=await fetch('/v1/stacks/'+encodeURIComponent(id)+'/assets',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({assetIds:ids})});
   if(!r.ok){toast('Couldn’t add to Stack');return null;}
@@ -1141,15 +1162,15 @@ async function addAssetsToStack(id,ids){
 function addToStackPrompt(path,ev){ev&&ev.stopPropagation();
   const items=activeStacks().map(s=>({label:'🗂 '+s.name,on:()=>addAssetsToStack(s.id,[path])}));
   items.push({sep:true});
-  items.push({label:'＋ New Stack…',on:async()=>{const n=prompt('Name this Stack','Untitled Stack');if(n===null)return;await createStack(n||'Untitled Stack',[path]);}});
+  items.push({label:'＋ New Stack…',on:async()=>{const n=await ask('Name this Stack','Untitled Stack');if(n===null)return;await createStack(n||'Untitled Stack',[path]);}});
   floatMenu(items,ev);
 }
 // ── Multi-select bulk (gallery) ───────────────────────────────────────────────
-async function stackSel(){if(!SEL.size)return;const name=prompt('Name this Stack','Untitled Stack');if(name===null)return;const ids=[...SEL];const s=await createStack(name||'Untitled Stack',ids);if(s){clearSel();openStack(s.id);}}
+async function stackSel(){if(!SEL.size)return;const name=await ask('Name this Stack','Untitled Stack');if(name===null)return;const ids=[...SEL];const s=await createStack(name||'Untitled Stack',ids);if(s){clearSel();openStack(s.id);}}
 function moveSelTo(ev){if(!SEL.size)return;const ids=[...SEL];
   const items=activeStacks().map(s=>({label:'🗂 '+s.name,on:async()=>{await addAssetsToStack(s.id,ids);clearSel();}}));
   items.push({sep:true});
-  items.push({label:'＋ New Stack…',on:async()=>{const n=prompt('Name this Stack','Untitled Stack');if(n===null)return;const s=await createStack(n||'Untitled Stack',ids);if(s){clearSel();openStack(s.id);}}});
+  items.push({label:'＋ New Stack…',on:async()=>{const n=await ask('Name this Stack','Untitled Stack');if(n===null)return;const s=await createStack(n||'Untitled Stack',ids);if(s){clearSel();openStack(s.id);}}});
   items.push({label:'↩ Back to main gallery',on:async()=>{await returnToGallery(ids);clearSel();}});
   floatMenu(items,ev);
 }
@@ -1159,7 +1180,7 @@ async function returnToGallery(ids){
   await load();toast('Returned to gallery');
 }
 function downloadSel(){if(!SEL.size)return;for(const p of [...SEL])dl(imgURL({path:p}),p.split('/').pop());toast('Downloading '+SEL.size);}
-async function tagSel(){if(!SEL.size)return;const t=prompt('Add tags (comma-separated)');if(t===null)return;const tags=t.split(',').map(x=>x.trim()).filter(Boolean);if(!tags.length)return;
+async function tagSel(){if(!SEL.size)return;const t=await ask('Add tags (comma-separated)','');if(t===null)return;const tags=t.split(',').map(x=>x.trim()).filter(Boolean);if(!tags.length)return;
   const r=await fetch('/v1/library/tags',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({paths:[...SEL],tags})});toast(r.ok?('Tagged '+SEL.size):'Tag failed');clearSel();await load();}
 // ── Stack detail view ─────────────────────────────────────────────────────────
 async function openStack(id){
@@ -1222,17 +1243,17 @@ async function svRemove(paths){const r=await fetch('/v1/stacks/'+encodeURICompon
 function svRemoveSel(){if(!SEL.size)return;const ids=[...SEL];SEL.clear();SELMODE=false;updateBulk();svRemove(ids);}
 function svFix(path){if(!assetByPath(path)){toast('Image unavailable');return;}openFixPath(path,'');}
 async function rerunInStack(path){toast('Queueing into this Stack…');const r=await fetch('/v1/library/rerun',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({path,stack:CURSTACK.id})});toast(r.ok?'Queued → lands in this Stack':'Failed');}
-async function svDeleteImg(path){if(!confirm('Delete this image? (recoverable in Deleted)'))return;
+async function svDeleteImg(path){if(!await ask('Delete this image? (recoverable in Deleted)'))return;
   await fetch('/v1/library/status',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({path,status:'deleted'})});
   await fetch('/v1/stacks/'+encodeURIComponent(CURSTACK.id)+'/assets',{method:'DELETE',headers:{'Content-Type':'application/json'},body:JSON.stringify({assetIds:[path]})});
   CURSTACK=await fetchStack(CURSTACK.id);await load();svRender();toast('Deleted');}
-function svDeleteSel(){if(!SEL.size)return;if(!confirm('Delete '+SEL.size+' image(s)? (recoverable)'))return;const ids=[...SEL];SEL.clear();SELMODE=false;updateBulk();
+async function svDeleteSel(){if(!SEL.size)return;if(!await ask('Delete '+SEL.size+' image(s)? (recoverable)'))return;const ids=[...SEL];SEL.clear();SELMODE=false;updateBulk();
   (async()=>{for(const p of ids)await fetch('/v1/library/status',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({path:p,status:'deleted'})});
     await fetch('/v1/stacks/'+encodeURIComponent(CURSTACK.id)+'/assets',{method:'DELETE',headers:{'Content-Type':'application/json'},body:JSON.stringify({assetIds:ids})});
     CURSTACK=await fetchStack(CURSTACK.id);await load();svRender();toast('Deleted');})();}
 function svDownload(){if(!SEL.size)return;for(const p of [...SEL])dl(imgURL({path:p}),p.split('/').pop());toast('Downloading '+SEL.size);}
 function svMoveTo(){if(!SEL.size)return;moveSelTo({clientX:innerWidth/2,clientY:130,stopPropagation(){}});}
-function moveOneTo(path,ev){const items=activeStacks().filter(s=>s.id!==CURSTACK.id).map(s=>({label:'🗂 '+s.name,on:()=>addAssetsToStack(s.id,[path])}));items.push({sep:true});items.push({label:'＋ New Stack…',on:async()=>{const n=prompt('Name this Stack','Untitled Stack');if(n===null)return;await createStack(n||'Untitled Stack',[path]);}});floatMenu(items,ev);}
+function moveOneTo(path,ev){const items=activeStacks().filter(s=>s.id!==CURSTACK.id).map(s=>({label:'🗂 '+s.name,on:()=>addAssetsToStack(s.id,[path])}));items.push({sep:true});items.push({label:'＋ New Stack…',on:async()=>{const n=await ask('Name this Stack','Untitled Stack');if(n===null)return;await createStack(n||'Untitled Stack',[path]);}});floatMenu(items,ev);}
 // ── Reorder inside a Stack (optimistic; rollback on a failed save) ─────────────
 function svDragStart(e,idx){SVDRAG=idx;e.currentTarget.classList.add('dragging');try{e.dataTransfer.effectAllowed='move';e.dataTransfer.setData('text/plain',String(idx));}catch(_){}}
 function svDragEnd(e){e.currentTarget.classList.remove('dragging');clearDropHi();SVDRAG=null;}
@@ -1253,14 +1274,14 @@ function svStep(d){if(SVI<0||!CURSTACK)return;const n=CURSTACK.assets.length;SVI
 // ── Header actions: rename / describe / add images / share / settings ─────────
 async function patchStack(id,fields){const r=await fetch('/v1/stacks/'+encodeURIComponent(id),{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify(fields)});if(!r.ok){toast('Update failed');return null;}const s=await r.json();if(CURSTACK&&CURSTACK.id===id){CURSTACK=s;$('svname').value=s.name;}await loadStacks();if(!CURSTACK)render();return s;}
 async function renameCurStack(v){if(!CURSTACK)return;await patchStack(CURSTACK.id,{name:(v||'').trim()||'Untitled Stack'});toast('Renamed');}
-async function renameStack(id){const s=STACKS.find(x=>x.id===id);const n=prompt('Rename Stack',(s&&s.name)||'');if(n===null)return;await patchStack(id,{name:n.trim()||'Untitled Stack'});toast('Renamed');}
+async function renameStack(id){const s=STACKS.find(x=>x.id===id);const n=await ask('Rename Stack',(s&&s.name)||'');if(n===null)return;await patchStack(id,{name:n.trim()||'Untitled Stack'});toast('Renamed');}
 async function describeCurStack(v){if(!CURSTACK)return;await patchStack(CURSTACK.id,{description:v||''});}
-function shareLink(url){if(navigator.clipboard&&navigator.clipboard.writeText)navigator.clipboard.writeText(url).then(()=>toast('Link copied'),()=>prompt('Copy this link',url));else prompt('Copy this link',url);}
+function shareLink(url){if(navigator.clipboard&&navigator.clipboard.writeText)navigator.clipboard.writeText(url).then(()=>toast('Link copied'),()=>ask('Copy this link',url));else ask('Copy this link',url);}
 function shareStack(id){shareLink(location.origin+location.pathname+'#stack='+id);}
 function shareCurStack(){if(CURSTACK)shareStack(CURSTACK.id);}
 function downloadStack(id){(async()=>{const st=(CURSTACK&&CURSTACK.id===id)?CURSTACK:await fetchStack(id);if(!st)return;for(const m of st.assets)dl(imgURL({path:m.assetId}),m.assetId.split('/').pop());toast('Downloading '+st.assets.length);})();}
 async function archiveStack(id){const r=await fetch('/v1/stacks/'+encodeURIComponent(id),{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({archived:true})});if(r.ok){if(CURSTACK&&CURSTACK.id===id)closeStack();await load();toast('Archived');}else toast('Couldn’t archive');}
-async function unstackStack(id){if(!confirm('Unstack? The container is removed and every image returns to the gallery.'))return;const r=await fetch('/v1/stacks/'+encodeURIComponent(id)+'/unstack',{method:'POST'});if(r.ok){if(CURSTACK&&CURSTACK.id===id)closeStack();await load();toast('Unstacked — images preserved');announce('Unstacked');}else toast('Couldn’t unstack');}
+async function unstackStack(id){if(!await ask('Unstack? The container is removed and every image returns to the gallery.'))return;const r=await fetch('/v1/stacks/'+encodeURIComponent(id)+'/unstack',{method:'POST'});if(r.ok){if(CURSTACK&&CURSTACK.id===id)closeStack();await load();toast('Unstacked — images preserved');announce('Unstacked');}else toast('Couldn’t unstack');}
 function pickAddImages(){if(!CURSTACK)return;const f=$('svaddfile');f.onchange=async e=>{const files=e.target.files;if(!files||!files.length)return;toast('Adding '+files.length+' image(s)…');const added=[];
   for(const file of files){const fd=new FormData();fd.append('image',file,file.name||'upload.png');try{const r=await fetch('/v1/library/upload',{method:'POST',body:fd});const j=await r.json().catch(()=>({}));if(r.ok&&j.path)added.push(j.path);}catch(_){}}
   if(added.length)await addAssetsToStack(CURSTACK.id,added);else toast('No images added');e.target.value='';};f.click();}
@@ -1288,7 +1309,7 @@ function stackMenu(id,ev,isDetail){ev&&ev.stopPropagation();
 }
 // ── "Save outputs to" destination selector (generation integration) ───────────
 function fillDest(sel,selected){if(!sel)return;let h='<option value="">Main Gallery</option>';for(const s of activeStacks())h+=`<option value="${esc(s.id)}">🗂 ${esc(s.name)}</option>`;h+='<option value="__new__">＋ New Stack…</option>';sel.innerHTML=h;sel.value=(selected&&STACKS.some(s=>s.id===selected))?selected:'';}
-async function resolveDest(sel){if(!sel)return '';const v=sel.value;if(v==='__new__'){const n=prompt('Name the new Stack','Untitled Stack');if(n===null)return '';const s=await createStack(n||'Untitled Stack',[]);return s?s.id:'';}return v||'';}
+async function resolveDest(sel){if(!sel)return '';const v=sel.value;if(v==='__new__'){const n=await ask('Name the new Stack','Untitled Stack');if(n===null)return '';const s=await createStack(n||'Untitled Stack',[]);return s?s.id:'';}return v||'';}
 // ── Floating menu primitive (stack + image overflow, move/add pickers) ─────────
 function closeFloat(){if(window._float){window._float.remove();window._float=null;}document.removeEventListener('click',floatOff);document.removeEventListener('keydown',floatEsc);}
 function floatOff(e){if(window._float&&!window._float.contains(e.target))closeFloat();}
