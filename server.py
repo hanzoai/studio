@@ -435,11 +435,11 @@ class PromptServer():
                             },
                         )
 
-            response = web.FileResponse(os.path.join(self.web_root, "index.html"))
-            response.headers['Cache-Control'] = 'no-cache'
-            response.headers["Pragma"] = "no-cache"
-            response.headers["Expires"] = "0"
-            return response
+            # Serve the editor SPA with the shared Studio shell injected (the ONE
+            # chrome — Studio/Editor toggle, wallet, GPUs, chat sidebar — that the
+            # Studio home also includes). No-cache, same as before.
+            from middleware.studio_home import editor_index
+            return editor_index(self.web_root)
 
         @routes.get("/embeddings")
         def get_embeddings(request):

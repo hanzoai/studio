@@ -2,6 +2,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Hanzo Studio</title>
+<link rel="stylesheet" href="/studio/shell.css">
+<script src="/studio/shell.js" defer></script>
 <style>
 :root{--bg:#0a0a0b;--panel:#131317;--panel2:#17171c;--line:#232329;--txt:#ececf1;--dim:#8a8a95;
 --brand:#f4f4f6;--ok:#3ddc84;--warn:#ffb648;--pub:#6aa5ff;font-size:15px}
@@ -143,18 +145,8 @@ body.immersive #stage{display:block}
 #stage .dots span{width:6px;height:6px;border-radius:50%;background:rgba(255,255,255,.35);cursor:pointer} #stage .dots span.on{background:#fff;width:20px;border-radius:4px}
 #stage .exit{position:absolute;top:18px;right:22px;z-index:7;color:#fff;background:rgba(0,0,0,.4);border:1px solid rgba(255,255,255,.25);border-radius:8px;padding:6px 12px;font-size:.8rem;cursor:pointer;opacity:0;transition:.2s} #stage:hover .exit{opacity:1}
 .viewbtn{border:1px solid var(--line);background:var(--panel);color:var(--txt);border-radius:8px;padding:7px 13px;font-size:.85rem;cursor:pointer}
-/* ── Hanzo AI chat widget ──────────────────────────────────────────────────── */
-#chatfab{position:fixed;bottom:22px;right:22px;width:52px;height:52px;border-radius:50%;background:var(--brand);color:#111;border:none;font-size:1.4rem;cursor:pointer;z-index:48;box-shadow:0 8px 24px #0008;display:flex;align-items:center;justify-content:center}
-#chatpanel{position:fixed;bottom:22px;right:22px;width:380px;max-width:92vw;height:560px;max-height:82vh;background:#0e0e12;border:1px solid var(--line);border-radius:16px;z-index:49;display:none;flex-direction:column;overflow:hidden;box-shadow:0 20px 60px #000b}
-#chatpanel.on{display:flex} #chatpanel .ch{display:flex;align-items:center;gap:9px;padding:14px 16px;border-bottom:1px solid var(--line)}
-#chatpanel .ch .av{width:26px;height:26px;border-radius:7px;background:#111;display:flex;align-items:center;justify-content:center}
-#chatpanel .ch b{font-size:.9rem} #chatpanel .ch .x{margin-left:auto;cursor:pointer;color:var(--dim);font-size:1.2rem}
-#chatmsgs{flex:1;overflow:auto;padding:14px;display:flex;flex-direction:column;gap:10px}
-.cmsg{max-width:86%;padding:9px 12px;border-radius:12px;font-size:.86rem;line-height:1.45;white-space:pre-wrap}
-.cmsg.u{align-self:flex-end;background:var(--brand);color:#111;border-bottom-right-radius:3px}
-.cmsg.a{align-self:flex-start;background:#1a1a20;border:1px solid var(--line);border-bottom-left-radius:3px}
-#chatbar{display:flex;gap:8px;padding:12px;border-top:1px solid var(--line)}
-#chatbar input{flex:1;background:#0a0a0d;border:1px solid var(--line);border-radius:9px;color:var(--txt);padding:9px 11px;font:inherit;font-size:.85rem}
+/* The Studio/Editor toggle, wallet, GPUs and chat sidebar are the shared shell
+   (/studio/shell.css + shell.js), loaded in both views. */
 /* ── Responsive: tablet ≤900px, phone ≤600px ─────────────────────────────── */
 @media (max-width:900px){
   main{padding:12px 16px 90px}
@@ -162,7 +154,6 @@ body.immersive #stage{display:block}
   .grid{grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:11px}
   .tgrid{grid-template-columns:repeat(auto-fill,minmax(120px,1fr))}
   #livebar{margin-left:16px;margin-right:16px}
-  #chatpanel{width:calc(100vw - 24px);height:70vh}
 }
 @media (max-width:600px){
   header{padding:11px 14px;gap:9px}
@@ -180,8 +171,6 @@ body.immersive #stage{display:block}
   .search{width:120px} .tabs .sp{display:none}
   #livebar{flex-wrap:wrap;font-size:.78rem}
   #bulkbar,#reftray{left:8px;right:8px;transform:none;flex-wrap:wrap;justify-content:center}
-  #chatfab{bottom:16px;right:16px}
-  #chatpanel{bottom:0;right:0;left:0;width:100vw;height:82vh;max-height:82vh;border-radius:16px 16px 0 0}
   .card .delx,.card .addref{width:30px;height:30px}  /* bigger tap targets */
 }
 /* touch: no hover-reveal — always show card tools on touch devices */
@@ -192,7 +181,6 @@ body.immersive #stage{display:block}
 <header>
   <svg class="logo" viewBox="0 0 520 520" xmlns="http://www.w3.org/2000/svg"><rect width="520" height="520" rx="120" fill="#111"/><g transform="translate(100,100) scale(4.78)" fill="#fff"><path d="M22.21 67V44.6369H0V67H22.21Z"/><path d="M66.7038 22.3184H22.2534L0.0878906 44.6367H44.4634L66.7038 22.3184Z"/><path d="M22.21 0H0V22.3184H22.21V0Z"/><path d="M66.7198 0H44.5098V22.3184H66.7198V0Z"/><path d="M66.7198 67V44.6369H44.5098V67H66.7198Z"/></g></svg>
   <h1>Hanzo Studio</h1><span class="beta">Beta</span><span class="sp"></span>
-  <a class="lnk" href="/?advanced=1">Advanced mode</a>
   <button class="btn" onclick="load()">Refresh</button>
   <div class="user" id="user" title="Account"><span class="av" id="av">·</span><span class="nm" id="org">…</span></div>
 </header>
@@ -238,7 +226,12 @@ body.immersive #stage{display:block}
     <button class="mini" onclick="bulk('deleted')">Delete</button>
     <button class="mini" onclick="clearSel()">Cancel</button>
   </div>
-  <section id="templates" hidden><div class="grid" id="tgall"></div></section>
+  <section id="templates" hidden>
+    <div class="sec-l">Your templates</div>
+    <div class="tgrid" id="orgtmpl"></div>
+    <div class="sec-l">Start from a kind</div>
+    <div class="grid" id="tgall"></div>
+  </section>
   <section id="pipelines" hidden><div class="grid" id="wfgrid"></div></section>
   <section id="runs" hidden>
     <div id="qhead" class="qhead"></div>
@@ -290,6 +283,7 @@ body.immersive #stage{display:block}
   <div class="row" style="justify-content:flex-end;margin-top:14px;gap:6px">
     <button class="mini" id="ctxcancel" onclick="cancelCtx()" style="display:none">✕ Cancel job</button>
     <button class="mini" id="ctxedit" onclick="editCtx()" style="display:none">✎ Edit</button>
+    <button class="mini" id="ctxeditor" onclick="editorCtx()" title="Load this graph into the node editor" style="display:none">⇄ Open in Editor</button>
     <button class="mini" id="ctxreuse" onclick="reuseCtx()" title="Open Fix primed with this prompt + references">↻ Reuse context</button>
     <button class="mini hot" id="ctxfix" onclick="fixCtx()">Fix this version</button>
   </div>
@@ -335,7 +329,26 @@ const thumbURL=a=>`/v1/library/file?thumb=1&path=${encodeURIComponent(a.path)}`;
 function tcard(x){return `<div class="tcard" onclick="pickTemplate('${x.k}','${x.t.replace(/'/g,"")}')"><div class="ic">${x.ic}</div><div class="tl">${x.t}</div><div class="td">${x.d}</div></div>`;}
 function tab(name){document.querySelectorAll('.tabs button').forEach(b=>b.classList.toggle('on',b.dataset.tab===name));
   for(const s of ['assets','templates','pipelines','runs'])$(s).hidden=s!==name;
-  if(name==='runs')runs(); if(name==='pipelines')pipes();}
+  if(name==='runs')runs(); if(name==='pipelines')pipes(); if(name==='templates')loadOrgTemplates();}
+// ── Org templates: saved graphs, Open in Editor + Render (the ONE dispatch path) ──
+async function loadOrgTemplates(){
+  let d={templates:[]}; try{d=await (await fetch('/v1/templates')).json();}catch(_){}
+  const ts=d.templates||[];
+  $('orgtmpl').innerHTML=ts.length?ts.map(t=>{const nm=(t.name||t.slug).replace(/</g,'&lt;'),ne=(t.name||t.slug).replace(/'/g,"\\'");
+    return `<div class="tcard"><div class="ic">★</div><div class="tl">${nm}</div>
+      <div class="td">${t.ts?new Date(t.ts*1000).toLocaleDateString():''}</div>
+      <div class="row" style="padding:0 11px 11px;gap:6px">
+        <a class="mini" href="/?advanced=1&template=${encodeURIComponent(t.slug)}">Open in Editor</a>
+        ${t.renderable?`<button class="mini hot" onclick="renderTemplate('${t.slug}','${ne}')">Render</button>`:''}
+      </div></div>`;}).join(''):'<div class="empty" style="grid-column:1/-1;padding:20px">No templates yet. In the Editor, build a graph and click ★ Template to save one.</div>';
+}
+async function renderTemplate(slug,name){
+  toast('Queueing '+name+'…');
+  const r=await fetch('/v1/templates/render',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:slug})});
+  const j=await r.json().catch(()=>({}));
+  toast(r.ok?'Render queued → see Queue & History':'Failed: '+(errMsg(j)||('error '+r.status)));
+}
+function editorCtx(){ if(CTX&&CTX.id)location.href='/?advanced=1&load='+encodeURIComponent(CTX.id); }
 function pickTemplate(k,t){$('tmpl').textContent=t; tab('assets'); $('pin').focus(); toast('Template: '+t);}
 function pickPreset(){toast('Design systems / presets — coming in the preset library');}
 function create(){const p=$('pin').value.trim(); const t=$('tmpl').textContent;
@@ -589,6 +602,7 @@ async function openContext(id){
   $('ctxfix').style.display=hasBase?'':'none';
   $('ctxcancel').style.display=live?'':'none';
   $('ctxedit').style.display=live?'':'none';
+  $('ctxeditor').style.display=(it.output&&it.id&&!String(it.id).startsWith('failed-'))?'':'none';
   $('ctxdlg').showModal();
 }
 function cancelCtx(){ if(!CTX)return; ctxdlg.close(); cancelJob(CTX.id); }
@@ -596,7 +610,7 @@ function editCtx(){ if(!CTX)return; ctxdlg.close(); openAmend(CTX.id); }
 async function openLineage(path){
   CTX={output:path,parents:[],refs:[],uploads:[],prompt:'',kind:'asset',status:''};
   $('ctxtitle').textContent='Versions'; $('ctxbody').innerHTML=ctxHTML(CTX, await lineageFor(path));
-  $('ctxreuse').style.display='none'; $('ctxfix').style.display=''; $('ctxdlg').showModal();
+  $('ctxreuse').style.display='none'; $('ctxfix').style.display=''; $('ctxeditor').style.display='none'; $('ctxdlg').showModal();
 }
 function openLibItem(path){ ctxdlg.close(); zoom(imgURL({path})); }
 async function primeFix(base,prompt,libRefs,upRefs){
@@ -672,10 +686,15 @@ async function toggleFav(key,title){const cur=RATINGS[key]||{};const nv=!cur.fav
   else runs();
 }
 async function saveTemplate(){const nm=$('tmplname').value.trim();if(!nm){toast('Name the template');return;}
-  // Real save lands with the studio-app template store (HIP-0506 phase 3); for now
-  // persist intent on the rating entry so it's not lost and surfaces the guided flow.
-  await fetch('/v1/library/rate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({key:FAVKEY,notes:'TEMPLATE: '+nm+' — '+$('tmpldesc').value})});
-  $('tmpldlg').close();toast('★ Saved "'+nm+'" — it will appear under Templates');runs();
+  // Real save: the favorited run's graph is embedded in its output (fetched via
+  // /v1/workflow by the run's id) → POST /v1/templates, the ONE template store the
+  // Editor's ★ Template also writes to.
+  let g=null; try{const wr=await fetch('/v1/workflow?id='+encodeURIComponent(FAVKEY)); if(wr.ok)g=(await wr.json()).graph;}catch(_){}
+  if(!g){$('tmpldlg').close();toast('No graph on this run — open it in the Editor and use ★ Template');return;}
+  const r=await fetch('/v1/templates',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:nm,graph:g})});
+  const j=await r.json().catch(()=>({}));
+  $('tmpldlg').close();toast(r.ok?('★ Saved "'+nm+'" — see Templates'):('Failed: '+(errMsg(j)||('error '+r.status))));
+  if(r.ok&&!$('templates').hidden)loadOrgTemplates();
 }
 async function setSt(i,status){const a=DATA.assets[i];const r=await fetch('/v1/library/status',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({path:a.path,status})});if(r.ok){a.status=status;render();toast(`${a.path.split('/').pop()} → ${status}`);}else toast('Failed');}
 // Optimistic trash: mark deleted locally + re-render immediately (feels instant),

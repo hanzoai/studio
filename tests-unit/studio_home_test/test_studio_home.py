@@ -340,3 +340,141 @@ async def test_home_redirect_only_hits_root_html(monkeypatch):
     req = make_mocked_request("GET", "/", headers={"Accept": "text/html"})
     resp = await sh.home_redirect(req, handler)
     assert resp.text == "spa"
+
+
+# ── Shared shell: editor index injection + templates + workflow + wallet ─────────
+async def _client(server, org_middleware=True):
+    """A real aiohttp app with the studio-home routes and a fake-auth middleware that
+    stamps request['iam_user'] from an X-Org header — so route tests exercise the
+    SAME server-side org scoping (_org_of) production uses."""
+    from aiohttp import web
+    from aiohttp.test_utils import TestClient, TestServer
+
+    @web.middleware
+    async def fake_auth(request, handler):
+        o = request.headers.get("X-Org")
+        if o:
+            request["iam_user"] = {"org_id": o, "orgs": [o]}
+        return await handler(request)
+
+    app = web.Application(middlewares=[fake_auth] if org_middleware else [])
+    routes = web.RouteTableDef()
+    sh.add_studio_home_routes(routes, server)
+    app.add_routes(routes)
+    ts = TestServer(app)
+    await ts.start_server()
+    client = TestClient(ts)
+    await client.start_server()
+    return client
+
+
+def test_editor_index_injects_shell_once(tmp_path):
+    root = tmp_path / "web"
+    root.mkdir()
+    (root / "index.html").write_text("<html><head></head><body><div id=app></div></body></html>")
+    resp = sh.editor_index(str(root))
+    assert resp.headers["Cache-Control"] == "no-cache"
+    assert '<link rel="stylesheet" href="/studio/shell.css"></head>' in resp.text
+    assert '<script src="/studio/shell.js" defer></script></body>' in resp.text
+    # idempotent: an index that already carries the shell is served unchanged
+    (root / "index.html").write_text(resp.text)
+    again = sh.editor_index(str(root))
+    assert again.text.count("/studio/shell.js") == 1
+
+
+def test_template_api_prompt_shapes():
+    api = {"9": {"class_type": "KSampler", "inputs": {}}, "15": {"class_type": "SaveImage", "inputs": {}}}
+    assert sh._template_api_prompt({"output": api, "workflow": {"nodes": []}}) == api   # editor save
+    assert sh._template_api_prompt(api) == api                                          # bare API prompt
+    assert sh._template_api_prompt({"nodes": [{"id": 1}], "last_node_id": 1}) is None   # UI-only, not runnable
+    assert sh._template_api_prompt({}) is None and sh._template_api_prompt("x") is None
+    assert sh._template_slug("Karma — Ghost Mannequin!") == "karma-ghost-mannequin"
+
+
+@pytest.mark.asyncio
+async def test_templates_crud_and_tenant_isolation(tmp_path, monkeypatch):
+    _orgaware(tmp_path, monkeypatch)
+    client = await _client(_FakeServer())
+    graph = {"output": {"15": {"class_type": "SaveImage", "inputs": {"filename_prefix": "t/x"}}}}
+    r = await client.post("/v1/templates", json={"name": "Ghost Mannequin", "graph": graph}, headers={"X-Org": "acme"})
+    assert r.status == 200 and (await r.json())["slug"] == "ghost-mannequin"
+    # acme sees it (renderable — the graph carries an API prompt), fetches it by slug
+    r = await client.get("/v1/templates", headers={"X-Org": "acme"})
+    body = await r.json()
+    assert body["org"] == "acme" and len(body["templates"]) == 1
+    assert body["templates"][0]["name"] == "Ghost Mannequin" and body["templates"][0]["renderable"] is True
+    r = await client.get("/v1/templates/ghost-mannequin", headers={"X-Org": "acme"})
+    assert (await r.json())["graph"] == graph
+    # tenant isolation: globex's list is empty and it can't read acme's template
+    assert (await (await client.get("/v1/templates", headers={"X-Org": "globex"})).json())["templates"] == []
+    assert (await client.get("/v1/templates/ghost-mannequin", headers={"X-Org": "globex"})).status == 404
+    # validation
+    assert (await client.post("/v1/templates", json={"name": "", "graph": graph}, headers={"X-Org": "acme"})).status == 400
+    assert (await client.post("/v1/templates", json={"name": "x", "graph": {}}, headers={"X-Org": "acme"})).status == 400
+    await client.close()
+
+
+@pytest.mark.asyncio
+async def test_template_render_dispatches_and_rejects_ui_only(tmp_path, monkeypatch):
+    _orgaware(tmp_path, monkeypatch)
+    async def fake_queue(request, server, graph):
+        return "pid-tmpl"
+    monkeypatch.setattr(sh, "_queue_prompt", fake_queue)
+    client = await _client(_FakeServer())
+    runnable = {"output": {"9": {"class_type": "KSampler", "inputs": {"seed": 1}},
+                           "15": {"class_type": "SaveImage", "inputs": {"filename_prefix": "t/run"}}}}
+    await client.post("/v1/templates", json={"name": "Run Me", "graph": runnable}, headers={"X-Org": "acme"})
+    r = await client.post("/v1/templates/render", json={"name": "run-me"}, headers={"X-Org": "acme"})
+    assert r.status == 200 and (await r.json())["prompt_id"] == "pid-tmpl"
+    assert sh.worklog.load("acme")[-1]["kind"] == "template"     # went through the ONE funnel
+    # UI-only graph can't run headless -> 422 with a reason, not a silent dispatch
+    await client.post("/v1/templates", json={"name": "UI Only", "graph": {"nodes": [], "last_node_id": 0}}, headers={"X-Org": "acme"})
+    assert (await client.post("/v1/templates/render", json={"name": "ui-only"}, headers={"X-Org": "acme"})).status == 422
+    # cross-tenant render: globex has no such template -> 404
+    assert (await client.post("/v1/templates/render", json={"name": "run-me"}, headers={"X-Org": "globex"})).status == 404
+    await client.close()
+
+
+@pytest.mark.asyncio
+async def test_workflow_reads_embedded_graph_tenant_scoped(tmp_path, monkeypatch):
+    from PIL import Image
+    from PIL.PngImagePlugin import PngInfo
+    _orgaware(tmp_path, monkeypatch)
+    root = Path(sh.folder_paths.get_org_output_directory("acme"))
+    (root / "library.json").write_text('{"assets":[]}')
+    (root / "fixes").mkdir(parents=True, exist_ok=True)
+    info = PngInfo()
+    ui = {"nodes": [{"id": 1, "type": "SaveImage"}], "last_node_id": 1}
+    info.add_text("workflow", json.dumps(ui))
+    info.add_text("prompt", json.dumps({"1": {"class_type": "SaveImage", "inputs": {"filename_prefix": "fixes/x"}}}))
+    Image.new("RGB", (4, 4)).save(root / "fixes" / "x_00001_.png", "PNG", pnginfo=info)
+    sh.worklog.record("acme", kind="fix", prompt="x", refs=[], uploads=[], parents=[],
+                      output_prefix="fixes/x", pid="p1")
+    sh.worklog.record("acme", kind="fix", prompt="pending", refs=[], uploads=[], parents=[],
+                      output_prefix="fixes/nope", pid="p2")
+    client = await _client(_FakeServer())
+    r = await client.get("/v1/workflow?id=p1", headers={"X-Org": "acme"})
+    body = await r.json()
+    assert r.status == 200 and body["format"] == "ui" and body["graph"] == ui   # UI graph preferred
+    # not landed yet -> 404 (no graph to open)
+    assert (await client.get("/v1/workflow?id=p2", headers={"X-Org": "acme"})).status == 404
+    # cross-tenant id is never confirmed -> 404
+    assert (await client.get("/v1/workflow?id=p1", headers={"X-Org": "globex"})).status == 404
+    await client.close()
+
+
+@pytest.mark.asyncio
+async def test_wallet_proxies_and_scopes_org(tmp_path, monkeypatch):
+    _orgaware(tmp_path, monkeypatch)
+    async def fake_balance(tok):
+        assert tok == "Bearer tkn"
+        return {"availableCents": 2500, "currency": "usd", "pendingCents": 0}
+    monkeypatch.setattr(sh, "_finance_balance", fake_balance)
+    client = await _client(_FakeServer())
+    r = await client.get("/v1/wallet", headers={"X-Org": "acme", "Authorization": "Bearer tkn"})
+    body = await r.json()
+    assert body == {"org": "acme", "balance": 25.0, "currency": "usd"}
+    # signed-out (no bearer): display-only null balance, never a fabricated number
+    r = await client.get("/v1/wallet", headers={"X-Org": "acme"})
+    assert await r.json() == {"org": "acme", "balance": None, "currency": None}
+    await client.close()

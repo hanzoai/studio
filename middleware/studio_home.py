@@ -49,6 +49,7 @@ from middleware import worklog
 log = logging.getLogger("studio.home")
 
 _HTML = Path(__file__).with_name("studio_home.html")
+_ASSET_DIR = Path(__file__).parent
 _STATUSES = ("draft", "approved", "queued", "published", "deleted")
 _PROV_CACHE: dict[str, tuple[float, dict]] = {}  # abspath -> (mtime, provenance)
 
@@ -589,6 +590,94 @@ async def home_redirect(request: web.Request, handler):
     return await handler(request)
 
 
+# ── Shared shell: the ONE chrome (Studio/Editor toggle, wallet, GPUs, chat
+# sidebar) loaded by BOTH views. The Studio home <script>-includes it; the Editor
+# gets it injected into the engine's index.html by server.get_root. ──────────────
+_SHELL_HEAD = '<link rel="stylesheet" href="/studio/shell.css">'
+_SHELL_BODY = '<script src="/studio/shell.js" defer></script>'
+
+
+def _asset(name: str, ctype: str) -> web.Response:
+    """Serve a shell asset. no-store like the SPA HTML — it changes every release."""
+    return web.Response(text=(_ASSET_DIR / name).read_text(), content_type=ctype,
+                        headers={"Cache-Control": "no-store, must-revalidate"})
+
+
+def editor_index(web_root: str) -> web.Response:
+    """The engine's index.html with the shared shell injected — the ONE mechanism
+    the Editor picks up the Studio/Editor toggle, wallet, GPUs and chat sidebar, the
+    same chrome the Studio home includes. Idempotent; no-cache like the upstream
+    root handler (the frontend changes every release)."""
+    html = Path(web_root, "index.html").read_text()
+    if "/studio/shell.js" not in html:
+        html = html.replace("</head>", _SHELL_HEAD + "</head>", 1) if "</head>" in html else _SHELL_HEAD + html
+        html = html.replace("</body>", _SHELL_BODY + "</body>", 1) if "</body>" in html else html + _SHELL_BODY
+    return web.Response(text=html, content_type="text/html",
+                        headers={"Cache-Control": "no-cache", "Pragma": "no-cache", "Expires": "0"})
+
+
+def _templates_root(org: str) -> Path:
+    """orgs/<org>/templates — a per-org sibling of the output tree that holds
+    library.json/worklog.json, so templates are tenant-scoped exactly like every
+    other per-org file. Created on demand."""
+    out = Path(folder_paths.get_org_output_directory(org))
+    base = out.parent if out.parent.name == org else out
+    d = base / "templates"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def _template_slug(name: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "-", (name or "").lower()).strip("-")[:60]
+
+
+def _template_api_prompt(graph) -> dict | None:
+    """The runnable API prompt inside a stored template graph. A graph saved from the
+    Editor is ``{workflow, output}`` (output = API prompt); one captured from an
+    output PNG is a bare API prompt (numeric ids -> {class_type, inputs}). A UI-only
+    graph has neither and can't be queued headless — returns None so the caller says
+    so instead of dispatching nothing."""
+    if not isinstance(graph, dict) or not graph:
+        return None
+    out = graph.get("output")
+    if isinstance(out, dict) and out:
+        return out
+    if all(isinstance(v, dict) and "class_type" in v for v in graph.values()):
+        return graph
+    return None
+
+
+async def _finance_balance(tok: str) -> dict | None:
+    """Raw cloud finance balance for the caller's IAM token, or None on any failure.
+    The token scopes the org server-side (cloud pins org from the verified owner
+    claim), so this read is inherently tenant-isolated."""
+    from middleware.gpu_dispatch import CLOUD
+    try:
+        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=10)) as s:
+            async with s.get(f"{CLOUD}/v1/finance/balance", headers={"Authorization": tok}) as r:
+                return await r.json() if r.status == 200 else None
+    except Exception:
+        return None
+
+
+async def _wallet(request: web.Request, org: str) -> dict:
+    """{org, balance, currency} for the wallet chip — a display-only proxy. Balance
+    is the spendable dollar amount (availableCents/100); None when signed-out or the
+    cloud is unreachable (the chip shows '—', never a fabricated number)."""
+    from middleware.gpu_dispatch import _bearer
+    out = {"org": org, "balance": None, "currency": None}
+    tok = _bearer(request)
+    if not tok:
+        return out
+    b = await _finance_balance(tok)
+    if isinstance(b, dict):
+        cents = b.get("availableCents")
+        if isinstance(cents, (int, float)):
+            out["balance"] = round(cents / 100, 2)
+        out["currency"] = b.get("currency") or "usd"
+    return out
+
+
 def add_studio_home_routes(routes: web.RouteTableDef, server) -> None:
 
     @routes.get("/studio")
@@ -600,6 +689,136 @@ def add_studio_home_routes(routes: web.RouteTableDef, server) -> None:
         # tiny; always serve fresh. Static assets keep their own long cache.
         return web.Response(text=_HTML.read_text(), content_type="text/html",
                             headers={"Cache-Control": "no-store, must-revalidate"})
+
+    @routes.get("/studio/shell.js")
+    async def shell_js(request: web.Request):
+        return _asset("shell.js", "text/javascript")
+
+    @routes.get("/studio/shell.css")
+    async def shell_css(request: web.Request):
+        return _asset("shell.css", "text/css")
+
+    @routes.get("/v1/workflow")
+    async def get_workflow(request: web.Request):
+        """The graph that produced a work-log item, for 'Open in Editor'. Tenant-
+        scoped: the id must be in THIS org's work log or it 404s (a cross-tenant id
+        is never confirmed). The graph is read from the item's output PNG, which
+        embeds the litegraph 'workflow' (UI) and/or the API 'prompt'."""
+        org = _org_of(request)
+        pid = request.query.get("id", "")
+        row = next((r for r in worklog.load(org) if r.get("id") == pid), None)
+        if row is None:
+            return web.json_response({"error": "not found"}, status=404)
+        root = _library_root(org)
+        landed = _landed_output(root, row.get("output_prefix"))
+        p = _safe_asset(root, landed) if (root and landed) else None
+        if p is None or p.suffix.lower() != ".png":
+            return web.json_response({"error": "workflow not available yet"}, status=404)
+        try:
+            from PIL import Image
+            info = Image.open(p).info
+        except Exception:
+            info = {}
+        for key, fmt in (("workflow", "ui"), ("prompt", "api")):
+            try:
+                g = json.loads(info.get(key, "null"))
+            except Exception:
+                g = None
+            if isinstance(g, dict) and g:
+                return web.json_response({"id": pid, "format": fmt, "graph": g})
+        return web.json_response({"error": "no embedded workflow in this output"}, status=422)
+
+    @routes.post("/v1/templates")
+    async def save_template(request: web.Request):
+        """Save a workflow graph as an org template (orgs/<org>/templates/<slug>.json,
+        atomic tmp+replace like the work log). Server-resolved org — a template is
+        only ever written to, and read from, the caller's own tenant tree."""
+        try:
+            body = await request.json()
+        except Exception:
+            return web.json_response({"error": "invalid JSON"}, status=400)
+        name = (body.get("name") or "").strip()
+        graph = body.get("graph")
+        slug = _template_slug(name)
+        if not slug:
+            return web.json_response({"error": "name required"}, status=400)
+        if not isinstance(graph, dict) or not graph:
+            return web.json_response({"error": "graph required"}, status=400)
+        rec = {"name": name, "slug": slug, "graph": graph, "ts": int(time.time())}
+        d = _templates_root(_org_of(request))
+        tmp = d / (slug + ".json.tmp")
+        tmp.write_text(json.dumps(rec))
+        tmp.replace(d / (slug + ".json"))
+        return web.json_response({"ok": True, "name": name, "slug": slug})
+
+    @routes.get("/v1/templates")
+    async def list_templates(request: web.Request):
+        org = _org_of(request)
+        out = []
+        for f in sorted(_templates_root(org).glob("*.json")):
+            try:
+                rec = json.loads(f.read_text())
+            except Exception:
+                continue
+            out.append({"name": rec.get("name") or f.stem, "slug": rec.get("slug") or f.stem,
+                        "ts": rec.get("ts", 0),
+                        "renderable": _template_api_prompt(rec.get("graph")) is not None})
+        return web.json_response({"org": org, "templates": out})
+
+    @routes.post("/v1/templates/render")
+    async def render_template(request: web.Request):
+        """Queue a saved template through the ONE dispatch funnel (reseeded); its
+        output lands in the library via the manifest sidecar — no new path. A
+        UI-only graph can't run headless, so it's rejected with a clear reason."""
+        try:
+            body = await request.json()
+        except Exception:
+            return web.json_response({"error": "invalid JSON"}, status=400)
+        org = _org_of(request)
+        slug = _template_slug(body.get("name", ""))
+        f = _templates_root(org) / (slug + ".json")
+        if not slug or not f.is_file():
+            return web.json_response({"error": "not found"}, status=404)
+        try:
+            rec = json.loads(f.read_text())
+        except Exception:
+            return web.json_response({"error": "corrupt template"}, status=422)
+        prompt = _template_api_prompt(rec.get("graph"))
+        if prompt is None:
+            return web.json_response(
+                {"error": "this template has no runnable graph — open it in the Editor to run"}, status=422)
+        out_prefix = ""
+        for n in prompt.values():
+            if isinstance(n, dict) and n.get("class_type") == "SaveImage":
+                out_prefix = n.get("inputs", {}).get("filename_prefix", "") or out_prefix
+        out_prefix = out_prefix or f"templates/{slug}"
+        try:
+            pid = await _dispatch(request, server, org, _reseed(json.loads(json.dumps(prompt))),
+                                  kind="template", prompt=rec.get("name", slug), refs=[], uploads=[],
+                                  parents=[], output_prefix=out_prefix)
+        except DispatchError as e:
+            return web.json_response({"error": str(e)}, status=400)
+        return web.json_response({"ok": True, "prompt_id": pid, "slug": slug})
+
+    @routes.get("/v1/templates/{name}")
+    async def get_template(request: web.Request):
+        org = _org_of(request)
+        slug = _template_slug(request.match_info.get("name", ""))
+        f = _templates_root(org) / (slug + ".json")
+        if not slug or not f.is_file():
+            return web.json_response({"error": "not found"}, status=404)
+        try:
+            return web.json_response(json.loads(f.read_text()))
+        except Exception:
+            return web.json_response({"error": "corrupt template"}, status=422)
+
+    @routes.get("/v1/wallet")
+    async def get_wallet(request: web.Request):
+        """The org's wallet balance for the shell chip — a display-only proxy of the
+        user's IAM token to the cloud finance balance. Returns {org, balance,
+        currency}; top-up is a link to pay.hanzo.ai in the UI. No funds move here."""
+        org = _org_of(request)
+        return web.json_response(await _wallet(request, org))
 
     @routes.get("/v1/library")
     async def get_library(request: web.Request):

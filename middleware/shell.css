@@ -1,0 +1,63 @@
+/* Hanzo Studio shell — the ONE shared chrome, loaded by BOTH the Studio home
+ * (middleware/studio_home.html) and the Editor (injected into the engine's
+ * index.html by server.get_root). Self-contained dark palette + `hz` id/class
+ * prefix so it never collides with the editor's own theme. */
+#hzbar{position:fixed;bottom:18px;right:18px;z-index:2147483000;display:flex;align-items:center;gap:8px;
+  flex-wrap:wrap;justify-content:flex-end;max-width:calc(100vw - 36px);
+  font:400 14px/1.4 Inter,system-ui,-apple-system,sans-serif}
+#hzbar button,#hzbar a{font:inherit}
+.hz-pill{display:inline-flex;align-items:center;gap:7px;background:#131317;color:#ececf1;border:1px solid #232329;
+  border-radius:999px;padding:7px 13px;cursor:pointer;text-decoration:none;white-space:nowrap}
+.hz-pill:hover{border-color:#3a3a48}
+.hz-pill .hz-dot{width:8px;height:8px;border-radius:50%;background:#555;flex:0 0 auto}
+.hz-pill.on .hz-dot{background:#3ddc84}
+.hz-pill.hz-chat{background:#f4f4f6;color:#111;border-color:#f4f4f6;font-weight:600}
+.hz-topup{color:#6aa5ff;text-decoration:none;font-size:.82em;border-left:1px solid #232329;padding-left:7px}
+.hz-topup:hover{text-decoration:underline}
+/* right-docked chat sidebar (both views) */
+#hzchat{position:fixed;top:0;right:0;height:100vh;width:380px;max-width:94vw;background:#0e0e12;color:#ececf1;
+  border-left:1px solid #232329;z-index:2147483001;display:flex;flex-direction:column;
+  transform:translateX(100%);transition:transform .22s ease;box-shadow:-14px 0 44px #0007}
+#hzchat.on{transform:translateX(0)}
+#hzchat .hz-h{display:flex;align-items:center;gap:9px;padding:13px 15px;border-bottom:1px solid #232329;flex-wrap:wrap}
+#hzchat .hz-h .hz-av{width:26px;height:26px;border-radius:50%;background:#26262e;display:flex;align-items:center;
+  justify-content:center;font-size:.72rem;font-weight:600;flex:0 0 auto}
+#hzchat .hz-h .hz-who{font-size:.82rem;min-width:0}
+#hzchat .hz-h .hz-who b{display:block;font-size:.86rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#hzchat .hz-h .hz-who span{color:#8a8a95;font-size:.72rem}
+#hzchat .hz-h .hz-x{margin-left:auto;cursor:pointer;color:#8a8a95;font-size:1.3rem;line-height:1;background:none;border:none}
+#hzmsgs{flex:1;overflow:auto;padding:14px;display:flex;flex-direction:column;gap:10px}
+.hz-m{max-width:88%;padding:9px 12px;border-radius:12px;font-size:.86rem;line-height:1.45;white-space:pre-wrap;word-break:break-word}
+.hz-m.u{align-self:flex-end;background:#f4f4f6;color:#111;border-bottom-right-radius:3px}
+.hz-m.a{align-self:flex-start;background:#1a1a20;border:1px solid #232329;border-bottom-left-radius:3px}
+.hz-m.sys{align-self:center;color:#8a8a95;font-size:.78rem;background:none}
+#hzform{display:flex;gap:8px;padding:12px;border-top:1px solid #232329}
+#hzform input{flex:1;background:#0a0a0d;border:1px solid #232329;border-radius:9px;color:#ececf1;padding:9px 11px;font:inherit;font-size:.85rem;outline:none}
+#hzform button{background:#f4f4f6;color:#111;border:none;border-radius:9px;padding:0 14px;font-weight:600;cursor:pointer}
+/* GPUs panel (both views) */
+#hzgpus{position:fixed;bottom:64px;right:18px;z-index:2147483001;width:320px;max-width:92vw;background:#131317;
+  color:#ececf1;border:1px solid #232329;border-radius:12px;padding:12px 14px;display:none;box-shadow:0 18px 50px #0009}
+#hzgpus.on{display:block}
+#hzgpus h4{font-size:.82rem;font-weight:600;margin:0 0 8px;display:flex;align-items:center;gap:7px}
+.hz-node{display:flex;align-items:flex-start;gap:9px;padding:7px 0;border-top:1px solid #1e1e24;font-size:.8rem}
+.hz-node:first-of-type{border-top:none}
+.hz-node .hz-dot{width:8px;height:8px;border-radius:50%;background:#555;margin-top:5px;flex:0 0 auto}
+.hz-node.on .hz-dot{background:#3ddc84}
+.hz-node .hz-nn{flex:1;min-width:0}
+.hz-node .hz-nn b{font-weight:500}
+.hz-node .hz-nsub{color:#8a8a95;font-size:.72rem;margin-top:2px}
+/* Tablet: a touch narrower sidebar; the pill bar + panels already fit. */
+@media (max-width:900px){#hzchat{width:340px}}
+/* Phone: chat becomes a full-width bottom sheet (same pattern the old chatpanel
+   used); the pill bar wraps upward from the bottom-right so the toggle, wallet
+   and GPUs badge all stay reachable; the GPUs panel spans the width. */
+@media (max-width:600px){
+  #hzbar{bottom:14px;right:14px;gap:7px}
+  .hz-pill{padding:7px 11px}
+  .hz-pill .hz-lbl{display:none}   /* icon-only Chat/GPUs → one line, clears content */
+  #hzchat{top:auto;bottom:0;width:100vw;max-width:100vw;height:85vh;
+    border-left:none;border-top:1px solid #232329;border-radius:16px 16px 0 0;
+    transform:translateY(100%);box-shadow:0 -14px 44px #0007}
+  #hzchat.on{transform:translateY(0)}
+  #hzgpus{left:12px;right:12px;width:auto;bottom:66px}
+}
