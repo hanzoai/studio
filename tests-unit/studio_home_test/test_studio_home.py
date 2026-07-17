@@ -478,3 +478,91 @@ async def test_wallet_proxies_and_scopes_org(tmp_path, monkeypatch):
     r = await client.get("/v1/wallet", headers={"X-Org": "acme"})
     assert await r.json() == {"org": "acme", "balance": None, "currency": None}
     await client.close()
+
+
+@pytest.mark.asyncio
+async def test_library_upload_roundtrip_dedup_and_tenant_isolation(tmp_path, monkeypatch):
+    import aiohttp
+    _orgaware(tmp_path, monkeypatch)
+    # library.json so _library_root resolves for the GET round-trip
+    (Path(sh.folder_paths.get_org_output_directory("acme")) / "library.json").write_text('{"assets":[]}')
+    (Path(sh.folder_paths.get_org_output_directory("globex")) / "library.json").write_text('{"assets":[]}')
+    client = await _client(_FakeServer())
+    png = b"\x89PNG\r\n\x1a\n" + b"acme-bytes"
+    # multipart upload as acme -> renders/r1.png
+    form = aiohttp.FormData()
+    form.add_field("image", png, filename="r1.png", content_type="image/png")
+    r = await client.post("/v1/library/upload", data=form, headers={"X-Org": "acme"})
+    body = await r.json()
+    assert r.status == 200 and body["ok"] and body["path"] == "renders/r1.png" and not body.get("existed")
+    # round-trip through the org-scoped file server
+    g = await client.get("/v1/library/file?path=renders/r1.png", headers={"X-Org": "acme"})
+    assert g.status == 200 and (await g.read()) == png
+    # dedup: identical name+size -> existed, no rewrite
+    form2 = aiohttp.FormData()
+    form2.add_field("image", png, filename="r1.png", content_type="image/png")
+    r2 = await client.post("/v1/library/upload", data=form2, headers={"X-Org": "acme"})
+    assert (await r2.json()) == {"ok": True, "existed": True, "path": "renders/r1.png"}
+    # tenant isolation: org B never sees org A's file; its own upload is a separate tree
+    assert (await client.get("/v1/library/file?path=renders/r1.png", headers={"X-Org": "globex"})).status == 404
+    rg = await client.post("/v1/library/upload?name=r1.png", data=b"\x89PNGglobex",
+                           headers={"X-Org": "globex", "Content-Type": "application/octet-stream"})
+    assert (await rg.json())["path"] == "renders/r1.png"
+    # org A's bytes are untouched by org B's same-named upload
+    assert (await (await client.get("/v1/library/file?path=renders/r1.png", headers={"X-Org": "acme"})).read()) == png
+    await client.close()
+
+
+@pytest.mark.asyncio
+async def test_library_upload_rejects_traversal_bad_name_and_oversize(tmp_path, monkeypatch):
+    _orgaware(tmp_path, monkeypatch)
+    client = await _client(_FakeServer())
+    hdr = {"X-Org": "acme", "Content-Type": "application/octet-stream"}
+    # subpath traversal -> 400
+    assert (await client.post("/v1/library/upload?name=x.png&subpath=../secret", data=b"\x89PNGx", headers=hdr)).status == 400
+    # non-image name -> 400
+    assert (await client.post("/v1/library/upload?name=notes.txt", data=b"hi", headers=hdr)).status == 400
+    # a traversal-y NAME is neutralized to its basename, lands safely under renders/
+    r = await client.post("/v1/library/upload?name=../../evil.png", data=b"\x89PNGevil", headers=hdr)
+    assert (await r.json())["path"] == "renders/evil.png"
+    assert (Path(sh.folder_paths.get_org_output_directory("acme")) / "renders" / "evil.png").is_file()
+    # size cap -> 413
+    monkeypatch.setattr(sh, "_MAX_UPLOAD", 8)
+    assert (await client.post("/v1/library/upload?name=big.png", data=b"0123456789", headers=hdr)).status == 413
+    await client.close()
+
+
+@pytest.mark.asyncio
+async def test_library_upload_indexes_into_assets_and_worklog(tmp_path, monkeypatch):
+    import aiohttp
+    _orgaware(tmp_path, monkeypatch)
+    client = await _client(_FakeServer())
+    png = b"\x89PNG\r\n\x1a\n" + b"render-bytes"
+    form = aiohttp.FormData()
+    form.add_field("image", png, filename="shot.png", content_type="image/png")
+    r = await client.post("/v1/library/upload?node=spark&design=karma&kind=render",
+                          data=form, headers={"X-Org": "acme"})
+    assert (await r.json())["path"] == "renders/shot.png"
+    # instantly findable in Assets (library.json entry, draft)
+    lib = await (await client.get("/v1/library", headers={"X-Org": "acme"})).json()
+    a = next(x for x in lib["assets"] if x["path"] == "renders/shot.png")
+    assert a["status"] == "draft" and a["kind"] == "render" and a["design"] == "karma" and a["tags"] == []
+    # instantly findable in Queue & History with its source node + resolved output
+    wl = await (await client.get("/v1/worklog", headers={"X-Org": "acme"})).json()
+    it = next(x for x in wl["items"] if x["output_prefix"] == "renders/shot.png")
+    assert it["kind"] == "render" and it["node"] == "spark" and it["status"] == "done"
+    assert it["output"] == "renders/shot.png" and it["lane"] == "gpu"
+    # tenant isolation: org B sees neither the asset nor the row
+    lib2 = await (await client.get("/v1/library", headers={"X-Org": "globex"})).json()
+    assert all(x["path"] != "renders/shot.png" for x in lib2.get("assets", []))
+    assert (await (await client.get("/v1/worklog", headers={"X-Org": "globex"})).json())["items"] == []
+    # dedup: re-upload identical bytes adds no second asset or row
+    form2 = aiohttp.FormData()
+    form2.add_field("image", png, filename="shot.png", content_type="image/png")
+    r2 = await client.post("/v1/library/upload?node=spark", data=form2, headers={"X-Org": "acme"})
+    assert (await r2.json()).get("existed") is True
+    lib3 = await (await client.get("/v1/library", headers={"X-Org": "acme"})).json()
+    assert sum(1 for x in lib3["assets"] if x["path"] == "renders/shot.png") == 1
+    wl3 = await (await client.get("/v1/worklog", headers={"X-Org": "acme"})).json()
+    assert sum(1 for x in wl3["items"] if x["output_prefix"] == "renders/shot.png") == 1
+    await client.close()

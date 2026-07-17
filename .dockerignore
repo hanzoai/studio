@@ -23,9 +23,10 @@ venv/
 .ruff_cache/
 tests/
 tests-unit/
-scripts/*
-# ...except the pack installer, which the image build invokes.
-!scripts/install_custom_nodes.sh
+# scripts/ ships WHOLE: the image build runs scripts/install_custom_nodes.sh and
+# the studio pod runs scripts/library_manifest.py as the build-manifest sidecar
+# (indexes every org's output/ into library.json). Excluding it silently no-ops
+# the sidecar's `[ -f ]` guard, so nothing gets indexed — keep the tree intact.
 notebooks/
 *.swp
 .env

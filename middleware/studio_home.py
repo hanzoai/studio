@@ -38,6 +38,7 @@ import os
 import random
 import re
 import time
+import uuid
 from pathlib import Path
 
 import aiohttp
@@ -678,6 +679,52 @@ async def _wallet(request: web.Request, org: str) -> dict:
     return out
 
 
+_MAX_UPLOAD = 30 * 1024 * 1024        # 30 MB — a sane ceiling for one render
+_UPLOAD_EXT = (".png", ".jpg", ".jpeg", ".webp")
+_SUBPATH_RE = re.compile(r"[A-Za-z0-9_-]+(?:/[A-Za-z0-9_-]+)*")
+
+
+def _safe_subpath(raw: str) -> str | None:
+    """The library subfolder an upload lands in — allowlist chars only (no traversal,
+    no absolute), default ``renders``. Returns None for anything outside the allowlist
+    so the route can reject it."""
+    sub = (raw or "").strip("/") or "renders"
+    return sub if _SUBPATH_RE.fullmatch(sub) else None
+
+
+def _row_output(root: Path | None, output_prefix: str | None) -> str | None:
+    """The library-relative output for a work-log row: the file a SaveImage prefix
+    produced, or — for an INGESTED render whose output_prefix is already the stored
+    file's path — that path itself. Lets a mirrored render show its thumbnail and open
+    its graph, without a SaveImage-style counter suffix."""
+    landed = _landed_output(root, output_prefix)
+    if landed is None and root is not None and output_prefix and _safe_asset(root, output_prefix) is not None:
+        landed = output_prefix
+    return landed
+
+
+def _index_upload(org: str, root: Path, rel: str, *, design, kind, role, node) -> None:
+    """Event-driven index at the ingest point so a just-stored render is INSTANTLY
+    findable — in Assets (a library.json entry) and in Queue & History (a done
+    work-log row carrying its source node) — without waiting for the manifest sweeper.
+    Atomic per-org writes like every other metadata file; upserts by path so a
+    re-render of the same name never duplicates the asset."""
+    now_iso = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    lib = _load_library(root)
+    assets = lib.setdefault("assets", [])
+    ex = next((a for a in assets if a.get("path") == rel), None)
+    if ex is None:
+        assets.append({"path": rel, "design": design, "kind": kind, "role": role,
+                       "status": "draft", "tags": [], "updatedAt": now_iso})
+    else:
+        ex.update(design=design, kind=kind, role=role, updatedAt=now_iso)
+    _save_library(root, lib)
+    worklog.record(org, kind="render", prompt="", refs=[], uploads=[], parents=[],
+                   output_prefix=rel, node=node, status="done",
+                   lane=("gpu" if node not in ("upload", "studio pod") else "local"),
+                   pid="up-" + uuid.uuid4().hex[:12])
+
+
 def add_studio_home_routes(routes: web.RouteTableDef, server) -> None:
 
     @routes.get("/studio")
@@ -710,7 +757,7 @@ def add_studio_home_routes(routes: web.RouteTableDef, server) -> None:
         if row is None:
             return web.json_response({"error": "not found"}, status=404)
         root = _library_root(org)
-        landed = _landed_output(root, row.get("output_prefix"))
+        landed = _row_output(root, row.get("output_prefix"))
         p = _safe_asset(root, landed) if (root and landed) else None
         if p is None or p.suffix.lower() != ".png":
             return web.json_response({"error": "workflow not available yet"}, status=404)
@@ -878,6 +925,58 @@ def add_studio_home_routes(routes: web.RouteTableDef, server) -> None:
             except Exception:
                 pass  # fall through to full-res on any thumbnail failure
         return web.FileResponse(p)
+
+    @routes.post("/v1/library/upload")
+    async def library_upload(request: web.Request):
+        """Tenant-scoped render ingest so EVERY render lands in the library — including
+        ones produced on a GPU node outside the job path (the node's mirror loop POSTs
+        here). Body is multipart (field ``image``/``file``) or raw bytes + ``?name=``,
+        with an optional ``?subpath=`` (default ``renders``). Writes
+        orgs/<org>/output/<subpath>/<name> atomically (tmp+replace, same as the work
+        log); rejects traversal (basename-only name + allowlisted subpath); caps size;
+        and skips a byte-identical existing file (name+size match → existed). The
+        manifest sidecar indexes output/ — no other wiring."""
+        org = _org_of(request)
+        sub = _safe_subpath(request.query.get("subpath", ""))
+        if sub is None:
+            return web.json_response({"error": "invalid subpath"}, status=400)
+        clen = request.content_length
+        if clen is not None and clen > _MAX_UPLOAD:
+            return web.json_response({"error": "file too large"}, status=413)
+        if request.headers.get("Content-Type", "").startswith("multipart/"):
+            post = await request.post()
+            f = post.get("image") or post.get("file")
+            if f is None or not hasattr(f, "file"):
+                return web.json_response({"error": "no image field"}, status=400)
+            name = os.path.basename(f.filename or "")
+            data = f.file.read()
+        else:
+            data = await request.read()
+            name = os.path.basename(request.query.get("name", ""))
+        if not name or os.path.splitext(name)[1].lower() not in _UPLOAD_EXT:
+            return web.json_response({"error": "image name required (.png/.jpg/.jpeg/.webp)"}, status=400)
+        if not data:
+            return web.json_response({"error": "empty body"}, status=400)
+        if len(data) > _MAX_UPLOAD:
+            return web.json_response({"error": "file too large"}, status=413)
+        out_root = Path(folder_paths.get_org_output_directory(org))
+        dest = (out_root / sub / name).resolve()
+        if not str(dest).startswith(str(out_root.resolve()) + os.sep):
+            return web.json_response({"error": "invalid path"}, status=400)
+        rel = f"{sub}/{name}"
+        if dest.is_file() and dest.stat().st_size == len(data):
+            return web.json_response({"ok": True, "existed": True, "path": rel})
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        tmp = dest.with_name(dest.name + ".tmp")
+        tmp.write_bytes(data)
+        tmp.replace(dest)
+        # index at ingest → instantly findable in Assets + Queue & History (with node)
+        _index_upload(org, out_root, rel,
+                      design=request.query.get("design") or None,
+                      kind=request.query.get("kind") or "render",
+                      role=request.query.get("role") or None,
+                      node=request.query.get("node") or "upload")
+        return web.json_response({"ok": True, "path": rel})
 
     @routes.get("/v1/gpu-status")
     async def gpu_status(request: web.Request):
@@ -1093,7 +1192,7 @@ def add_studio_home_routes(routes: web.RouteTableDef, server) -> None:
         out = []
         for r in reversed(rows):
             row = dict(r)
-            landed = _landed_output(root, r.get("output_prefix"))
+            landed = _row_output(root, r.get("output_prefix"))
             row["output"] = landed
             if landed and r.get("status") not in ("failed", "cancelled"):
                 row["status"] = "done"
