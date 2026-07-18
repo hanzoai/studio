@@ -835,6 +835,9 @@ async def _wallet(request: web.Request, org: str) -> dict:
 
 _MAX_UPLOAD = 100 * 1024 * 1024       # 100 MB — 4k masters run 30-60MB; the cap must hold the largest real render
 _UPLOAD_EXT = (".png", ".jpg", ".jpeg", ".webp")
+# Explicit types for served assets: the runtime's mimetypes table lacks webp, and
+# octet-stream + nosniff breaks <img> rendering of attached webp references.
+_CTYPE = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp"}
 _SUBPATH_RE = re.compile(r"[A-Za-z0-9_-]+(?:/[A-Za-z0-9_-]+)*")
 
 
@@ -1241,7 +1244,8 @@ def add_studio_home_routes(routes: web.RouteTableDef, server) -> None:
                 return web.FileResponse(tp, headers={"Cache-Control": "public, max-age=86400"})
             except Exception:
                 pass  # fall through to full-res on any thumbnail failure
-        return web.FileResponse(p)
+        ct = _CTYPE.get(p.suffix.lower())
+        return web.FileResponse(p, headers={"Content-Type": ct} if ct else None)
 
     @routes.post("/v1/library/upload")
     async def library_upload(request: web.Request):
