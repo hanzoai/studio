@@ -59,11 +59,18 @@ def _save(org: str, rows: list[dict]) -> None:
     tmp.replace(p)
 
 
-def has_output(org: str, output_prefix: str) -> bool:
-    """Whether any row already carries this landed output — the ingest upsert
-    key (re-ingesting identical bytes must repair, never duplicate)."""
-    return any(r.get("output_prefix") == output_prefix or r.get("output") == output_prefix
-               for r in load(org))
+def has_output(org: str, path: str) -> bool:
+    """Whether any row already owns this landed file — the ingest upsert key
+    (re-ingesting must repair, never duplicate). A dispatch row's output_prefix
+    lacks the SaveImage counter suffix (``fixes/x_ab12cd`` owns
+    ``fixes/x_ab12cd_00001_.png``), so the match is prefix-aware, not equality —
+    equality alone doubled every mirrored render with an ingest row."""
+    for r in load(org):
+        pre = r.get("output_prefix") or ""
+        if path and (path == pre or path == r.get("output") or
+                     (pre and path.startswith(pre + "_"))):
+            return True
+    return False
 
 
 def record(org: str, *, kind: str, prompt: str, refs: list, uploads: list,

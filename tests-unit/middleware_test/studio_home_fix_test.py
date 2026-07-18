@@ -225,3 +225,15 @@ def test_compose_graph_injects_lessons():
                           lessons=["strap should be thinner"])
     assert "strap should be thinner" in g["6"]["inputs"]["prompt"]
     assert "strap should be thinner" in g["7"]["inputs"]["prompt"]
+
+
+# ── Ingest upsert identity: a counter-suffixed landed file belongs to its
+#    dispatch row — mirroring must never add a duplicate ingest row ────────────
+def test_has_output_matches_counter_suffixed_files(tmp_path, monkeypatch):
+    import middleware.worklog as wl
+    monkeypatch.setattr(wl.folder_paths, "get_org_output_directory", lambda org: str(tmp_path))
+    wl.record("acme", kind="fix", prompt="p", refs=[], uploads=[], parents=[],
+              output_prefix="fixes/x_ab12cd")
+    assert wl.has_output("acme", "fixes/x_ab12cd_00001_.png")      # the row owns its landed file
+    assert wl.has_output("acme", "fixes/x_ab12cd")                 # exact prefix still matches
+    assert not wl.has_output("acme", "fixes/other_00001_.png")     # unrelated file → new row ok
