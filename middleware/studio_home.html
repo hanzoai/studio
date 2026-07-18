@@ -830,11 +830,13 @@ function ctxHTML(it,lin){
   const parents=(it.parents||[]).map(p=>pv(thumbURL({path:p}),'from',`openLibItem('${p.replace(/'/g,"\\'")}')`)).join('');
   const refs=(it.refs||[]).map(n=>pv(inputThumb(n),(it.uploads||[]).includes(n)?'upload':'ref')).join('');
   const result=it.output?pv(thumbURL({path:it.output}),'result',`openLibItem('${it.output.replace(/'/g,"\\'")}')`):'';
-  const params=it.params&&Object.keys(it.params).length?Object.entries(it.params).map(([k,v])=>k+':'+v).join(' · '):'';
+  const params=it.params&&Object.keys(it.params).length?Object.entries(it.params).filter(([k])=>k!=='lessons').map(([k,v])=>k+':'+v).join(' · '):'';
+  const lessons=(it.params&&it.params.lessons)||[];
   const trail=(it.events||[]).map(e=>`${e.s}${e.ts?(' '+new Date(e.ts*1000).toLocaleTimeString()):''}${e.note?(' — '+e.note.replace(/</g,'&lt;')):''}`).join('  →  ');
   const chain=[...lin.ancestors.map(a=>[a,a.kind||'ancestor']),...(it.output?[[{path:it.output},'● this']]:[]),...lin.descendants.map(d=>[d,d.kind||'later'])];
   const chainHTML=chain.length>1?`<div class="ctxlabel">Versions</div><div style="display:flex;gap:8px;overflow-x:auto;padding-bottom:4px">${chain.map(([n,role])=>pv(thumbURL({path:n.path}),role,role==='● this'?'':`openLibItem('${(n.path||'').replace(/'/g,"\\'")}')`)).join('')}</div>`:'';
   return `${it.prompt?`<div class="ctxlabel">Prompt</div><div style="font-size:.86rem;background:#0f0f12;border:1px solid var(--line);border-radius:8px;padding:9px 11px">${it.prompt.replace(/</g,'&lt;')}</div>`:''}
+   ${lessons.length?`<div class="ctxlabel">Learning from your notes</div><div style="font-size:.82rem;background:#0f0f12;border:1px solid var(--line);border-radius:8px;padding:9px 11px">${lessons.map(l=>'• '+String(l).replace(/</g,'&lt;')).join('<br>')}</div>`:''}
    ${(parents||refs||result)?`<div class="ctxlabel">References &amp; result</div><div class="row" style="flex-wrap:wrap">${parents}${refs}${result}</div>`:''}
    <div class="ctxlabel">Workflow</div><div style="font-size:.82rem;color:var(--dim)">${it.kind} · ${it.status||''}${it.lane&&it.lane!=='local'?(' · '+it.lane):''}${params?(' · '+params):''}</div>
    ${trail?`<div class="ctxlabel">Process</div><div style="font-size:.78rem;color:var(--dim)">${trail}</div>`:''}

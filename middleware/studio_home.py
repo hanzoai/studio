@@ -665,12 +665,16 @@ def colormatch_fix_ingest(request, subfolder: str, name: str) -> None:
 
 
 async def _dispatch(request, server, org: str, graph: dict, *, kind: str, prompt: str,
-                    refs: list, uploads: list, parents: list, output_prefix: str) -> str:
+                    refs: list, uploads: list, parents: list, output_prefix: str,
+                    lessons: list | None = None) -> str:
     """The ONE place a render is queued AND recorded. On success writes a `queued`
     work-log row (lane detected); on failure writes a `failed` row with the reason —
     so a dispatch is NEVER invisible, whatever lane it took or however it failed."""
+    params = _graph_params(graph)
+    if lessons:
+        params["lessons"] = lessons   # what the user's notes taught THIS job to avoid
     common = dict(kind=kind, prompt=prompt, refs=refs, uploads=uploads,
-                  parents=parents, output_prefix=output_prefix, params=_graph_params(graph))
+                  parents=parents, output_prefix=output_prefix, params=params)
     try:
         pid = await _queue_prompt(request, server, graph)
     except DispatchError as e:
@@ -719,7 +723,7 @@ async def dispatch_fix(request: web.Request, server, org: str, rel: str,
     size = _repose_size(in_dir / ref_name) if _REPOSE.search(instruction) else None
     lessons = _lessons(org, _library_root(org), [] if upload else [rel])
     pid = await _dispatch(request, server, org, _fix_graph(ref_name, instruction, f"fixes/{stem}", size=size, lessons=lessons),
-                          kind="fix", prompt=instruction, refs=[ref_name],
+                          lessons=lessons, kind="fix", prompt=instruction, refs=[ref_name],
                           uploads=[upload] if upload else [], parents=[] if upload else [rel],
                           output_prefix=f"fixes/{stem}")
     if stack:
@@ -761,7 +765,7 @@ async def dispatch_compose(request: web.Request, server, org: str, paths: list,
     stem = "compose_" + "_".join(re.sub(r"[^a-zA-Z0-9]", "", s)[:12] for s in labels[:2]) + f"_{_job_tag()}"
     lessons = _lessons(org, root, list(paths))
     pid = await _dispatch(request, server, org, _compose_graph(ref_names, instruction, f"composes/{stem}", lessons=lessons),
-                          kind="compose", prompt=instruction, refs=ref_names,
+                          lessons=lessons, kind="compose", prompt=instruction, refs=ref_names,
                           uploads=uploaded, parents=list(paths), output_prefix=f"composes/{stem}")
     if stack:
         stacks_store.route_prefix(org, f"composes/{stem}", stack, added_by=_owner_of(request))
@@ -819,7 +823,7 @@ async def dispatch_amend(request: web.Request, server, org: str, prompt_id: str,
     else:
         graph, kind, out = _compose_graph(refs, instruction, f"composes/{stem}", lessons=lessons), "compose", f"composes/{stem}"
     all_uploads = list(dict.fromkeys(list(orig.get("uploads") or []) + new_uploads))
-    pid = await _dispatch(request, server, org, graph, kind=kind, prompt=instruction,
+    pid = await _dispatch(request, server, org, graph, lessons=lessons, kind=kind, prompt=instruction,
                           refs=refs, uploads=all_uploads, parents=parents, output_prefix=out)
     if stack:
         stacks_store.route_prefix(org, out, stack, added_by=_owner_of(request))
