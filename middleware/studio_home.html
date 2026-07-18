@@ -101,8 +101,8 @@ dialog::backdrop{background:rgba(0,0,0,.6)} dialog textarea{width:100%;backgroun
 .card .tools{max-height:0;overflow:hidden;opacity:0;transition:.15s}
 .card:hover .tools{max-height:60px;opacity:1;margin-top:2px}
 .card .meta{gap:5px}
-.card .pick{position:absolute;top:8px;left:9px;width:20px;height:20px;border-radius:5px;border:1.5px solid #fff;background:rgba(0,0,0,.5);display:none;align-items:center;justify-content:center;font-size:.8rem;color:#111;z-index:3;cursor:pointer}
-.card{position:relative} .card:hover .pick,.sel-mode .pick{display:flex} .picked .pick{background:var(--brand)}
+.card .pick{position:absolute;top:8px;left:9px;width:20px;height:20px;border-radius:5px;border:1.5px solid #fff;background:rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;font-size:.8rem;color:#111;z-index:3;cursor:pointer;opacity:.45}
+.card{position:relative} .card:hover .pick,.sel-mode .pick,.picked .pick{opacity:1} .picked .pick{background:var(--brand)}
 /* YouTube-style queue + history */
 .qcol{margin-bottom:26px} .qh{font-size:.9rem;font-weight:600;margin-bottom:10px;color:var(--txt);display:flex;align-items:center;gap:8px}
 .qlist{display:flex;flex-direction:column;gap:8px}
@@ -181,7 +181,7 @@ body.immersive #stage{display:block}
 }
 /* touch: no hover-reveal — always show card tools on touch devices */
 @media (hover:none){
-  .card .pick{display:flex}
+  .card .pick{opacity:1}
   .card .tools{max-height:none;opacity:1;margin-top:2px}
 }
 /* ── Stacks: Procreate-style gallery folders ─────────────────────────────────── */
