@@ -178,6 +178,8 @@ def test_fix_graph_anchored_default_keeps_pose():
 def test_fix_graph_repose_uses_empty_latent_and_frees_pose():
     g = sh._fix_graph("x.png", "same outfit but from the side only", "fixes/x", size=(1024, 1536))
     assert g["10"]["class_type"] == "EmptySD3LatentImage"
+    assert g["6"]["inputs"]["image1"] == ["1", 0]      # RAW reference, no scale mismatch
+    assert g["13"]["inputs"]["model"] == ["11", 0]     # no CFGNorm on the free-latent path
     assert g["10"]["inputs"]["width"] == 1024 and g["10"]["inputs"]["height"] == 1536
     p = g["6"]["inputs"]["prompt"]
     assert "pose, framing" not in p          # must not pin the pose it was asked to change

@@ -370,13 +370,20 @@ def _fix_graph(ref_name: str, instruction: str, prefix: str, *, size: tuple[int,
                   f"pose, framing, lighting and background; only apply the "
                   f"requested change.")
         latent = {"class_type": "VAEEncode", "inputs": {"pixels": ["2", 0], "vae": ["5", 0]}}
+        ref = ["2", 0]          # the scaled image — latent and reference sizes match
+        model = ["12", 0]       # AuraFlow → CFGNorm, the anchored-template recipe
     else:
         # A view/pose change must NOT pin pose/framing — and needs a free latent.
+        # This branch mirrors the proven manual family node-for-node: the RAW
+        # reference feeds the encoders (scaling it against a differently-sized
+        # empty latent re-creates the size-mismatch artifact class), no CFGNorm.
         prompt = (f"{instruction.strip()}. Photorealistic, keep the same model, "
                   f"outfit, hair, lighting and background; render the requested "
                   f"view or pose faithfully.")
         latent = {"class_type": "EmptySD3LatentImage",
                   "inputs": {"width": size[0], "height": size[1], "batch_size": 1}}
+        ref = ["1", 0]
+        model = ["11", 0]
     neg = _NEG
     if lessons:
         prompt += " Known mistakes on earlier versions — do not repeat: " + "; ".join(lessons) + "."
@@ -387,12 +394,12 @@ def _fix_graph(ref_name: str, instruction: str, prefix: str, *, size: tuple[int,
         "3": {"class_type": "CLIPLoader", "inputs": {"clip_name": _QWEN_CLIP, "type": "qwen_image", "device": "default"}},
         "4": {"class_type": "UNETLoader", "inputs": {"unet_name": _QWEN_UNET, "weight_dtype": "default"}},
         "5": {"class_type": "VAELoader", "inputs": {"vae_name": _QWEN_VAE}},
-        "6": {"class_type": "TextEncodeQwenImageEditPlus", "inputs": {"clip": ["3", 0], "vae": ["5", 0], "image1": ["2", 0], "prompt": prompt}},
-        "7": {"class_type": "TextEncodeQwenImageEditPlus", "inputs": {"clip": ["3", 0], "vae": ["5", 0], "image1": ["2", 0], "prompt": neg}},
+        "6": {"class_type": "TextEncodeQwenImageEditPlus", "inputs": {"clip": ["3", 0], "vae": ["5", 0], "image1": ref, "prompt": prompt}},
+        "7": {"class_type": "TextEncodeQwenImageEditPlus", "inputs": {"clip": ["3", 0], "vae": ["5", 0], "image1": ref, "prompt": neg}},
         "10": latent,
         "11": {"class_type": "ModelSamplingAuraFlow", "inputs": {"model": ["4", 0], "shift": 3.1}},
         "12": {"class_type": "CFGNorm", "inputs": {"model": ["11", 0], "strength": 1.0}},
-        "13": {"class_type": "KSampler", "inputs": {"model": ["12", 0], "positive": ["6", 0], "negative": ["7", 0], "latent_image": ["10", 0],
+        "13": {"class_type": "KSampler", "inputs": {"model": model, "positive": ["6", 0], "negative": ["7", 0], "latent_image": ["10", 0],
                  "seed": random.randrange(2**31), "steps": 30, "cfg": 4.0, "sampler_name": "euler", "scheduler": "simple", "denoise": 1.0}},
         "14": {"class_type": "VAEDecode", "inputs": {"samples": ["13", 0], "vae": ["5", 0]}},
         "15": {"class_type": "SaveImage", "inputs": {"images": ["14", 0], "filename_prefix": prefix}},
