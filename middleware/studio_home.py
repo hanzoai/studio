@@ -684,22 +684,53 @@ def colormatch_fix_ingest(request, subfolder: str, name: str) -> None:
         pass
 
 
+# ── Dispatch idempotency: collapse rapid identical re-submits (a double-fired button,
+# an unguarded caller, a retried request) onto ONE render instead of billing a second
+# GPU job — the single biggest source of "the same image generated over and over".
+# Keyed by (org, output prefix, instruction, refs); in-memory is enough because the
+# duplicates arrive within seconds on the same pod. ─────────────────────────────────
+_RECENT_DISPATCH: dict = {}          # key -> (ts, prompt_id)
+_DEDUP_WINDOW_S = 60
+
+
+def _dedup_key(org: str, output_prefix: str, prompt: str, refs: list) -> str:
+    import hashlib
+    raw = "|".join([org, output_prefix or "", (prompt or "").strip(), ",".join(sorted(refs or []))])
+    return hashlib.md5(raw.encode()).hexdigest()
+
+
+def _recent_dispatch(key: str) -> str | None:
+    now = time.time()
+    for k, (ts, _pid) in list(_RECENT_DISPATCH.items()):   # prune so the map stays bounded
+        if now - ts > _DEDUP_WINDOW_S:
+            _RECENT_DISPATCH.pop(k, None)
+    hit = _RECENT_DISPATCH.get(key)
+    return hit[1] if hit and hit[1] and now - hit[0] < _DEDUP_WINDOW_S else None
+
+
 async def _dispatch(request, server, org: str, graph: dict, *, kind: str, prompt: str,
                     refs: list, uploads: list, parents: list, output_prefix: str,
                     lessons: list | None = None) -> str:
     """The ONE place a render is queued AND recorded. On success writes a `queued`
     work-log row (lane detected); on failure writes a `failed` row with the reason —
-    so a dispatch is NEVER invisible, whatever lane it took or however it failed."""
+    so a dispatch is NEVER invisible, whatever lane it took or however it failed.
+    Idempotent: an identical dispatch within the dedup window returns the in-flight
+    prompt_id instead of billing a second render."""
     params = _graph_params(graph)
     if lessons:
         params["lessons"] = lessons   # what the user's notes taught THIS job to avoid
     common = dict(kind=kind, prompt=prompt, refs=refs, uploads=uploads,
                   parents=parents, output_prefix=output_prefix, params=params)
+    key = _dedup_key(org, output_prefix, prompt, refs)
+    dup = _recent_dispatch(key)
+    if dup:
+        return dup                    # identical render already in flight — reuse it
     try:
         pid = await _queue_prompt(request, server, graph)
     except DispatchError as e:
         worklog.record(org, status="failed", error=str(e), **common)
         raise
+    _RECENT_DISPATCH[key] = (time.time(), pid)
     lane = "gpu" if _in_render_jobs(org, pid) else "local"
     node = _render_job_node(org, pid) if lane == "gpu" else "studio pod"
     worklog.record(org, pid=pid, status="queued", lane=lane, node=node, **common)

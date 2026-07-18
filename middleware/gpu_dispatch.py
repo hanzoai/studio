@@ -238,6 +238,12 @@ def dispatch_if_worker(request, org_id: str, prompt_id: str, prompt: dict) -> bo
             # render. Unset, the tasks default (~1h) reaped real renders mid-run and
             # the queue re-ran them for hours.
             "startToCloseTimeout": "14400s",
+            # ONE attempt, no auto-retry. A GPU render is expensive and often
+            # deterministic — re-running a failed/crashed render (e.g. spark OOM mid-
+            # sample) just re-burns money on the SAME output ("the same reject over and
+            # over"). A failure surfaces to the user, who re-runs deliberately. This is
+            # the cap that the startToCloseTimeout alone did NOT provide.
+            "retryPolicy": {"maximumAttempts": 1},
             "input": {
                 "prompt": prompt,
                 "org": org_id,
