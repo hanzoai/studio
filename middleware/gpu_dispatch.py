@@ -154,19 +154,47 @@ def has_online_gpu_advisory(user_tok: str) -> bool:
     return False
 
 
-def has_local_models() -> bool:
-    """True if THIS instance actually has diffusion models to render with. A cloud
-    coordinator pod is model-less — every render is dispatched to the org's GPU
-    worker; a box WITH a GPU has models and can render locally. Lets the /prompt
-    intercept turn a failed dispatch on a model-less pod into a clear "worker
-    unavailable, retry" instead of a cryptic "not in []" validation error."""
+# Model-loader class → (the widget naming the file, the folder_paths list it lives in).
+# Covers the loaders the studio graphs use: Qwen fix/compose (UNET+CLIP+VAE) and the
+# SD-family templates (checkpoint). Enough to answer "can THIS box load THIS graph".
+_LOADERS = {
+    "UNETLoader": ("unet_name", "diffusion_models"),
+    "CheckpointLoaderSimple": ("ckpt_name", "checkpoints"),
+    "CheckpointLoader": ("ckpt_name", "checkpoints"),
+    "ImageOnlyCheckpointLoader": ("ckpt_name", "checkpoints"),
+    "CLIPLoader": ("clip_name", "text_encoders"),
+    "VAELoader": ("vae_name", "vae"),
+}
+
+
+def has_models_for(prompt: dict) -> bool:
+    """True only if THIS instance has EVERY model file the graph actually references
+    (its UNET / checkpoint / CLIP / VAE loader inputs). The decision is per-GRAPH, not
+    "any model present": a cloud coordinator may carry a stray checkpoint (e.g. an SD1.5
+    stopgap) yet lack the Qwen edit models a fix/compose graph needs — validating THAT
+    locally is the cryptic "not in []" / "Prompt outputs failed validation". So a box
+    renders locally only a graph it can actually load; every other graph goes to the
+    fleet (or a retryable 503). Errs toward the fleet (returns False) on any doubt. A
+    worker node (worker_mode) never reaches this path."""
     try:
-        for kind in ("diffusion_models", "checkpoints"):
-            if folder_paths.get_filename_list(kind):
-                return True
+        for node in (prompt or {}).values():
+            if not isinstance(node, dict):
+                continue
+            spec = _LOADERS.get(node.get("class_type", ""))
+            if not spec:
+                continue
+            name = (node.get("inputs") or {}).get(spec[0])
+            if not isinstance(name, str) or not name:
+                continue
+            try:
+                have = folder_paths.get_filename_list(spec[1])
+            except Exception:
+                have = []
+            if name not in have:
+                return False   # a model this graph needs is absent → cannot render here
+        return True
     except Exception:
-        pass
-    return False
+        return False
 
 
 def dispatch_if_worker(request, org_id: str, prompt_id: str, prompt: dict) -> bool:
@@ -189,9 +217,10 @@ def dispatch_if_worker(request, org_id: str, prompt_id: str, prompt: dict) -> bo
         if not tok:
             return False
         online = _online_gpu_nodes(tok)
-        # No visible worker AND this box can render itself → render locally. No
-        # visible worker on a MODEL-LESS pod → still enqueue and wait (never local).
-        if not online and has_local_models():
+        # No visible worker AND this box can load THIS graph → render locally. No
+        # visible worker on a box that lacks the graph's models → still enqueue and
+        # wait (never a doomed local validation), even with a stray unrelated model.
+        if not online and has_models_for(prompt):
             return False
         # Which node runs it: a single visible GPU is definitive; with several — or an
         # org-blind read that saw none — the claimer is decided at pick-up: "gpu".
