@@ -269,7 +269,11 @@ def dispatch_if_worker(request, org_id: str, prompt_id: str, prompt: dict) -> bo
             data=body,
             headers={"Authorization": tok, "Content-Type": "application/json"},
         )
-        urllib.request.urlopen(req, timeout=15).read()
+        # 90s, not 15s: a fix/compose with a large (e.g. 4k) reference inlines tens of
+        # MB, and 15s wasn't enough to PUT the enqueue body — it timed out, dispatch
+        # fell back, and the model-less pod returned "GPU worker unavailable" on a
+        # perfectly good render. The enqueue itself is quick; this only covers upload.
+        urllib.request.urlopen(req, timeout=90).read()
         _track_dispatched(org_id, prompt_id, prompt, node=node)
         return True
     except Exception:

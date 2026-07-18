@@ -1039,7 +1039,20 @@ async def dispatch_model3d(request: web.Request, server, org: str,
         if p is None or p.suffix.lower() != ".png":
             raise DispatchError(f"unknown asset: {rel}")
         ref_name = f"model3d_src_{abs(hash((str(p), p.stat().st_mtime))) % 10**10}.png"
-        (in_dir / ref_name).write_bytes(p.read_bytes())
+        # Hunyuan3D encodes the image at ~518px internally, so a 4k catalog master is
+        # pure waste — and inlining a ~20MB PNG to the worker overruns the gpu-jobs
+        # enqueue (the "GPU worker momentarily unavailable" fall-through). Cap the
+        # staged copy at 1536px; the mesh is identical, the dispatch is reliable.
+        try:
+            from PIL import Image
+            im = Image.open(p)
+            if max(im.size) > 1536:
+                im.thumbnail((1536, 1536))
+                im.save(in_dir / ref_name)
+            else:
+                (in_dir / ref_name).write_bytes(p.read_bytes())
+        except Exception:
+            (in_dir / ref_name).write_bytes(p.read_bytes())
         staged = True
     stem = re.sub(r"[^a-zA-Z0-9_-]", "_", Path(ref_name).stem)[:48] + f"_{_job_tag()}"
     pid = await _dispatch(
