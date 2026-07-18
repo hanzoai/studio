@@ -66,6 +66,7 @@ def library_lock(root: str):
 
 IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".webp"}
 VIDEO_EXTS = {".mp4", ".webm"}
+MODEL3D_EXTS = {".glb"}
 # Written marketing content (blog posts, campaign briefs, social ad copy) is
 # first-class in the ONE index too — a .md under marketing/ is a queue asset
 # whose body is the post/brief and whose caption/hashtags(=tags) are set with
@@ -147,9 +148,10 @@ def scan(root: str) -> list[str]:
             rel = os.path.relpath(full, root)
             is_image = ext in IMAGE_EXTS
             is_video = ext in VIDEO_EXTS
+            is_model3d = ext in MODEL3D_EXTS
             is_mktg_text = (ext in MARKETING_TEXT_EXTS
                             and rel.replace(os.sep, "/").startswith("marketing/"))
-            if not (is_image or is_video or is_mktg_text):
+            if not (is_image or is_video or is_model3d or is_mktg_text):
                 continue
             try:
                 if os.path.getsize(full) == 0:  # skip a render caught mid-write
@@ -189,8 +191,9 @@ def build(root: str) -> dict:
             # still an asset. Dropping it here erased every ingest-indexed render on
             # each sweep cycle. A video keeps kind="video" so it survives every sweep
             # as the motion-judged, video-card kind.
+            _e = os.path.splitext(norm)[1].lower()
             kind = prev.get("kind") or (
-                "video" if os.path.splitext(norm)[1].lower() in VIDEO_EXTS else "render")
+                "model3d" if _e in MODEL3D_EXTS else "video" if _e in VIDEO_EXTS else "render")
             info = {"design": prev.get("design"), "kind": kind, "role": prev.get("role")}
         abspath = os.path.join(root, rel)
         mtime = os.path.getmtime(abspath)
