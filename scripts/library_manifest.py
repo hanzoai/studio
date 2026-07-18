@@ -29,11 +29,40 @@ Pure stdlib — no PIL, no deps — so it runs in the studio image or anywhere.
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
 import os
 import sys
+import tempfile
 import time
 from datetime import datetime, timezone
+
+try:
+    import fcntl
+except ImportError:  # non-POSIX (never in the studio image); lock is a no-op
+    fcntl = None
+
+LOCK_NAME = ".library.lock"
+
+
+@contextlib.contextmanager
+def library_lock(root: str):
+    """Serialize the read-modify-write of library.json across processes — the
+    build-manifest sidecar and the studio app both rebuild-then-replace it, so an
+    unlocked interleave loses status/caption/tags updates. Same lock file name is
+    used by the app writer (studio_home._save_library)."""
+    if fcntl is None:
+        yield
+        return
+    lock_path = os.path.join(root, LOCK_NAME)
+    fh = open(lock_path, "w")
+    try:
+        fcntl.flock(fh, fcntl.LOCK_EX)
+        yield
+    finally:
+        with contextlib.suppress(OSError):
+            fcntl.flock(fh, fcntl.LOCK_UN)
+        fh.close()
 
 IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".webp"}
 # Written marketing content (blog posts, campaign briefs, social ad copy) is
@@ -182,12 +211,24 @@ def build(root: str) -> dict:
 
 
 def write_atomic(root: str, doc: dict) -> str:
+    # A UNIQUE tmp per writer: a fixed ".library.json.tmp" is shared by every
+    # build-manifest sidecar, so two pods overlapping during a roll interleave into
+    # one inode -> a torn library.json -> load_prior()/reader gets JSONDecodeError
+    # -> {} -> every asset resets to status="draft" (the curation wipe). mkstemp in
+    # the SAME dir keeps the rename atomic and same-filesystem.
     manifest_path = os.path.join(root, MANIFEST_NAME)
-    tmp = os.path.join(root, ".library.json.tmp")
-    with open(tmp, "w") as fh:
-        json.dump(doc, fh, indent=2, ensure_ascii=False)
-        fh.write("\n")
-    os.replace(tmp, manifest_path)
+    fd, tmp = tempfile.mkstemp(prefix=".library.json.", suffix=".tmp", dir=root)
+    try:
+        with os.fdopen(fd, "w") as fh:
+            json.dump(doc, fh, indent=2, ensure_ascii=False)
+            fh.write("\n")
+        os.replace(tmp, manifest_path)
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
     return manifest_path
 
 
@@ -199,8 +240,12 @@ def run_once(root: str, quiet: bool = False, strict: bool = True) -> dict | None
         if not quiet:
             print(msg, file=sys.stderr)
         return None  # watch mode: tolerate a tenant with no renders yet
-    doc = build(root)
-    path = write_atomic(root, doc)
+    # Hold the lock across build (which reads the prior manifest to preserve
+    # status/caption/tags) AND the write, so a concurrent app-side status change
+    # can't be read-then-clobbered.
+    with library_lock(root):
+        doc = build(root)
+        path = write_atomic(root, doc)
     if not quiet:
         m = doc["_meta"]
         print(f"library_manifest: {m['count']} assets -> {path}  {m['byStatus']}")

@@ -461,7 +461,13 @@ def start_studio(asyncio_loop=None):
         logging.info("Worker mode enabled — worker_id=%s coordinator=%s",
                       args.worker_id, args.coordinator_url)
 
-    threading.Thread(target=prompt_worker, daemon=True, args=(prompt_server.prompt_queue, prompt_server,)).start()
+    _worker_thread = threading.Thread(target=prompt_worker, daemon=True, args=(prompt_server.prompt_queue, prompt_server,))
+    _worker_thread.start()
+    # Exposed so /ready can gate on the render worker actually being alive: if this
+    # daemon thread dies (an unhandled exception in the executor), the queue still
+    # accepts /prompt but nothing runs — readiness must fail so the pod leaves rotation
+    # and a roll never promotes a wedged pod.
+    prompt_server.prompt_worker_thread = _worker_thread
 
     if args.quick_test_for_ci:
         exit(0)

@@ -35,11 +35,13 @@ Env:
 """
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
 import os
 import random
 import re
+import tempfile
 import time
 import uuid
 from pathlib import Path
@@ -188,6 +190,12 @@ def _append_feedback(request, root: Path, org: str, key: str, entry: dict) -> No
         pass
 
 
+try:
+    import fcntl as _fcntl
+except ImportError:  # non-POSIX; never the studio image
+    _fcntl = None
+
+
 def _load_library(root: Path) -> dict:
     try:
         return json.loads((root / "library.json").read_text())
@@ -196,9 +204,32 @@ def _load_library(root: Path) -> dict:
 
 
 def _save_library(root: Path, lib: dict) -> None:
-    tmp = root / "library.json.tmp"
-    tmp.write_text(json.dumps(lib, indent=1, sort_keys=False))
-    tmp.replace(root / "library.json")
+    """Write library.json atomically AND serialized against the build-manifest
+    sidecar. Two failure modes this closes: (1) a fixed shared tmp let two writers
+    interleave into one inode -> torn JSON -> reader gets {} -> every asset resets to
+    draft (the curation wipe) — mkstemp gives each writer a private tmp; (2) the
+    sidecar's rebuild-then-replace and this write could interleave renames — a shared
+    flock (.library.lock, the same file scripts/library_manifest.py takes across its
+    build+write) serializes them so neither clobbers the other's file operation."""
+    lock_path = root / ".library.lock"
+    lh = open(lock_path, "w") if _fcntl is not None else None
+    try:
+        if lh is not None:
+            _fcntl.flock(lh, _fcntl.LOCK_EX)
+        fd, tmp = tempfile.mkstemp(prefix="library.json.", suffix=".tmp", dir=str(root))
+        try:
+            with os.fdopen(fd, "w") as fh:
+                json.dump(lib, fh, indent=1, sort_keys=False)
+            os.replace(tmp, str(root / "library.json"))
+        except BaseException:
+            with contextlib.suppress(OSError):
+                os.unlink(tmp)
+            raise
+    finally:
+        if lh is not None:
+            with contextlib.suppress(OSError):
+                _fcntl.flock(lh, _fcntl.LOCK_UN)
+            lh.close()
 
 
 def _soft_delete_assets(org: str, asset_ids: list[str]) -> None:

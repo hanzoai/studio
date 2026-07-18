@@ -382,11 +382,14 @@ class PromptServer():
 
         @routes.get("/ready")
         async def readiness_check(request):
-            # Check that the prompt worker is alive and base directories exist
-            ready = (
-                os.path.isdir(folder_paths.get_input_directory())
-                and self.prompt_queue is not None
-            )
+            # The render worker must actually be ALIVE — not merely that the queue
+            # object exists (prompt_queue is set once at boot and never cleared, so
+            # it is constant-true and says nothing about the executor). A dead worker
+            # daemon thread accepts /prompt but runs nothing; readiness must fail so
+            # the pod leaves the Service and a roll never promotes a wedged pod.
+            wt = getattr(self, "prompt_worker_thread", None)
+            worker_alive = wt.is_alive() if wt is not None else (self.prompt_queue is not None)
+            ready = os.path.isdir(folder_paths.get_input_directory()) and worker_alive
             if ready:
                 return web.json_response({"status": "ready"})
             return web.json_response({"status": "not_ready"}, status=503)
