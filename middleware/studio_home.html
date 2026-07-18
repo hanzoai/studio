@@ -377,6 +377,7 @@ body.immersive #stage{display:block}
   <button class="viewbtn" id="zprev" onclick="event.stopPropagation();svStep(-1)" style="position:absolute;left:18px;top:50%;transform:translateY(-50%);display:none;font-size:1.4rem" aria-label="Previous image">‹</button>
   <img id="zoomimg" onclick="event.stopPropagation()">
   <video id="zoomvid" controls playsinline style="display:none;max-width:92vw;max-height:88vh" onclick="event.stopPropagation()"></video>
+  <model-viewer id="zoom3d" camera-controls auto-rotate touch-action="pan-y" shadow-intensity="1" exposure="1.1" style="display:none;width:min(88vw,720px);height:min(84vh,720px);background:radial-gradient(circle at 50% 40%,#25272e,#111116)" onclick="event.stopPropagation()"></model-viewer>
   <button class="viewbtn" id="znext" onclick="event.stopPropagation();svStep(1)" style="position:absolute;right:18px;top:50%;transform:translateY(-50%);display:none;font-size:1.4rem" aria-label="Next image">›</button>
 </div>
 <dialog id="fixdlg">
@@ -456,6 +457,7 @@ body.immersive #stage{display:block}
 </dialog>
 <div id="live" class="sr-only" aria-live="polite" role="status"></div>
 <script defer src="https://analytics.hanzo.ai/script.js" data-website-id="2a8e455c-2b24-481b-860b-2499911ce2c2"></script>
+<script type="module" src="https://unpkg.com/@google/model-viewer@3.5.0/dist/model-viewer.min.js"></script>
 <script>
 // ── Template / KIND catalog — everything Studio supports ─────────────────────
 const TEMPLATES=[
@@ -465,7 +467,7 @@ const TEMPLATES=[
  {k:'product',   t:'Product photography',   d:'Ecom front·side·back',        ic:'🛍', wf:'product', grp:'Fashion'},
  {k:'lifestyle', t:'Lifestyle photography', d:'Same model/3D, in scene',     ic:'🌅', wf:'lifestyle', grp:'Fashion'},
  {k:'cad_mockup',t:'CAD → mockup',          d:'Fashion / packaging',         ic:'✳️', wf:'cad_mockup', grp:'Fashion'},
- {k:'cad_3d',    t:'CAD → 3D + drape',      d:'Multi-view → 3D, fabric drape',ic:'🧊', wf:'cad_3d', grp:'Fashion'},
+ {k:'model3d',   t:'Image → 3D',            d:'A photo → a rotatable .glb mesh (Hunyuan3D)',ic:'🧊', wf:'model3d', grp:'Fashion'},
  // ── Media ──
  {k:'video',     t:'Video',           d:'Wan · LTX · Hunyuan',        ic:'🎬', wf:'video', grp:'Media'},
  {k:'music',     t:'Music',           d:'ACE-Step · song',            ic:'🎵', wf:'music', grp:'Media'},
@@ -488,6 +490,7 @@ const imgURL=a=>`/v1/library/file?path=${encodeURIComponent(a.path)}`;
 const thumbURL=a=>`/v1/library/file?thumb=1&path=${encodeURIComponent(a.path)}`;
 // A video asset: the SAME URL scheme (poster = thumbURL ?thumb=1, playback = imgURL).
 const isVideo=p=>/\.(mp4|webm)$/i.test(p||'');
+const is3d=p=>/\.glb$/i.test(p||'');
 // The output-node in a graph, any medium — used to title runs by their real prefix.
 const saver=g=>Object.values(g||{}).find(n=>n&&['SaveImage','SaveVideo','SaveWEBM'].includes(n.class_type));
 function tcard(x){return `<div class="tcard" onclick="pickTemplate('${x.k}','${x.t.replace(/'/g,"")}')"><div class="ic">${x.ic}</div><div class="tl">${x.t}</div><div class="td">${x.d}</div></div>`;}
@@ -547,6 +550,20 @@ async function create(){
   const t=$('pin').value.trim();
   const libs=TRAY.filter(r=>r.kind==='lib').map(r=>r.ref), ups=TRAY.filter(r=>r.kind==='up').map(r=>r.ref);
   const n=libs.length+ups.length;
+  if(KIND==='model3d'){
+    // The 3D lane: ONE reference image → a .glb mesh. No prompt, no text-to-3D.
+    if(n!==1){ toast('Attach ONE photo with + to turn into 3D'); return; }
+    const m3btn=document.querySelector('.psend');
+    await enqueue(m3btn,'…',async()=>{
+      if(!(await gpuOnline()))toast('⚠ No GPU online — queues until a BYO-GPU connects');
+      const body=libs.length?{path:libs[0]}:{upload:ups[0]};
+      const r=await fetch('/v1/library/model3d',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+      const j=await r.json().catch(()=>({}));
+      if(r.ok){ toast('3D queued → see Queue & History'); track('model3d',{from:'composer'}); $('pin').value=''; clearTray(); clearLane(); }
+      else if(!(await healStale(j))) toast('Failed: '+(errMsg(j)||('error '+r.status)));
+    });
+    return;
+  }
   if(KIND==='video'){
     // The video lane: text-to-video, or ONE reference image (library or upload). Same
     // queued-toast / GPU advisory path as fix/compose — no second box, no flags.
@@ -647,7 +664,8 @@ function render(){
     const i=DATA.assets.indexOf(a);
     const img=/\.(png|jpe?g|webp)$/i.test(a.path||'');
     const vid=isVideo(a.path);
-    const media=img||vid;                                  // shares votes / archive / Re-run / Versions
+    const m3d=is3d(a.path);
+    const media=img||vid||m3d;                             // shares votes / archive / Re-run / Versions
     const prov=a.prov&&a.prov.workflow?` · ${a.prov.workflow}`:'';
     const picked=SEL.has(a.path);
     const cardClick=SELMODE?`onclick="pick(event,'${a.path.replace(/'/g,"\\'")}')"`:'';
@@ -662,6 +680,7 @@ function render(){
       ${media&&!SELMODE&&!review?`<button class="delx" title="Move to Archive (recoverable)" onclick="event.stopPropagation();quickDel('${pe}')">🗑</button>`:''}
       ${img?`<div class="im" style="background-image:url('${thumbURL(a)}')" ${SELMODE?'':`onclick="zoom('${imgURL(a)}')"`}></div>`
         :vid?`<div class="im" style="position:relative"><video src="${imgURL(a)}" poster="${thumbURL(a)}" preload="none" muted playsinline style="width:100%;height:100%;object-fit:cover;display:block" ${SELMODE?'':`onclick="zoom('${imgURL(a)}',true)"`}></video><span style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);font-size:1.7rem;color:#fff;text-shadow:0 2px 10px #000c;pointer-events:none">▶</span></div>`
+        :m3d?`<div class="im" style="position:relative;display:flex;align-items:center;justify-content:center;background:radial-gradient(circle at 50% 40%,#2a2c34,#141419)" ${SELMODE?'':`onclick="zoom('${imgURL(a)}','3d')"`}><span style="font-size:2.6rem">🧊</span><span style="position:absolute;bottom:8px;right:9px;background:rgba(10,10,11,.8);border:1px solid var(--line);border-radius:6px;padding:1px 7px;font-size:.62rem;letter-spacing:.04em">3D · rotate</span></div>`
         :`<div class="doc">${esc((a.path||'').split('/').pop())}</div>`}
       <div class="meta">
         <span class="t">${esc((a.path||'').split('/').pop())}</span>
@@ -1207,13 +1226,17 @@ async function cancelJob(id){
     document.addEventListener('click',e=>{const m=$('acctmenu');if(m&&m.classList.contains('on')&&!m.contains(e.target))m.classList.remove('on');});}
   const box=document.querySelector('.prompt'); if(box){ wireDrop(box,attachFiles); wirePaste(box,attachFiles); }
 })();
-function setZoomMedia(u,video){const im=$('zoomimg'),vd=$('zoomvid');
-  if(video){im.style.display='none';im.removeAttribute('src');if(vd){vd.src=u;vd.style.display='';vd.play&&vd.play().catch(()=>{});}}
-  else{if(vd){vd.pause&&vd.pause();vd.removeAttribute('src');vd.style.display='none';}im.src=u;im.style.display='';}}
+function setZoomMedia(u,mode){const im=$('zoomimg'),vd=$('zoomvid'),md=$('zoom3d');
+  const clr=()=>{if(vd){vd.pause&&vd.pause();vd.removeAttribute('src');vd.style.display='none';}if(md){md.removeAttribute('src');md.style.display='none';}im.style.display='none';im.removeAttribute('src');};
+  clr();
+  if(mode==='3d'){if(md){md.src=u;md.style.display='';}}       // interactive rotatable mesh
+  else if(mode){if(vd){vd.src=u;vd.style.display='';vd.play&&vd.play().catch(()=>{});}}
+  else{im.src=u;im.style.display='';}}
 function zoom(u,video){const z=$('zoom');z.classList.remove('stackctx');$('zprev').style.display='none';$('znext').style.display='none';setZoomMedia(u,video);z.style.display='flex';}
 function zoomBg(){closeZoom();}
 function closeZoom(){const z=$('zoom');z.style.display='none';z.classList.remove('stackctx');$('zprev').style.display='none';$('znext').style.display='none';
-  const vd=$('zoomvid');if(vd){vd.pause&&vd.pause();vd.removeAttribute('src');vd.style.display='none';}$('zoomimg').style.display='';SVI=-1;}
+  const vd=$('zoomvid');if(vd){vd.pause&&vd.pause();vd.removeAttribute('src');vd.style.display='none';}
+  const md=$('zoom3d');if(md){md.removeAttribute('src');md.style.display='none';}$('zoomimg').style.display='';SVI=-1;}
 const ta=$('pin'); ta.addEventListener('input',()=>{ta.style.height='auto';ta.style.height=Math.min(ta.scrollHeight,180)+'px';});
 async function loadSession(){
   let s={}; try{ s=await (await fetch('/v1/session')).json(); }catch(e){ return; }

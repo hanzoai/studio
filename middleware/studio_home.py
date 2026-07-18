@@ -82,7 +82,9 @@ _WAN_VAE = "wan2.2_vae.safetensors"
 _WAN_NEG = "色调艳丽，过曝，静态，细节模糊不清，字幕，风格，作品，画作，画面，静止，整体发灰，最差质量，低质量，JPEG压缩残留，丑陋的，残缺的，多余的手指，画得不好的手部，画得不好的脸部，畸形的，毁容的，形态畸形的肢体，手指融合，静止不动的画面，杂乱的背景，三条腿，背景人很多，倒着走"
 
 _VIDEO_EXT = (".mp4", ".webm")
-_SAVE_EXT = (".png",) + _VIDEO_EXT       # the extensions the containers' savers write
+_MODEL3D_EXT = (".glb",)                  # Hunyuan3D SaveGLB output
+_HY3D_CKPT = "hunyuan_3d_v2.1.safetensors"  # bundled model+CLIP-vision+VAE (Comfy-Org repackaged)
+_SAVE_EXT = (".png",) + _VIDEO_EXT + _MODEL3D_EXT   # every extension a saver writes
 try:
     from middleware.gpu_dispatch import SAVE_NODES as _SAVERS   # the ONE output-node list
 except ImportError:  # alternate package anchor (same fallback the lazy gpu_dispatch imports use)
@@ -561,6 +563,31 @@ def _video_graph(prompt: str, prefix: str, *, ref_name: str | None = None,
     return g
 
 
+def _model3d_graph(ref_name: str, prefix: str, *, seed: int | None = None) -> dict:
+    """The proven Hunyuan3D-2.1 image-to-mesh graph, lifted node-for-node from ComfyUI's
+    own 3d_hunyuan3d-v2.1 template. ImageOnlyCheckpointLoader loads MODEL+CLIP_VISION+VAE
+    from the one bundled checkpoint (the separate-loader path produced noise); the image
+    is CLIP-vision encoded → Hunyuan3Dv2Conditioning → ModelSamplingAuraFlow(shift 1) — the
+    flow-matching wrapper WITHOUT which the sampler yields fragments — → KSampler(euler /
+    normal, 30 steps, cfg 5, denoise 1) over EmptyLatentHunyuan3Dv2(4096) → VAEDecodeHunyuan3D
+    → VoxelToMesh(surface net, 0.6) → SaveGLB. Verified on spark: a coherent 3D garment mesh.
+    A reference image is REQUIRED — there is no text-to-3D path."""
+    return {
+        "1": {"class_type": "ImageOnlyCheckpointLoader", "inputs": {"ckpt_name": _HY3D_CKPT}},
+        "2": {"class_type": "LoadImage", "inputs": {"image": ref_name}},
+        "3": {"class_type": "CLIPVisionEncode", "inputs": {"clip_vision": ["1", 1], "image": ["2", 0], "crop": "center"}},
+        "4": {"class_type": "Hunyuan3Dv2Conditioning", "inputs": {"clip_vision_output": ["3", 0]}},
+        "5": {"class_type": "ModelSamplingAuraFlow", "inputs": {"model": ["1", 0], "shift": 1.0}},
+        "6": {"class_type": "EmptyLatentHunyuan3Dv2", "inputs": {"resolution": 4096, "batch_size": 1}},
+        "7": {"class_type": "KSampler", "inputs": {"model": ["5", 0], "positive": ["4", 0], "negative": ["4", 1],
+              "latent_image": ["6", 0], "seed": seed if seed is not None else random.randrange(2**31),
+              "steps": 30, "cfg": 5.0, "sampler_name": "euler", "scheduler": "normal", "denoise": 1.0}},
+        "8": {"class_type": "VAEDecodeHunyuan3D", "inputs": {"samples": ["7", 0], "vae": ["1", 2], "num_chunks": 8000, "octree_resolution": 256}},
+        "9": {"class_type": "VoxelToMesh", "inputs": {"voxel": ["8", 0], "algorithm": "surface net", "threshold": 0.6}},
+        "10": {"class_type": "SaveGLB", "inputs": {"mesh": ["9", 0], "filename_prefix": prefix}},
+    }
+
+
 def _compose_graph(ref_names: list[str], instruction: str, prefix: str,
                    lessons: list[str] | None = None) -> dict:
     """Multi-reference compose: several chosen assets become the references and the
@@ -986,6 +1013,45 @@ async def dispatch_video(request: web.Request, server, org: str, prompt: str,
     return {"ok": True, "prompt_id": pid, "output_prefix": f"video/{stem}"}
 
 
+async def dispatch_model3d(request: web.Request, server, org: str,
+                           rel: str | None = None, upload: str | None = None,
+                           seed: int | None = None, stack: str | None = None) -> dict:
+    """Generate a 3D mesh (.glb) from ONE reference image — the proven Hunyuan3D-2.1 graph.
+    The reference is EITHER a library asset (``rel``) OR an upload (``upload``); one is
+    REQUIRED (no text-to-3D). Same dispatch/gpu-jobs/flywheel path as fix/video; the model
+    (hunyuan_3d_v2.1) lives on the worker, so model-locality rides the existing advisory."""
+    if not rel and not upload:
+        raise DispatchError("a reference image is required for 3D")
+    if upload and rel:
+        raise DispatchError("use at most one reference (a library image OR an upload)")
+    root = _library_root(org)
+    in_dir = Path(folder_paths.get_org_input_directory(org))
+    in_dir.mkdir(parents=True, exist_ok=True)
+    staged = False
+    if upload:
+        names = _resolve_uploads(org, [upload])
+        if not names:
+            raise DispatchError(f"unknown upload: {upload}")
+        ref_name = names[0]
+    else:
+        rel, _sub = _clean_base(org, root, rel)
+        p = _safe_asset(root, rel) if root else None
+        if p is None or p.suffix.lower() != ".png":
+            raise DispatchError(f"unknown asset: {rel}")
+        ref_name = f"model3d_src_{abs(hash((str(p), p.stat().st_mtime))) % 10**10}.png"
+        (in_dir / ref_name).write_bytes(p.read_bytes())
+        staged = True
+    stem = re.sub(r"[^a-zA-Z0-9_-]", "_", Path(ref_name).stem)[:48] + f"_{_job_tag()}"
+    pid = await _dispatch(
+        request, server, org, _model3d_graph(ref_name, f"model3d/{stem}", seed=seed),
+        kind="model3d", prompt="3D mesh from " + (rel or upload or "image"),
+        refs=[ref_name] if staged else [], uploads=[upload] if upload else [],
+        parents=[rel] if rel else [], output_prefix=f"model3d/{stem}")
+    if stack:
+        stacks_store.route_prefix(org, f"model3d/{stem}", stack, added_by=_owner_of(request))
+    return {"ok": True, "prompt_id": pid, "output_prefix": f"model3d/{stem}"}
+
+
 async def dispatch_compose(request: web.Request, server, org: str, paths: list,
                            instruction: str, uploads: list | None = None,
                            stack: str | None = None) -> dict:
@@ -1233,11 +1299,11 @@ async def _wallet(request: web.Request, org: str) -> dict:
 
 
 _MAX_UPLOAD = 256 * 1024 * 1024       # 256 MB — ONE ceiling, equal to the worker mirror cap (gpu.go outputMax); holds a 4k master OR a short render's video
-_UPLOAD_EXT = (".png", ".jpg", ".jpeg", ".webp", ".mp4", ".webm")
+_UPLOAD_EXT = (".png", ".jpg", ".jpeg", ".webp", ".mp4", ".webm", ".glb")
 # Explicit types for served assets: the runtime's mimetypes table lacks webp, and
-# octet-stream + nosniff breaks <img>/<video> rendering of attached references.
+# octet-stream + nosniff breaks <img>/<video>/<model-viewer> rendering of references.
 _CTYPE = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp",
-          ".mp4": "video/mp4", ".webm": "video/webm"}
+          ".mp4": "video/mp4", ".webm": "video/webm", ".glb": "model/gltf-binary"}
 _SUBPATH_RE = re.compile(r"[A-Za-z0-9_-]+(?:/[A-Za-z0-9_-]+)*")
 
 
@@ -1674,6 +1740,10 @@ def add_studio_home_routes(routes: web.RouteTableDef, server) -> None:
                 return web.FileResponse(tp, headers={"Cache-Control": "public, max-age=86400"})
             except Exception:
                 return web.Response(status=404)
+        elif request.query.get("thumb") and suf in _MODEL3D_EXT:
+            # A mesh has no raster frame; the card renders <model-viewer> instead. 404 so
+            # the thumb request never falls through and serves the whole .glb as an <img>.
+            return web.Response(status=404)
         ct = _CTYPE.get(suf)
         return web.FileResponse(p, headers={"Content-Type": ct} if ct else None)
 
@@ -1724,7 +1794,8 @@ def add_studio_home_routes(routes: web.RouteTableDef, server) -> None:
                 or data[:3] == b"\xff\xd8\xff"
                 or (data[:4] == b"RIFF" and data[8:12] == b"WEBP")
                 or (len(data) > 12 and data[4:8] == b"ftyp")   # mp4/mov: brand box at OFFSET 4
-                or data[:4] == b"\x1a\x45\xdf\xa3"):           # webm/mkv: EBML header
+                or data[:4] == b"\x1a\x45\xdf\xa3"              # webm/mkv: EBML header
+                or data[:4] == b"glTF"):                        # glb: glTF binary magic
             # The name lies sometimes; the bytes never do.
             return web.json_response({"error": "not a supported media file"}, status=400)
         out_root = Path(folder_paths.get_org_output_directory(org))
@@ -1745,9 +1816,11 @@ def add_studio_home_routes(routes: web.RouteTableDef, server) -> None:
         # restore — self-scoped to fixes/, fail-safe, image-only in practice.
         colormatch_fix_ingest(request, sub, name)
         # index at ingest → instantly findable in Assets + Queue & History (with node).
-        # kind defaults by suffix so a video row selects the motion judge + the video card.
+        # kind defaults by suffix so a video row selects the motion judge + the video card,
+        # and a .glb selects the 3D (model-viewer) card.
+        _suf = os.path.splitext(name)[1].lower()
         kind = request.query.get("kind") or (
-            "video" if os.path.splitext(name)[1].lower() in _VIDEO_EXT else "render")
+            "model3d" if _suf in _MODEL3D_EXT else "video" if _suf in _VIDEO_EXT else "render")
         created = _index_upload(org, out_root, rel,
                                 design=request.query.get("design") or None,
                                 kind=kind,
@@ -2126,6 +2199,20 @@ def add_studio_home_routes(routes: web.RouteTableDef, server) -> None:
                 rel=body.get("path"), upload=body.get("upload"),
                 width=body.get("width"), height=body.get("height"),
                 length=body.get("length"), seed=body.get("seed"), stack=body.get("stack")))
+        except DispatchError as e:
+            return web.json_response({"error": str(e)}, status=400)
+
+    @routes.post("/v1/library/model3d")
+    async def model3d(request: web.Request):
+        """Generate a 3D mesh (.glb) from {path?|upload?, seed?, stack?} — ONE reference
+        image required. Org from the bearer claim only. The proven Hunyuan3D-2.1 graph
+        through the ONE dispatch funnel; a bad request is {"error": …} 400."""
+        body = await request.json()
+        try:
+            return web.json_response(await dispatch_model3d(
+                request, server, _org_of(request),
+                rel=body.get("path"), upload=body.get("upload"),
+                seed=body.get("seed"), stack=body.get("stack")))
         except DispatchError as e:
             return web.json_response({"error": str(e)}, status=400)
 
