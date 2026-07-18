@@ -810,7 +810,11 @@ async function gpuOnline(){
   // Check the FLEET (same source dispatch uses), not /v1/engines — a `hanzo gpu
   // connect` box registers with the fleet, so /v1/engines missed it and the UI
   // wrongly said "connect a GPU". Cache 15s so we don't hammer it.
-  if(GPU_ONLINE!==null && Date.now()-GPU_TS<15000)return GPU_ONLINE;
+  // Cache a POSITIVE for 15s so we don't hammer it — but NEVER cache a negative: a
+  // momentary fleet blip (a worker dropping its heartbeat for a few seconds) must not
+  // leave the banner stuck on "connect a GPU". While offline we re-check every call,
+  // so it self-heals on the next 5s livebar tick.
+  if(GPU_ONLINE===true && Date.now()-GPU_TS<15000)return true;
   try{const s=await (await fetch('/v1/gpu-status')).json(); GPU_ONLINE=!!s.online;}
   catch(_){GPU_ONLINE=false;}
   GPU_TS=Date.now(); return GPU_ONLINE;
