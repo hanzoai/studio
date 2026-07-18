@@ -119,6 +119,7 @@ dialog::backdrop{background:rgba(0,0,0,.6)} dialog textarea{width:100%;backgroun
 .vote.up.on{border-color:#3fb950;color:#3fb950;background:rgba(63,185,80,.12)}
 .vote.down.on{border-color:#f85149;color:#f85149;background:rgba(248,81,73,.12)}
 .vote.note.has{border-color:#4a9eff;color:#8fc3ff}
+.card.rejected{opacity:.55} .card.rejected .im{outline:2px solid #f85149;outline-offset:-2px}
 .notebox{width:100%;background:#0f0f12;color:var(--txt);border:1px solid var(--line);border-radius:7px;padding:6px 9px;font:inherit;font-size:.76rem;margin-top:6px;min-height:34px;resize:vertical}
 .fav{cursor:pointer;font-size:1rem;color:#3a3a44} .fav.on{color:#ffcf4a}
 dialog .drop{border:1.5px dashed var(--line);border-radius:9px;padding:14px;text-align:center;color:var(--dim);font-size:.82rem;margin:8px 0;cursor:pointer}
@@ -388,11 +389,11 @@ body.immersive #stage{display:block}
 </main>
 <div id="toast"></div>
 <div id="zoom" onclick="zoomBg(event)">
-  <button class="viewbtn" id="zprev" onclick="event.stopPropagation();svStep(-1)" style="position:absolute;left:18px;top:50%;transform:translateY(-50%);display:none;font-size:1.4rem" aria-label="Previous image">‹</button>
+  <button class="viewbtn" id="zprev" onclick="event.stopPropagation();zStep(-1)" style="position:absolute;left:18px;top:50%;transform:translateY(-50%);display:none;font-size:1.4rem" aria-label="Previous image">‹</button>
   <img id="zoomimg" onclick="event.stopPropagation()">
   <video id="zoomvid" controls playsinline style="display:none;max-width:92vw;max-height:88vh" onclick="event.stopPropagation()"></video>
   <model-viewer id="zoom3d" camera-controls auto-rotate touch-action="pan-y" shadow-intensity="1" exposure="1.1" style="display:none;width:min(88vw,720px);height:min(84vh,720px);background:radial-gradient(circle at 50% 40%,#25272e,#111116)" onclick="event.stopPropagation()"></model-viewer>
-  <button class="viewbtn" id="znext" onclick="event.stopPropagation();svStep(1)" style="position:absolute;right:18px;top:50%;transform:translateY(-50%);display:none;font-size:1.4rem" aria-label="Next image">›</button>
+  <button class="viewbtn" id="znext" onclick="event.stopPropagation();zStep(1)" style="position:absolute;right:18px;top:50%;transform:translateY(-50%);display:none;font-size:1.4rem" aria-label="Next image">›</button>
 </div>
 <dialog id="fixdlg">
   <h3 id="fixtitle" style="font-size:1rem">Fix with chat</h3>
@@ -838,6 +839,8 @@ async function sendCompose(){
 function pipes(){ $('wfgrid').innerHTML=(DATA.workflows||[]).map(w=>`<div class="card"><div class="doc">⚙︎ ${w}</div><div class="meta"><div class="row"><a class="mini" href="/?advanced=1&workflow=${encodeURIComponent(w)}">Edit</a><a class="mini hot" href="/?advanced=1&workflow=${encodeURIComponent(w)}&run=1">Run</a></div></div></div>`).join('')||'<div class="empty">No saved workflows for this org yet.</div>'; }
 // ── YouTube-style Queue & History ───────────────────────────────────────────
 let RATINGS={};let FAVS={};
+let RUNIMGS=[];              // queue/history outputs in order → lightbox ←/→ nav
+const REJECTED=new Set();    // output paths rejected this session (dim the row)
 const vURL=im=>`/view?filename=${encodeURIComponent(im.filename)}&subfolder=${encodeURIComponent(im.subfolder||'')}&type=${im.type||'output'}`;
 const promptTitle=v=>{ // pull the saver prefix from the run's graph — image OR video
   const s=saver((v.prompt&&v.prompt[2])||{});
@@ -1008,16 +1011,28 @@ async function runs(){
   const h=await (await fetch('/history?max_items=40')).json();
   const items=Object.entries(h).reverse().map(([id,v])=>{const ims=[];for(const o of Object.values(v.outputs||{}))for(const im of (o.images||[]))if(im.type==='output')ims.push(im);
     return {id,ok:(v.status||{}).status_str||'?',im:ims[0],title:promptTitle(v)};});
-  $('rgrid').innerHTML=items.map(r=>{
-    const rt=RATINGS[r.id]||{}; const st=rt.stars||0;
+  // Lightbox nav list (outputs in order) so ←/→ walk the queue; _ni maps an item to its slot.
+  RUNIMGS=[]; const _ni={};
+  items.forEach((r,i)=>{ if(r.im){ _ni[i]=RUNIMGS.length; RUNIMGS.push({u:vURL(r.im),video:isVideo(r.im.filename)}); } });
+  $('rgrid').innerHTML=items.map((r,i)=>{
+    const op = r.im ? ((r.im.subfolder?r.im.subfolder+'/':'')+r.im.filename) : '';   // its library path
+    const oe = op.replace(/'/g,"\\'");
+    const rt=(op&&RATINGS[op])||RATINGS[r.id]||{}; const st=rt.stars||0;
     const stars=[1,2,3,4,5].map(n=>`<span class="${n<=st?'on':''}" onclick="rate('${r.id}',${n})">★</span>`).join('');
-    return `<div class="card">
+    const rej = op&&REJECTED.has(op);
+    return `<div class="card${rej?' rejected':''}">
       ${r.im?(isVideo(r.im.filename)
-        ?`<div class="im" style="display:flex;align-items:center;justify-content:center;font-size:1.7rem;color:#fff;background:#151519" onclick="zoom('${vURL(r.im)}',true)">▶</div>`
-        :`<div class="im" style="background-image:url('${vURL(r.im)}')" onclick="zoom('${vURL(r.im)}')"></div>`)
+        ?`<div class="im" style="display:flex;align-items:center;justify-content:center;font-size:1.7rem;color:#fff;background:#151519" onclick="zoomList(RUNIMGS,${_ni[i]})">▶</div>`
+        :`<div class="im" style="background-image:url('${vURL(r.im)}')" onclick="zoomList(RUNIMGS,${_ni[i]})"></div>`)
        :`<div class="doc">no output</div>`}
       <div class="meta">
         <span class="t">${r.title}</span>
+        ${op?`<div class="row fb" data-op="${op.replace(/"/g,'&quot;')}" onclick="event.stopPropagation()">
+          <button class="vote up ${rt.vote===1?'on':''}" title="Good output — rates it 👍 for training" onclick="qVote('${oe}',1)">👍</button>
+          <button class="vote down ${rt.vote===-1?'on':''}" title="Bad output — rates it 👎 for training" onclick="qVote('${oe}',-1)">👎</button>
+          <button class="vote note ${rt.notes?'has':''}" title="Written feedback" onclick="openFeedback('${oe}')">💬</button>
+          <button class="mini" title="Reject this output → Archive (⌘Z to undo)" onclick="qReject('${oe}')">${rej?'✓ Rejected':'🗑 Reject'}</button>
+        </div>`:''}
         <div class="row" style="justify-content:space-between">
           <span class="stars">${stars}</span>
           <span class="fav ${FAVS[r.id]?'on':''}" onclick="toggleFav('${r.id}','${r.title}')" title="Favorite → save as template">★fav</span>
@@ -1063,6 +1078,25 @@ function fbSetVote(v){FBVOTE=FBVOTE===v?0:v;fbPaintVote();
 function fbPaintVote(){$('fbup').classList.toggle('brand',FBVOTE===1);$('fbdown').classList.toggle('brand',FBVOTE===-1);}
 async function refreshFbCount(){try{const s=await (await fetch('/v1/feedback/stats')).json();const b=$('fbexport');if(b)b.textContent='⬇ Feedback'+(s.total?' ('+s.total+')':'');}catch(_){}}
 function exportFeedback(){window.open('/v1/feedback/export','_blank');}
+// ── Queue outputs reuse the SAME rate endpoint + feedback.jsonl + Archive as the
+// gallery, keyed by the output's library path — a 👍/👎/reject here is the same
+// training signal and the same soft-delete (⌘Z-undoable) as everywhere else. ──
+function qVote(path,v){
+  const cur=RATINGS[path]||{}, nv=cur.vote===v?0:v; RATINGS[path]={...cur,vote:nv};
+  const sel=(window.CSS&&CSS.escape)?CSS.escape(path):path;
+  const fb=document.querySelector('.fb[data-op="'+sel+'"]');
+  if(fb){fb.querySelector('.vote.up').classList.toggle('on',nv===1);fb.querySelector('.vote.down').classList.toggle('on',nv===-1);}
+  try{fetch('/v1/library/rate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({key:path,path,vote:nv})});}catch(_){}
+  toast(nv===1?'👍 Thanks — rated for training':nv===-1?'👎 Noted — add a 💬 note so the model learns why':'Vote cleared'); refreshFbCount();
+}
+async function qReject(path){
+  REJECTED.add(path);
+  const a=DATA.assets.find(x=>x.path===path); pushUndo([{path,prev:(a||{}).status||'draft'}]);
+  if(a)a.status='deleted';
+  try{await fetch('/v1/library/status',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({path,status:'deleted'})});}catch(_){}
+  toast('Rejected → Archive — ⌘Z to undo'); paintChips();
+  if(typeof runs==='function')runs();
+}
 let FAVKEY=null,FAVTITLE=null;
 async function toggleFav(key,title){const nv=!FAVS[key];
   await fetch('/v1/favorites',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({key,favorite:nv})});
@@ -1256,11 +1290,17 @@ function setZoomMedia(u,mode){const im=$('zoomimg'),vd=$('zoomvid'),md=$('zoom3d
   if(mode==='3d'){if(md){md.src=u;md.style.display='';}}       // interactive rotatable mesh
   else if(mode){if(vd){vd.src=u;vd.style.display='';vd.play&&vd.play().catch(()=>{});}}
   else{im.src=u;im.style.display='';}}
-function zoom(u,video){const z=$('zoom');z.classList.remove('stackctx');$('zprev').style.display='none';$('znext').style.display='none';setZoomMedia(u,video);z.style.display='flex';}
+// Lightbox nav: a zoom opened from a grid (queue, gallery) carries that grid's media
+// list so ← / → (and the on-screen ‹ ›) step through them; a bare zoom() shows one.
+let ZL=[], ZLI=-1;
+function zoom(u,video){ZL=[];ZLI=-1;const z=$('zoom');z.classList.remove('stackctx');$('zprev').style.display='none';$('znext').style.display='none';setZoomMedia(u,video);z.style.display='flex';}
+function zoomList(list,i){ZL=list||[];ZLI=i|0;const z=$('zoom');z.classList.remove('stackctx');const many=ZL.length>1;$('zprev').style.display=many?'':'none';$('znext').style.display=many?'':'none';const it=ZL[ZLI]||{};setZoomMedia(it.u,it.video);z.style.display='flex';}
+function zoomStep(d){if(!ZL.length)return;ZLI=(ZLI+d+ZL.length)%ZL.length;const it=ZL[ZLI]||{};setZoomMedia(it.u,it.video);}
+function zStep(d){if(SVI>=0&&CURSTACK)svStep(d);else zoomStep(d);}   // stack view uses svStep; grids use zoomStep
 function zoomBg(){closeZoom();}
 function closeZoom(){const z=$('zoom');z.style.display='none';z.classList.remove('stackctx');$('zprev').style.display='none';$('znext').style.display='none';
   const vd=$('zoomvid');if(vd){vd.pause&&vd.pause();vd.removeAttribute('src');vd.style.display='none';}
-  const md=$('zoom3d');if(md){md.removeAttribute('src');md.style.display='none';}$('zoomimg').style.display='';SVI=-1;}
+  const md=$('zoom3d');if(md){md.removeAttribute('src');md.style.display='none';}$('zoomimg').style.display='';SVI=-1;ZL=[];ZLI=-1;}
 const ta=$('pin'); ta.addEventListener('input',()=>{ta.style.height='auto';ta.style.height=Math.min(ta.scrollHeight,180)+'px';});
 async function loadSession(){
   let s={}; try{ s=await (await fetch('/v1/session')).json(); }catch(e){ return; }
@@ -1555,6 +1595,7 @@ function floatMenu(items,ev){closeFloat();
 // keyboard: Escape cancels an in-flight drag / closes the viewer; arrows page the viewer
 document.addEventListener('keydown',e=>{
   if(e.key==='Escape'){if(DRAG){DRAG=null;clearDropHi();}if($('zoom').style.display==='flex')closeZoom();}
+  if($('zoom').style.display==='flex'&&(e.key==='ArrowLeft'||e.key==='ArrowRight')){e.preventDefault();zStep(e.key==='ArrowRight'?1:-1);}
   if($('zoom').classList.contains('stackctx')){if(e.key==='ArrowLeft')svStep(-1);else if(e.key==='ArrowRight')svStep(1);}
 });
 // deep link: #stack=<id> opens that Stack after the gallery loads (Share target)
