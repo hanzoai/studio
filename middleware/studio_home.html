@@ -34,7 +34,7 @@ header .user .nm{font-size:.82rem;color:var(--dim)}
 .btn{border:1px solid var(--line);background:var(--panel);color:var(--txt);border-radius:8px;padding:7px 13px;font-size:.85rem;cursor:pointer}
 .btn:hover{border-color:var(--dim)} .btn.brand{background:var(--brand);border-color:var(--brand);color:#111;font-weight:600}
 main{max-width:1120px;margin:0 auto;padding:12px 24px 80px}
-body{padding-top:56px}  /* clear the fixed header */
+body{padding-top:56px;padding-bottom:84px}  /* clear the fixed header + the shell dock */
 body.immersive{padding-top:0}
 /* persistent live-queue bar — always visible so you can see what's generating */
 #livebar{position:sticky;top:56px;z-index:19;max-width:1120px;margin:0 auto 8px;display:flex;align-items:center;gap:14px;
@@ -228,7 +228,7 @@ body.immersive #stage{display:block}
 #svbulk[hidden]{display:none}   /* .row's display:flex would otherwise beat [hidden] */
 .sv-head{display:flex;align-items:center;gap:12px;margin:8px 0 6px;flex-wrap:wrap}
 .sv-back{border:1px solid var(--line);background:var(--panel);color:var(--txt);border-radius:8px;padding:7px 12px;font-size:.85rem;cursor:pointer}
-.sv-name{font-size:1.5rem;font-weight:600;background:none;border:none;border-bottom:1px solid transparent;color:var(--txt);font-family:inherit;padding:2px 2px;min-width:120px;max-width:60vw}
+.sv-name{font-size:1.5rem;font-weight:600;background:none;border:none;border-bottom:1px solid transparent;color:var(--txt);font-family:inherit;padding:2px 2px;min-width:120px;max-width:60vw;flex:1 1 auto}
 .sv-name:hover,.sv-name:focus{border-bottom-color:var(--line);outline:none}
 .sv-count{color:var(--dim);font-size:.82rem}
 .sv-desc{width:100%;max-width:820px;background:none;border:none;color:var(--dim);font:inherit;font-size:.85rem;resize:none;margin:2px 0 10px;outline:none}
@@ -451,6 +451,7 @@ body.immersive #stage{display:block}
   <div class="row" style="justify-content:flex-end;gap:6px;margin-top:12px"><button class="mini" onclick="fbdlg.close()">Cancel</button><button class="mini hot" onclick="saveFeedback()">Save feedback</button></div>
 </dialog>
 <div id="live" class="sr-only" aria-live="polite" role="status"></div>
+<script defer src="https://analytics.hanzo.ai/script.js" data-website-id="2a8e455c-2b24-481b-860b-2499911ce2c2"></script>
 <script>
 // ── Template / KIND catalog — everything Studio supports ─────────────────────
 const TEMPLATES=[
@@ -511,7 +512,12 @@ async function renderTemplate(slug,name){
   toast(r.ok?'Render queued → see Queue & History':'Failed: '+(errMsg(j)||('error '+r.status)));
 }
 function editorCtx(){ if(CTX&&CTX.id)location.href='/?advanced=1&load='+encodeURIComponent(CTX.id); }
-function pickTemplate(k,t){$('tmpl').textContent=t; tab('assets'); $('pin').focus(); toast('Template: '+t);}
+// ── Product usage → insights.hanzo.ai. sendBeacon to the capture endpoint; the
+// /v1 prefix is load-bearing (root /e/ is IAM-gated). The key is the project's
+// public write token. Fails silent — telemetry must never break the product.
+const DID=localStorage.hz_did||(localStorage.hz_did=(crypto.randomUUID?crypto.randomUUID():String(Math.random()).slice(2)));
+function track(ev,props){try{navigator.sendBeacon('https://insights.hanzo.ai/v1/e',JSON.stringify({api_key:'hi_nq2pI13AO3Yj5mN15uWAtK1ZvubclMpq08Ca9kn3eUO',event:ev,properties:{distinct_id:DID,product:'studio',org:(window.DATA&&DATA.org)||'',...(props||{})}}))}catch(_){}}
+function pickTemplate(k,t){$('tmpl').textContent=t; tab('assets'); $('pin').focus(); toast('Template: '+t); track('template_use',{template:t});}
 function pickPreset(){toast('Design systems / presets — coming in the preset library');}
 // The ONE create path: the top composer's ↑ generates from its prompt + the photos
 // attached to it (via + / drag / paste / a gallery card's +). 1 photo → edit (fix),
@@ -748,7 +754,7 @@ async function sendCompose(){
   const stack=await resolveDest($('compdest'));
   const r=await fetch('/v1/library/compose',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({paths,instruction:t,stack})});
   const j=await r.json().catch(()=>({}));
-  if(r.ok){ $('compdlg').close(); toast(`Compose queued (${j.refs} refs) → see Queue & History`); clearSel(); }
+  if(r.ok){ $('compdlg').close(); toast(`Compose queued (${j.refs} refs) → see Queue & History`); track('compose',{refs:j.refs}); clearSel(); }
   else if(!(await healStale(j))){ $('gpuwarn2').style.display='block'; $('gpuwarn2').textContent='Couldn’t queue: '+(errMsg(j)||('error '+r.status)); }
 }
 function pipes(){ $('wfgrid').innerHTML=(DATA.workflows||[]).map(w=>`<div class="card"><div class="doc">⚙︎ ${w}</div><div class="meta"><div class="row"><a class="mini" href="/?advanced=1&workflow=${encodeURIComponent(w)}">Edit</a><a class="mini hot" href="/?advanced=1&workflow=${encodeURIComponent(w)}&run=1">Run</a></div></div></div>`).join('')||'<div class="empty">No saved workflows for this org yet.</div>'; }
@@ -929,7 +935,7 @@ async function castVote(path,v){
   const cur=RATINGS[path]||{}, nv=cur.vote===v?0:v;               // click the same thumb again = clear
   RATINGS[path]={...cur,vote:nv}; render();
   try{await fetch('/v1/library/rate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({key:path,path,vote:nv})});}catch(_){}
-  toast(nv===1?'👍 Thanks — added to the training set':nv===-1?'👎 Noted — add a 💬 note so the model learns why':'Vote cleared');
+  toast(nv===1?'👍 Thanks — added to the training set':nv===-1?'👎 Noted — add a 💬 note so the model learns why':'Vote cleared'); track('rate',{score:nv});
   refreshFbCount();
 }
 let FBPATH=null,FBVOTE=0;
@@ -940,7 +946,7 @@ async function saveFeedback(){
   if(!FBPATH)return; const text=($('fbtext').value||'').slice(0,2000);
   RATINGS[FBPATH]={...(RATINGS[FBPATH]||{}),vote:FBVOTE,notes:text}; $('fbdlg').close(); render();
   try{await fetch('/v1/library/rate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({key:FBPATH,path:FBPATH,vote:FBVOTE,notes:text})});}catch(_){}
-  toast('Feedback saved — it trains the model'); refreshFbCount();
+  toast('Feedback saved — it trains the model'); track('rate',{score:FBVOTE,noted:!!text}); refreshFbCount();
 }
 async function refreshFbCount(){try{const s=await (await fetch('/v1/feedback/stats')).json();const b=$('fbexport');if(b)b.textContent='⬇ Feedback'+(s.total?' ('+s.total+')':'');}catch(_){}}
 function exportFeedback(){window.open('/v1/feedback/export','_blank');}
@@ -1106,7 +1112,7 @@ async function sendFix(){const t=$('fixtext').value.trim();if(t.length<3){showFi
     r=await fetch('/v1/library/compose',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({paths:[FIXPATH,...paths],instruction:t,uploads,stack})});
   }
   const j=await r.json().catch(()=>({}));
-  if(r.ok){ $('fixdlg').close(); toast(j.note || (FIXMODE==='amend'?'Amended — re-queued (position reset)':'Fix queued → see Queue & History')); if(typeof runs==='function')runs(); }
+  if(r.ok){ $('fixdlg').close(); toast(j.note || (FIXMODE==='amend'?'Amended — re-queued (position reset)':'Fix queued → see Queue & History')); track('fix',{mode:FIXMODE}); if(typeof runs==='function')runs(); }
   else showFixErr('Couldn’t '+(FIXMODE==='amend'?'amend':'queue')+': '+(errMsg(j)||('error '+r.status)));   // stay open so the reason is visible
 }
 async function cancelJob(id){
@@ -1249,7 +1255,7 @@ async function dropOnStack(e,id){e.preventDefault();e.currentTarget.classList.re
 async function createStack(name,ids){
   const r=await fetch('/v1/stacks',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,assetIds:ids})});
   if(!r.ok){toast('Couldn’t create Stack');return null;}
-  const s=await r.json();await load();toast('Stack created: '+(s.name||'Untitled Stack'));announce('Stack created');return s;
+  const s=await r.json();await load();toast('Stack created: '+(s.name||'Untitled Stack'));announce('Stack created');track('stack_create',{n:(ids||[]).length});return s;
 }
 async function createStackFromDrag(a,b){const name=await ask('Name this Stack','Untitled Stack');if(name===null)return;await createStack(name||'Untitled Stack',[a,b]);}
 async function newStackPrompt(){const name=await ask('Name this Stack','Untitled Stack');if(name===null)return;const s=await createStack(name||'Untitled Stack',[]);if(s)openStack(s.id);}

@@ -68,7 +68,7 @@ def test_modelless_pod_enqueues_even_when_org_sees_no_gpu(monkeypatch):
     sibling org), but a MODEL-LESS pod must still enqueue to gpu-jobs and wait — never
     self-POST the GPU-less pod (the instant 'failed validation')."""
     monkeypatch.setattr(g, "_online_gpu_nodes", lambda tok: [])   # org-blind
-    monkeypatch.setattr(g, "has_local_models", lambda: False)     # cloud coordinator
+    monkeypatch.setattr(g, "has_models_for", lambda prompt: False)     # cloud coordinator
     sent = _capture_enqueue(monkeypatch)
     ok = g.dispatch_if_worker(_Req("Bearer karma"), "karma", "pid1", {})
     assert ok is True                       # enqueued to the worker lane, NOT local
@@ -81,7 +81,7 @@ def test_modelless_pod_never_returns_local(monkeypatch):
     """Even if the enqueue POST fails, a model-less pod returns False so server.py
     yields a retryable 503 — it must NEVER fall through to local validation."""
     monkeypatch.setattr(g, "_online_gpu_nodes", lambda tok: [])
-    monkeypatch.setattr(g, "has_local_models", lambda: False)
+    monkeypatch.setattr(g, "has_models_for", lambda prompt: False)
     monkeypatch.setattr(g, "_collect_input_images", lambda prompt, org: [])
 
     def boom(req, timeout=0):
@@ -97,7 +97,7 @@ def test_box_with_models_renders_local_when_no_worker(monkeypatch):
     """A box that HAS its own models (local dev / worker node) still renders locally
     when it sees no online worker — unchanged behavior."""
     monkeypatch.setattr(g, "_online_gpu_nodes", lambda tok: [])
-    monkeypatch.setattr(g, "has_local_models", lambda: True)
+    monkeypatch.setattr(g, "has_models_for", lambda prompt: True)
     touched = {"urlopen": False}
     monkeypatch.setattr(g.urllib.request, "urlopen",
                         lambda *a, **k: touched.update(urlopen=True) or _Resp())
@@ -108,7 +108,7 @@ def test_box_with_models_renders_local_when_no_worker(monkeypatch):
 def test_online_worker_enqueues_with_its_label(monkeypatch):
     monkeypatch.setattr(g, "_online_gpu_nodes",
                         lambda tok: [{"name": "spark", "status": "online", "gpu": True}])
-    monkeypatch.setattr(g, "has_local_models", lambda: True)  # an online worker wins
+    monkeypatch.setattr(g, "has_models_for", lambda prompt: True)  # an online worker wins
     sent = _capture_enqueue(monkeypatch)
     assert g.dispatch_if_worker(_Req(), "acme", "pid", {}) is True
     assert sent["node"] == "spark"
