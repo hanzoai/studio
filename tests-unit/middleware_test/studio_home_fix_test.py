@@ -237,3 +237,16 @@ def test_has_output_matches_counter_suffixed_files(tmp_path, monkeypatch):
     assert wl.has_output("acme", "fixes/x_ab12cd_00001_.png")      # the row owns its landed file
     assert wl.has_output("acme", "fixes/x_ab12cd")                 # exact prefix still matches
     assert not wl.has_output("acme", "fixes/other_00001_.png")     # unrelated file → new row ok
+
+
+# ── Job identity for re-run and template-render (the phantom-image class) ────────
+def test_retag_points_every_saveimage_at_unique_prefix():
+    g = {"1": {"class_type": "KSampler", "inputs": {"seed": 1}},
+         "9": {"class_type": "SaveImage", "inputs": {"filename_prefix": "fixes/original"}},
+         "10": {"class_type": "SaveImage", "inputs": {"filename_prefix": "fixes/original"}}}
+    sh._retag(g, "reruns/original_ab12cd")
+    assert g["9"]["inputs"]["filename_prefix"] == "reruns/original_ab12cd"
+    assert g["10"]["inputs"]["filename_prefix"] == "reruns/original_ab12cd"
+    # a re-run graph never keeps the source's SaveImage prefix (that was the collision)
+    assert all(n.get("inputs", {}).get("filename_prefix") != "fixes/original"
+               for n in g.values() if n.get("class_type") == "SaveImage")

@@ -275,6 +275,19 @@ def _reseed(graph: dict) -> dict:
     return graph
 
 
+def _retag(graph: dict, prefix: str) -> dict:
+    """Point every SaveImage in a re-run / template graph at a UNIQUE output prefix.
+    Without this a re-run replays the source graph's own SaveImage prefix, so its
+    file lands in the SOURCE's namespace and N re-runs share one prefix — the
+    library then attributes the newest sibling to every row (a job shows a photo
+    it did not make). fix/compose/amend already tag per dispatch; this gives
+    re-run and template-render the same job-identity guarantee."""
+    for node in graph.values():
+        if isinstance(node, dict) and node.get("class_type") == "SaveImage":
+            node.setdefault("inputs", {})["filename_prefix"] = prefix
+    return graph
+
+
 def _mistakes(ratings: dict, family) -> list[str]:
     """The correction texts inside ``ratings`` for any asset in ``family`` — a note
     counts as a MISTAKE when its judgement is negative (👎 or ≤2 stars) or carries no
@@ -1296,12 +1309,13 @@ def add_studio_home_routes(routes: web.RouteTableDef, server) -> None:
         for n in prompt.values():
             if isinstance(n, dict) and n.get("class_type") == "SaveImage":
                 out_prefix = n.get("inputs", {}).get("filename_prefix", "") or out_prefix
-        out_prefix = out_prefix or f"templates/{slug}"
+        out_prefix = (out_prefix or f"templates/{slug}") + f"_{_job_tag()}"   # unique per render
         sid = _dest_stack(org, body.get("stack"), prompt=rec.get("name", slug),
                           multi=_graph_is_batch(prompt), owner=_owner_of(request),
                           workspace=_workspace_of(request))
         try:
-            pid = await _dispatch(request, server, org, _reseed(json.loads(json.dumps(prompt))),
+            g = _retag(_reseed(json.loads(json.dumps(prompt))), out_prefix)
+            pid = await _dispatch(request, server, org, g,
                                   kind="template", prompt=rec.get("name", slug), refs=[], uploads=[],
                                   parents=[], output_prefix=out_prefix)
         except DispatchError as e:
@@ -1696,22 +1710,25 @@ def add_studio_home_routes(routes: web.RouteTableDef, server) -> None:
                 if t and t != _NEG:
                     instr = t
         count = max(1, min(int(body.get("count", 1)), 4))
+        base = out_prefix or f"reruns/{re.sub(r'[^a-zA-Z0-9_-]', '_', p.stem)[:40]}"
         # Save-outputs-to destination: an explicit Stack, or an auto-stack when the
-        # org opted in and this is a batch (count>1). Every rerun shares out_prefix,
-        # so one routing rule captures all its landed outputs.
+        # org opted in and this is a batch (count>1). Routing keys on the shared base,
+        # so every uniquely-tagged rerun output still lands in the one destination.
         sid = _dest_stack(org, body.get("stack"), prompt=instr, multi=count > 1,
                           owner=_owner_of(request), workspace=_workspace_of(request))
         ids = []
         try:
             for _ in range(count):
+                tag = f"{base}_{_job_tag()}"          # each rerun owns a unique namespace
+                g = _retag(_reseed(json.loads(json.dumps(graph))), tag)
                 ids.append(await _dispatch(
-                    request, server, org, _reseed(json.loads(json.dumps(graph))),
+                    request, server, org, g,
                     kind="rerun", prompt=instr, refs=[], uploads=[], parents=[rel],
-                    output_prefix=out_prefix))
+                    output_prefix=tag))
+                if sid:
+                    stacks_store.route_prefix(org, tag, sid, added_by=_owner_of(request))
         except DispatchError as e:
             return web.json_response({"error": str(e)}, status=400)
-        if sid:
-            stacks_store.route_prefix(org, out_prefix, sid, added_by=_owner_of(request))
         return web.json_response({"ok": True, "prompt_ids": ids, "stack": sid})
 
     @routes.post("/v1/queue/cancel")

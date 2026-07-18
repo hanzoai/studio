@@ -537,14 +537,19 @@ async function create(){
   const n=libs.length+ups.length;
   if(!n){ toast(t.length<3?'Describe what to create, then attach a photo with +':'Attach a photo with + to edit or compose it'); return; }
   if(t.length<3){ toast('Describe what to make from your photo'+(n>1?'s':'')); return; }
-  if(!(await gpuOnline()))toast('⚠ No GPU online — queues until a BYO-GPU connects');
-  let r;
-  if(n===1){ r=await fetch('/v1/library/fix',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify(libs.length?{path:libs[0],instruction:t}:{upload:ups[0],instruction:t})}); }
-  else{ r=await fetch('/v1/library/compose',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({paths:libs,uploads:ups,instruction:t})}); }
-  const j=await r.json().catch(()=>({}));
-  if(r.ok){ toast('Queued → see Queue & History'); $('pin').value=''; clearTray(); }
-  else if(!(await healStale(j))) toast('Failed: '+(errMsg(j)||('error '+r.status)));
+  // Same latch as the dialog queue buttons: the ↑ / Enter can fire twice before the
+  // POST resolves — QBUSY makes the second a no-op so no double (billable) dispatch.
+  const btn=document.querySelector('.psend');
+  await enqueue(btn,'…',async()=>{
+    if(!(await gpuOnline()))toast('⚠ No GPU online — queues until a BYO-GPU connects');
+    let r;
+    if(n===1){ r=await fetch('/v1/library/fix',{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify(libs.length?{path:libs[0],instruction:t}:{upload:ups[0],instruction:t})}); }
+    else{ r=await fetch('/v1/library/compose',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({paths:libs,uploads:ups,instruction:t})}); }
+    const j=await r.json().catch(()=>({}));
+    if(r.ok){ toast('Queued → see Queue & History'); track(n===1?'fix':'compose',{from:'composer'}); $('pin').value=''; clearTray(); }
+    else if(!(await healStale(j))) toast('Failed: '+(errMsg(j)||('error '+r.status)));
+  });
 }
 async function load(){
   const r=await fetch('/v1/library'); DATA=await r.json(); $('org').textContent=DATA.org||'';
