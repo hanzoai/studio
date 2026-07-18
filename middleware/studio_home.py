@@ -320,7 +320,8 @@ def _drop_thumb(root: Path, rel: str) -> None:
     try:
         p = (root / rel).resolve()
         key = re.sub(r"[^a-zA-Z0-9]", "_", str(p))[-120:]
-        (root / ".thumbs" / f"{key}.jpg").unlink(missing_ok=True)
+        for ext in (".webp", ".jpg"):   # current WebP thumb + any legacy JPEG
+            (root / ".thumbs" / f"{key}{ext}").unlink(missing_ok=True)
     except OSError:
         pass
 
@@ -1726,13 +1727,16 @@ def add_studio_home_routes(routes: web.RouteTableDef, server) -> None:
                 tdir = root / ".thumbs"
                 tdir.mkdir(exist_ok=True)
                 key = re.sub(r"[^a-zA-Z0-9]", "_", str(p))[-120:]
-                tp = tdir / f"{key}.jpg"
+                tp = tdir / f"{key}.webp"
                 if not tp.is_file() or tp.stat().st_mtime < p.stat().st_mtime:
                     from PIL import Image
                     im = Image.open(p)
                     im.thumbnail((480, 720))  # grid-sized; keeps aspect
-                    im.convert("RGB").save(tp, "JPEG", quality=82)
-                return web.FileResponse(tp, headers={"Cache-Control": "public, max-age=86400"})
+                    # WEBP is ~30% smaller than JPEG at the same quality → less bandwidth.
+                    im.convert("RGB").save(tp, "WEBP", quality=80, method=4)
+                # The client versions the URL by content sha (?v=), so a changed image is a
+                # NEW url — this thumb is safe to cache immutable for a year (instant repeats).
+                return web.FileResponse(tp, headers={"Cache-Control": "public, max-age=31536000, immutable"})
             except Exception:
                 pass  # fall through to full-res on any thumbnail failure
         elif request.query.get("thumb") and suf in _VIDEO_EXT:

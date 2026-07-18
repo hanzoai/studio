@@ -502,7 +502,14 @@ let DATA={assets:[],workflows:[]},FILTER='all';
 const $=id=>document.getElementById(id);
 const toast=m=>{const t=$('toast');t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),3000)};
 const imgURL=a=>`/v1/library/file?path=${encodeURIComponent(a.path)}`;
-const thumbURL=a=>`/v1/library/file?thumb=1&path=${encodeURIComponent(a.path)}`;
+// Versioned by content sha (or mtime) so a thumb is cacheable IMMUTABLE for a year: a
+// re-rendered image gets a new sha → new URL → fresh fetch, never stale.
+const thumbURL=a=>`/v1/library/file?thumb=1&path=${encodeURIComponent(a.path)}&v=${(a&&(a.sha||a.mtime))||0}`;
+// Lazy thumbnails: a card carries its thumb URL as data-bg (NOT an eager background-image)
+// and this observer paints it only as the card nears the viewport — so a 1000-image
+// gallery fetches a screenful, not 1000 requests up front. rootMargin preloads just ahead.
+const _IO=('IntersectionObserver' in window)?new IntersectionObserver((es,o)=>{for(const e of es){if(!e.isIntersecting)continue;const el=e.target,u=el.dataset.bg;if(u){el.style.backgroundImage="url('"+u+"')";el.removeAttribute('data-bg');}o.unobserve(el);}},{rootMargin:'600px 0px'}):null;
+function lazyObserve(){const els=document.querySelectorAll('.im[data-bg]');if(_IO)els.forEach(el=>_IO.observe(el));else els.forEach(el=>{el.style.backgroundImage="url('"+el.dataset.bg+"')";el.removeAttribute('data-bg');});}
 // A video asset: the SAME URL scheme (poster = thumbURL ?thumb=1, playback = imgURL).
 const isVideo=p=>/\.(mp4|webm)$/i.test(p||'');
 const is3d=p=>/\.glb$/i.test(p||'');
@@ -693,7 +700,7 @@ function render(){
       <div class="pick" role="checkbox" aria-checked="${picked}" aria-label="Select image" onclick="pickToggle(event,'${pe}')">${picked?'✓':''}</div>
       ${img&&!SELMODE?`<button class="addref ${inTray?'on':''}" title="Add to next generation" onclick="event.stopPropagation();addRef('${pe}')">${inTray?'✓':'+'}</button>`:''}
       ${media&&!SELMODE&&!review?`<button class="delx" title="Move to Archive (recoverable)" onclick="event.stopPropagation();quickDel('${pe}')">🗑</button>`:''}
-      ${img?`<div class="im" style="background-image:url('${thumbURL(a)}')" ${SELMODE?'':`onclick="zoom('${imgURL(a)}')"`}></div>`
+      ${img?`<div class="im" data-bg="${thumbURL(a)}" ${SELMODE?'':`onclick="zoom('${imgURL(a)}')"`}></div>`
         :vid?`<div class="im" style="position:relative"><video src="${imgURL(a)}" poster="${thumbURL(a)}" preload="none" muted playsinline style="width:100%;height:100%;object-fit:cover;display:block" ${SELMODE?'':`onclick="zoom('${imgURL(a)}',true)"`}></video><span style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);font-size:1.7rem;color:#fff;text-shadow:0 2px 10px #000c;pointer-events:none">▶</span></div>`
         :m3d?`<div class="im" style="position:relative;display:flex;align-items:center;justify-content:center;background:radial-gradient(circle at 50% 40%,#2a2c34,#141419)" ${SELMODE?'':`onclick="zoom('${imgURL(a)}','3d')"`}><span style="font-size:2.6rem">🧊</span><span style="position:absolute;bottom:8px;right:9px;background:rgba(10,10,11,.8);border:1px solid var(--line);border-radius:6px;padding:1px 7px;font-size:.62rem;letter-spacing:.04em">3D · rotate</span></div>`
         :`<div class="doc">${esc((a.path||'').split('/').pop())}</div>`}
@@ -716,6 +723,7 @@ function render(){
         </div>`}
       </div></div>`;}).join('');
   $('agrid').innerHTML=(scards+cards)||`<div class="empty">${showDel?'Archive is empty.':showFlag?'Nothing flagged — the quality gate has passed every render.':'No assets in this view yet.'}</div>`;
+  lazyObserve();
 }
 async function bulk(status){
   if(!SEL.size)return;
@@ -1023,7 +1031,7 @@ async function runs(){
     return `<div class="card${rej?' rejected':''}">
       ${r.im?(isVideo(r.im.filename)
         ?`<div class="im" style="display:flex;align-items:center;justify-content:center;font-size:1.7rem;color:#fff;background:#151519" onclick="zoomList(RUNIMGS,${_ni[i]})">▶</div>`
-        :`<div class="im" style="background-image:url('${vURL(r.im)}')" onclick="zoomList(RUNIMGS,${_ni[i]})"></div>`)
+        :`<div class="im" data-bg="${op?thumbURL({path:op}):vURL(r.im)}" onclick="zoomList(RUNIMGS,${_ni[i]})"></div>`)
        :`<div class="doc">no output</div>`}
       <div class="meta">
         <span class="t">${r.title}</span>
@@ -1039,6 +1047,7 @@ async function runs(){
         </div>
         <textarea class="notebox" placeholder="Notes for the AI to improve next time…" onblur="rateNote('${r.id}',this.value)">${(rt.notes||'').replace(/</g,'&lt;')}</textarea>
       </div></div>`;}).join('')||'<div class="empty">No runs yet.</div>';
+  lazyObserve();
 }
 async function clearQueue(){if(!await ask('Clear all queued jobs?'))return;await fetch('/queue',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({clear:true})});toast('Queue cleared');runs();}
 async function rate(key,stars){await fetch('/v1/library/rate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({key,stars})});RATINGS[key]={...(RATINGS[key]||{}),stars};runs();}
@@ -1470,6 +1479,7 @@ function svRender(){
     return;
   }
   $('svgrid').innerHTML=s.assets.map((m,idx)=>svCard(m.assetId,idx)).join('');
+  lazyObserve();
 }
 function svCard(path,idx){
   const a=assetByPath(path),img=/\.(png|jpe?g|webp)$/i.test(path),vid=isVideo(path),picked=SEL.has(path),pe=qq(path),iscover=CURSTACK.coverAssetId===path;
@@ -1478,7 +1488,7 @@ function svCard(path,idx){
   const thumb='/v1/library/file?thumb=1&path='+encodeURIComponent(path);
   return `<div class="card ${SELMODE?'sel-mode':''} ${picked?'picked':''} ${iscover?'iscover':''}" data-path="${pe}" data-idx="${idx}" ${dnd} ${cardClick} aria-label="${esc(path.split('/').pop())}${iscover?' (cover)':''}">
     <div class="droplbl">Reorder</div><div class="pick" role="checkbox" aria-checked="${picked}" aria-label="Select image" onclick="pickToggle(event,'${pe}')">${picked?'✓':''}</div>${iscover?'<span class="covertag">Cover</span>':''}
-    ${img?`<div class="im" style="background-image:url('${thumb}')" ${SELMODE?'':`onclick="svOpen(${idx})"`}></div>`
+    ${img?`<div class="im" data-bg="${thumb}" ${SELMODE?'':`onclick="svOpen(${idx})"`}></div>`
       :vid?`<div class="im" style="position:relative"><video src="${imgURL({path})}" poster="${thumb}" preload="none" muted playsinline style="width:100%;height:100%;object-fit:cover;display:block" ${SELMODE?'':`onclick="svOpen(${idx})"`}></video><span style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);font-size:1.6rem;color:#fff;text-shadow:0 2px 10px #000c;pointer-events:none">▶</span></div>`
       :`<div class="doc">${esc(path.split('/').pop())}</div>`}
     <div class="meta"><span class="t">${esc(path.split('/').pop())}</span>
