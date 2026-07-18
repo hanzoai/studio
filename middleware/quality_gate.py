@@ -76,11 +76,14 @@ def parse_verdict(reply: str) -> str:
     PASS/FAIL as a whole token (so "FAIL — mottled skin" reads as fail but "failure"
     does not spuriously flag). A reply carrying BOTH tokens, or NEITHER, is
     inconclusive — and inconclusive fails open."""
-    has_fail = bool(_FAIL_RE.search(reply or ""))
-    has_pass = bool(_PASS_RE.search(reply or ""))
-    if has_fail and not has_pass:
+    fails = [m.start() for m in _FAIL_RE.finditer(reply or "")]
+    passes = [m.start() for m in _PASS_RE.finditer(reply or "")]
+    # The LAST token wins: a reasoning judge weighs both words before concluding
+    # ("is this PASS or FAIL... verdict: FAIL") — co-occurrence is deliberation,
+    # position is the verdict.
+    if fails and (not passes or fails[-1] > passes[-1]):
         return "fail"
-    if has_pass and not has_fail:
+    if passes and (not fails or passes[-1] > fails[-1]):
         return "pass"
     return "inconclusive"
 
@@ -101,13 +104,19 @@ def _downscale(path: Path) -> str | None:
 
 def _reply_text(data: dict) -> str:
     """The assistant text from an OpenAI-style completion, tolerating a content
-    string or the content-parts array some gateways return."""
+    string, the content-parts array some gateways return, and REASONING models
+    whose verdict lands in reasoning_content while content comes back null (a
+    tiny max_tokens made zen-vl spend the whole budget thinking — every verdict
+    parsed empty and the gate failed open, silently passing corrupted renders)."""
     try:
-        content = data["choices"][0]["message"].get("content") or ""
+        msg = data["choices"][0]["message"]
     except (KeyError, IndexError, TypeError):
         return ""
+    content = msg.get("content") or ""
     if isinstance(content, list):
         content = "".join(p.get("text", "") for p in content if isinstance(p, dict))
+    if not str(content).strip():
+        content = msg.get("reasoning_content") or ""
     return str(content)
 
 
@@ -121,7 +130,7 @@ async def judge(image_b64: str, bearer: str) -> str | None:
             {"type": "image_url", "image_url": {"url": "data:image/jpeg;base64," + image_b64}},
         ]}],
         "temperature": 0,
-        "max_tokens": 8,
+        "max_tokens": 768,   # reasoning models think before the verdict — 8 starved them into fail-open
     }
     headers = {"Content-Type": "application/json"}
     if bearer:
@@ -130,11 +139,11 @@ async def judge(image_b64: str, bearer: str) -> str | None:
         async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=45)) as s:
             async with s.post(_url(), json=payload, headers=headers) as r:
                 if r.status != 200:
-                    log.info("gate: judge HTTP %s", r.status)
+                    log.warning("gate: judge HTTP %s", r.status)
                     return None
                 return _reply_text(await r.json())
     except Exception as e:
-        log.info("gate: judge unreachable: %s", e)
+        log.warning("gate: judge unreachable: %s", e)
         return None
 
 

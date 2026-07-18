@@ -23,7 +23,7 @@ def test_parse_verdict_strict():
     assert qg.parse_verdict("") == "inconclusive"
     assert qg.parse_verdict(None) == "inconclusive"
     assert qg.parse_verdict("MAYBE") == "inconclusive"
-    assert qg.parse_verdict("PASS FAIL") == "inconclusive"          # both tokens
+    assert qg.parse_verdict("PASS FAIL") == "fail"                  # both tokens → the LAST is the verdict (reasoning judges deliberate before concluding)
     assert qg.parse_verdict("failure to load") == "inconclusive"    # not a whole-token FAIL
 
 
