@@ -912,6 +912,12 @@ def editor_index(web_root: str) -> web.Response:
     same chrome the Studio home includes. Idempotent; no-cache like the upstream
     root handler (the frontend changes every release)."""
     html = Path(web_root, "index.html").read_text()
+    # Rebrand the upstream editor frontend → Hanzo Studio. The Editor is a first-party
+    # surface, so the upstream name stays out of the UI (the ComfyUI-format compat is
+    # internal only). Cheap, idempotent string swaps on the served index (tab title +
+    # the loading status a screen reader announces).
+    html = html.replace("<title>ComfyUI</title>", "<title>Hanzo Studio</title>")
+    html = html.replace("Loading ComfyUI...", "Loading Hanzo Studio…")
     if "/studio/shell.js" not in html:
         html = html.replace("</head>", _SHELL_HEAD + "</head>", 1) if "</head>" in html else _SHELL_HEAD + html
         html = html.replace("</body>", _SHELL_BODY + "</body>", 1) if "</body>" in html else html + _SHELL_BODY
