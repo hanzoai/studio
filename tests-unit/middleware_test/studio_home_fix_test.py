@@ -158,3 +158,37 @@ def test_clean_base_falls_back_to_nearest_clean_ancestor(org_root):
     # a clean base is returned unchanged
     assert sh._clean_base(org, root, "root.png") == ("root.png", False)
     assert sh._asset_status(root, "fixes/root_00001_.png") == "flagged"
+
+
+# ── Job identity: every dispatch owns a unique output namespace ──────────────────
+def test_job_tag_is_short_hex_and_unique():
+    a, b = sh._job_tag(), sh._job_tag()
+    assert len(a) == 6 and int(a, 16) >= 0
+    assert a != b
+
+
+# ── View/pose-change routing: repose asks use a free latent, anchored fixes keep
+#    the encoded-base latent — and the prompt tail never contradicts the ask ─────
+def test_fix_graph_anchored_default_keeps_pose():
+    g = sh._fix_graph("x.png", "fix the coloring", "fixes/x")
+    assert g["10"]["class_type"] == "VAEEncode"
+    assert "same model, pose, framing" in g["6"]["inputs"]["prompt"]
+
+
+def test_fix_graph_repose_uses_empty_latent_and_frees_pose():
+    g = sh._fix_graph("x.png", "same outfit but from the side only", "fixes/x", size=(1024, 1536))
+    assert g["10"]["class_type"] == "EmptySD3LatentImage"
+    assert g["10"]["inputs"]["width"] == 1024 and g["10"]["inputs"]["height"] == 1536
+    p = g["6"]["inputs"]["prompt"]
+    assert "pose, framing" not in p          # must not pin the pose it was asked to change
+    assert "view or pose" in p
+
+
+def test_repose_lexicon_matches_view_changes_only():
+    hits = ["show me the same model but from the side only", "turn around",
+            "back view please", "make her facing left", "different angle"]
+    misses = ["fix the coloring", "brighten the skin slightly", "remove the second strap"]
+    for t in hits:
+        assert sh._REPOSE.search(t), t
+    for t in misses:
+        assert not sh._REPOSE.search(t), t

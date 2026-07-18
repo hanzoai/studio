@@ -174,6 +174,10 @@ def _append_feedback(request, root: Path, org: str, key: str, entry: dict) -> No
         rec = {"ts": int(time.time()), "user": _owner_of(request), "org": org, "key": key,
                "output": path, "vote": entry.get("vote"), "stars": entry.get("stars"),
                "text": entry.get("notes") or ""}
+        # The output's curation state rides along: a flagged/deleted output is
+        # negative-only signal downstream — never a positive training exemplar.
+        if path and root is not None:
+            rec["status"] = _asset_status(root, path)
         if path:
             p = _safe_asset(root, path)
             if p is not None:
@@ -271,7 +275,38 @@ def _reseed(graph: dict) -> dict:
     return graph
 
 
-def _fix_graph(ref_name: str, instruction: str, prefix: str) -> dict:
+def _job_tag() -> str:
+    """Six hex chars appended to every SaveImage prefix so each dispatch owns a
+    UNIQUE output namespace — a re-fix of the same source can never prefix-match an
+    earlier run's (possibly rejected) file as its own result."""
+    return uuid.uuid4().hex[:6]
+
+
+# View/pose-change intent: these instructions need the empty-latent reference
+# family — the anchored fix latent (VAEEncode of the base) preserves composition
+# by design, which is exactly wrong when the user asks for a different view.
+_REPOSE = re.compile(
+    r"\b(from the (side|back|front|left|right)|side view|back view|front view|profile|"
+    r"three.?quarter|turn(ed|s|ing)? (around|left|right)|facing (left|right|away)|"
+    r"different (pose|angle|view)|change (the )?(pose|angle|view)|from behind|"
+    r"standing|sitting|kneeling|walking|lying|looking (left|right|away|back|over))\b", re.I)
+
+
+def _repose_size(p: Path) -> tuple[int, int]:
+    """EmptySD3LatentImage dims for a view/pose change: the reference's aspect at
+    ~1MP, both sides multiples of 16 (latent stride)."""
+    try:
+        from PIL import Image
+        w, h = Image.open(p).size
+    except Exception:
+        return 1024, 1536
+    scale = (1_048_576 / max(1, w * h)) ** 0.5
+    def to16(v: float) -> int:
+        return max(256, min(2048, int(round(v * scale / 16)) * 16))
+    return to16(w), to16(h)
+
+
+def _fix_graph(ref_name: str, instruction: str, prefix: str, *, size: tuple[int, int] | None = None) -> dict:
     """The canonical Qwen-Image-Edit-2511 instruction edit — ComfyUI's OWN
     image_qwen_image_edit template, node for node. FluxKontextImageScale sizes the
     reference ONCE; that SAME scaled image feeds both TextEncodeQwenImageEditPlus
@@ -286,9 +321,18 @@ def _fix_graph(ref_name: str, instruction: str, prefix: str) -> dict:
     native reference handling (TextEncodeQwenImageEditPlus alone) renders clean.
     Feeding the SAME scaled image to conditioning and latent is what also keeps the
     generation from insetting the scene in a frame-within-frame border."""
-    prompt = (f"{instruction.strip()}. Photorealistic, keep the same model, "
-              f"pose, framing, lighting and background; only apply the "
-              f"requested change.")
+    if size is None:
+        prompt = (f"{instruction.strip()}. Photorealistic, keep the same model, "
+                  f"pose, framing, lighting and background; only apply the "
+                  f"requested change.")
+        latent = {"class_type": "VAEEncode", "inputs": {"pixels": ["2", 0], "vae": ["5", 0]}}
+    else:
+        # A view/pose change must NOT pin pose/framing — and needs a free latent.
+        prompt = (f"{instruction.strip()}. Photorealistic, keep the same model, "
+                  f"outfit, hair, lighting and background; render the requested "
+                  f"view or pose faithfully.")
+        latent = {"class_type": "EmptySD3LatentImage",
+                  "inputs": {"width": size[0], "height": size[1], "batch_size": 1}}
     return {
         "1": {"class_type": "LoadImage", "inputs": {"image": ref_name}},
         "2": {"class_type": "FluxKontextImageScale", "inputs": {"image": ["1", 0]}},
@@ -297,7 +341,7 @@ def _fix_graph(ref_name: str, instruction: str, prefix: str) -> dict:
         "5": {"class_type": "VAELoader", "inputs": {"vae_name": _QWEN_VAE}},
         "6": {"class_type": "TextEncodeQwenImageEditPlus", "inputs": {"clip": ["3", 0], "vae": ["5", 0], "image1": ["2", 0], "prompt": prompt}},
         "7": {"class_type": "TextEncodeQwenImageEditPlus", "inputs": {"clip": ["3", 0], "vae": ["5", 0], "image1": ["2", 0], "prompt": _NEG}},
-        "10": {"class_type": "VAEEncode", "inputs": {"pixels": ["2", 0], "vae": ["5", 0]}},
+        "10": latent,
         "11": {"class_type": "ModelSamplingAuraFlow", "inputs": {"model": ["4", 0], "shift": 3.1}},
         "12": {"class_type": "CFGNorm", "inputs": {"model": ["11", 0], "strength": 1.0}},
         "13": {"class_type": "KSampler", "inputs": {"model": ["12", 0], "positive": ["6", 0], "negative": ["7", 0], "latent_image": ["10", 0],
@@ -616,7 +660,9 @@ async def dispatch_fix(request: web.Request, server, org: str, rel: str,
         ref_name = f"fix_src_{abs(hash((str(p), p.stat().st_mtime))) % 10**10}.png"
         (in_dir / ref_name).write_bytes(p.read_bytes())
         stem = re.sub(r"[^a-zA-Z0-9_-]", "_", p.stem)[:48]
-    pid = await _dispatch(request, server, org, _fix_graph(ref_name, instruction, f"fixes/{stem}"),
+    stem = f"{stem}_{_job_tag()}"
+    size = _repose_size(in_dir / ref_name) if _REPOSE.search(instruction) else None
+    pid = await _dispatch(request, server, org, _fix_graph(ref_name, instruction, f"fixes/{stem}", size=size),
                           kind="fix", prompt=instruction, refs=[ref_name],
                           uploads=[upload] if upload else [], parents=[] if upload else [rel],
                           output_prefix=f"fixes/{stem}")
@@ -656,7 +702,7 @@ async def dispatch_compose(request: web.Request, server, org: str, paths: list,
         ref_names.append(nm)
     ref_names.extend(uploaded)
     labels = [Path(x).stem for x in paths] + [Path(u).stem for u in uploaded]
-    stem = "compose_" + "_".join(re.sub(r"[^a-zA-Z0-9]", "", s)[:12] for s in labels[:2])
+    stem = "compose_" + "_".join(re.sub(r"[^a-zA-Z0-9]", "", s)[:12] for s in labels[:2]) + f"_{_job_tag()}"
     pid = await _dispatch(request, server, org, _compose_graph(ref_names, instruction, f"composes/{stem}"),
                           kind="compose", prompt=instruction, refs=ref_names,
                           uploads=uploaded, parents=list(paths), output_prefix=f"composes/{stem}")
@@ -708,9 +754,10 @@ async def dispatch_amend(request: web.Request, server, org: str, prompt_id: str,
         raise DispatchError("no reference images available to amend")
     _cancel_job(server, org, prompt_id)
     parents = list(orig.get("parents") or []) + list(paths or [])
-    stem = re.sub(r"[^a-zA-Z0-9_-]", "_", Path(refs[0]).stem)[:40] + "_amended"
+    stem = re.sub(r"[^a-zA-Z0-9_-]", "_", Path(refs[0]).stem)[:40] + f"_amended_{_job_tag()}"
     if len(refs) == 1:
-        graph, kind, out = _fix_graph(refs[0], instruction, f"fixes/{stem}"), "fix", f"fixes/{stem}"
+        size = _repose_size(in_dir / refs[0]) if _REPOSE.search(instruction) else None
+        graph, kind, out = _fix_graph(refs[0], instruction, f"fixes/{stem}", size=size), "fix", f"fixes/{stem}"
     else:
         graph, kind, out = _compose_graph(refs, instruction, f"composes/{stem}"), "compose", f"composes/{stem}"
     all_uploads = list(dict.fromkeys(list(orig.get("uploads") or []) + new_uploads))
@@ -1066,11 +1113,15 @@ def add_studio_home_routes(routes: web.RouteTableDef, server) -> None:
         embeds the litegraph 'workflow' (UI) and/or the API 'prompt'."""
         org = _org_of(request)
         pid = request.query.get("id", "")
-        row = next((r for r in worklog.load(org) if r.get("id") == pid), None)
+        rows = worklog.load(org)
+        row = next((r for r in rows if r.get("id") == pid), None)
         if row is None:
             return web.json_response({"error": "not found"}, status=404)
         root = _library_root(org)
-        landed = _row_output(root, row.get("output_prefix"))
+        # Same terminal-state mechanism as every other view; only a DONE row owns
+        # a landed output — a pending row must never open an older sibling's graph.
+        _finalize_landed(org, root, rows, int(time.time()))
+        landed = _row_output(root, row.get("output_prefix")) if row.get("status") == "done" else None
         p = _safe_asset(root, landed) if (root and landed) else None
         if p is None or p.suffix.lower() != ".png":
             return web.json_response({"error": "workflow not available yet"}, status=404)
@@ -1669,7 +1720,9 @@ def add_studio_home_routes(routes: web.RouteTableDef, server) -> None:
         out = []
         for r in reversed(rows):
             row = dict(r)
-            row["output"] = _row_output(root, r.get("output_prefix"))
+            # Only a DONE row owns a displayable output. A pending row must never
+            # show a prefix-matched file from an earlier run (a rejected sibling).
+            row["output"] = _row_output(root, r.get("output_prefix")) if r.get("status") == "done" else None
             out.append(row)
         q = (request.query.get("q") or "").lower().strip()
         if q:
