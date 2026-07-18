@@ -275,6 +275,49 @@ def _reseed(graph: dict) -> dict:
     return graph
 
 
+def _mistakes(ratings: dict, family) -> list[str]:
+    """The correction texts inside ``ratings`` for any asset in ``family`` — a note
+    counts as a MISTAKE when its judgement is negative (👎 or ≤2 stars) or carries no
+    judgement at all (a bare note points something out); praise notes are not
+    avoid-clauses. Deduped, sanitized, capped for prompt injection."""
+    out: list[str] = []
+    for path in family:
+        r = ratings.get(path) if path else None
+        if not isinstance(r, dict):
+            continue
+        note = " ".join((r.get("notes") or "").split()).strip()[:140]
+        if not note:
+            continue
+        vote, stars = r.get("vote"), r.get("stars")
+        if vote == -1 or (isinstance(stars, int) and stars <= 2) or (vote in (None, 0) and stars is None):
+            if note not in out:
+                out.append(note)
+    return out[:4]
+
+
+def _lessons(org: str, root: Path | None, rels: list[str]) -> list[str]:
+    """Every mistake the user has pointed out on these assets or their lineage —
+    read at DISPATCH so the very next generation is conditioned against repeating
+    it. The same judgements also accumulate in feedback.jsonl for weight training."""
+    rels = [r for r in rels if r]
+    if root is None or not rels:
+        return []
+    try:
+        ratings = json.loads((root / "ratings.json").read_text())
+    except Exception:
+        return []
+    if not ratings:
+        return []
+    rows = worklog.load(org)
+    _resolve_outputs(org, root, rows, int(time.time()))
+    family = set(rels)
+    for rel in rels:
+        lin = worklog.build_lineage(rows, rel)
+        family |= {a.get("path") for a in lin.get("ancestors") or []}
+        family |= {d.get("path") for d in lin.get("descendants") or []}
+    return _mistakes(ratings, family)
+
+
 def _job_tag() -> str:
     """Six hex chars appended to every SaveImage prefix so each dispatch owns a
     UNIQUE output namespace — a re-fix of the same source can never prefix-match an
@@ -306,7 +349,8 @@ def _repose_size(p: Path) -> tuple[int, int]:
     return to16(w), to16(h)
 
 
-def _fix_graph(ref_name: str, instruction: str, prefix: str, *, size: tuple[int, int] | None = None) -> dict:
+def _fix_graph(ref_name: str, instruction: str, prefix: str, *, size: tuple[int, int] | None = None,
+               lessons: list[str] | None = None) -> dict:
     """The canonical Qwen-Image-Edit-2511 instruction edit — ComfyUI's OWN
     image_qwen_image_edit template, node for node. FluxKontextImageScale sizes the
     reference ONCE; that SAME scaled image feeds both TextEncodeQwenImageEditPlus
@@ -333,6 +377,10 @@ def _fix_graph(ref_name: str, instruction: str, prefix: str, *, size: tuple[int,
                   f"view or pose faithfully.")
         latent = {"class_type": "EmptySD3LatentImage",
                   "inputs": {"width": size[0], "height": size[1], "batch_size": 1}}
+    neg = _NEG
+    if lessons:
+        prompt += " Known mistakes on earlier versions — do not repeat: " + "; ".join(lessons) + "."
+        neg = _NEG + ", " + ", ".join(lessons)
     return {
         "1": {"class_type": "LoadImage", "inputs": {"image": ref_name}},
         "2": {"class_type": "FluxKontextImageScale", "inputs": {"image": ["1", 0]}},
@@ -340,7 +388,7 @@ def _fix_graph(ref_name: str, instruction: str, prefix: str, *, size: tuple[int,
         "4": {"class_type": "UNETLoader", "inputs": {"unet_name": _QWEN_UNET, "weight_dtype": "default"}},
         "5": {"class_type": "VAELoader", "inputs": {"vae_name": _QWEN_VAE}},
         "6": {"class_type": "TextEncodeQwenImageEditPlus", "inputs": {"clip": ["3", 0], "vae": ["5", 0], "image1": ["2", 0], "prompt": prompt}},
-        "7": {"class_type": "TextEncodeQwenImageEditPlus", "inputs": {"clip": ["3", 0], "vae": ["5", 0], "image1": ["2", 0], "prompt": _NEG}},
+        "7": {"class_type": "TextEncodeQwenImageEditPlus", "inputs": {"clip": ["3", 0], "vae": ["5", 0], "image1": ["2", 0], "prompt": neg}},
         "10": latent,
         "11": {"class_type": "ModelSamplingAuraFlow", "inputs": {"model": ["4", 0], "shift": 3.1}},
         "12": {"class_type": "CFGNorm", "inputs": {"model": ["11", 0], "strength": 1.0}},
@@ -351,13 +399,16 @@ def _fix_graph(ref_name: str, instruction: str, prefix: str, *, size: tuple[int,
     }
 
 
-def _compose_graph(ref_names: list[str], instruction: str, prefix: str) -> dict:
+def _compose_graph(ref_names: list[str], instruction: str, prefix: str,
+                   lessons: list[str] | None = None) -> dict:
     """Multi-reference compose: several chosen assets become the references and the
     user's words say HOW to combine them into a new output. Same proven Qwen
     reference-conditioned wiring as _fix_graph (TextEncodeQwenImageEditPlus takes
     image1..imageN), so no new pipeline — the multi-input case of the good graph."""
     prompt = (f"{instruction.strip()}. Combine the provided reference images as "
               f"described. Photorealistic, coherent single result.")
+    if lessons:
+        prompt += " Known mistakes on earlier versions — do not repeat: " + "; ".join(lessons) + "."
     g: dict = {
         "3": {"class_type": "CLIPLoader", "inputs": {"clip_name": _QWEN_CLIP, "type": "qwen_image", "device": "default"}},
         "4": {"class_type": "UNETLoader", "inputs": {"unet_name": _QWEN_UNET, "weight_dtype": "default"}},
@@ -372,7 +423,11 @@ def _compose_graph(ref_names: list[str], instruction: str, prefix: str) -> dict:
         pos_inputs[f"image{i}"] = [si, 0]
         nid += 2
     g["6"] = {"class_type": "TextEncodeQwenImageEditPlus", "inputs": pos_inputs}
-    g["7"] = {"class_type": "TextEncodeQwenImageEditPlus", "inputs": {"clip": ["3", 0], "prompt": _NEG}}
+    if lessons:
+        neg_prompt = _NEG + ", " + ", ".join(lessons)
+    else:
+        neg_prompt = _NEG
+    g["7"] = {"class_type": "TextEncodeQwenImageEditPlus", "inputs": {"clip": ["3", 0], "prompt": neg_prompt}}
     # Qwen's native multi-reference conditioning (image1..imageN on node 6) — NO
     # FluxKontextMultiReferenceLatentMethod: the same Flux-Kontext override that
     # stippled the single-image fix has no place on Qwen conditioning here either.
@@ -662,7 +717,8 @@ async def dispatch_fix(request: web.Request, server, org: str, rel: str,
         stem = re.sub(r"[^a-zA-Z0-9_-]", "_", p.stem)[:48]
     stem = f"{stem}_{_job_tag()}"
     size = _repose_size(in_dir / ref_name) if _REPOSE.search(instruction) else None
-    pid = await _dispatch(request, server, org, _fix_graph(ref_name, instruction, f"fixes/{stem}", size=size),
+    lessons = _lessons(org, _library_root(org), [] if upload else [rel])
+    pid = await _dispatch(request, server, org, _fix_graph(ref_name, instruction, f"fixes/{stem}", size=size, lessons=lessons),
                           kind="fix", prompt=instruction, refs=[ref_name],
                           uploads=[upload] if upload else [], parents=[] if upload else [rel],
                           output_prefix=f"fixes/{stem}")
@@ -703,7 +759,8 @@ async def dispatch_compose(request: web.Request, server, org: str, paths: list,
     ref_names.extend(uploaded)
     labels = [Path(x).stem for x in paths] + [Path(u).stem for u in uploaded]
     stem = "compose_" + "_".join(re.sub(r"[^a-zA-Z0-9]", "", s)[:12] for s in labels[:2]) + f"_{_job_tag()}"
-    pid = await _dispatch(request, server, org, _compose_graph(ref_names, instruction, f"composes/{stem}"),
+    lessons = _lessons(org, root, list(paths))
+    pid = await _dispatch(request, server, org, _compose_graph(ref_names, instruction, f"composes/{stem}", lessons=lessons),
                           kind="compose", prompt=instruction, refs=ref_names,
                           uploads=uploaded, parents=list(paths), output_prefix=f"composes/{stem}")
     if stack:
@@ -755,11 +812,12 @@ async def dispatch_amend(request: web.Request, server, org: str, prompt_id: str,
     _cancel_job(server, org, prompt_id)
     parents = list(orig.get("parents") or []) + list(paths or [])
     stem = re.sub(r"[^a-zA-Z0-9_-]", "_", Path(refs[0]).stem)[:40] + f"_amended_{_job_tag()}"
+    lessons = _lessons(org, _library_root(org), parents)
     if len(refs) == 1:
         size = _repose_size(in_dir / refs[0]) if _REPOSE.search(instruction) else None
-        graph, kind, out = _fix_graph(refs[0], instruction, f"fixes/{stem}", size=size), "fix", f"fixes/{stem}"
+        graph, kind, out = _fix_graph(refs[0], instruction, f"fixes/{stem}", size=size, lessons=lessons), "fix", f"fixes/{stem}"
     else:
-        graph, kind, out = _compose_graph(refs, instruction, f"composes/{stem}"), "compose", f"composes/{stem}"
+        graph, kind, out = _compose_graph(refs, instruction, f"composes/{stem}", lessons=lessons), "compose", f"composes/{stem}"
     all_uploads = list(dict.fromkeys(list(orig.get("uploads") or []) + new_uploads))
     pid = await _dispatch(request, server, org, graph, kind=kind, prompt=instruction,
                           refs=refs, uploads=all_uploads, parents=parents, output_prefix=out)

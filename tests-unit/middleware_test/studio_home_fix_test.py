@@ -192,3 +192,34 @@ def test_repose_lexicon_matches_view_changes_only():
         assert sh._REPOSE.search(t), t
     for t in misses:
         assert not sh._REPOSE.search(t), t
+
+
+# ── Flywheel retrieval: pointed-out mistakes condition the NEXT generation ──────
+def test_mistakes_selects_corrections_not_praise():
+    ratings = {
+        "a.png": {"vote": -1, "notes": "sleeves way too wide"},
+        "b.png": {"stars": 1, "notes": "color washed out"},
+        "c.png": {"vote": 1, "notes": "love this lighting"},          # praise — excluded
+        "d.png": {"notes": "strap should be thinner"},                 # bare note — a correction
+        "e.png": {"vote": -1},                                         # no text — nothing to inject
+    }
+    out = sh._mistakes(ratings, ["a.png", "b.png", "c.png", "d.png", "e.png", "missing.png"])
+    assert "sleeves way too wide" in out and "color washed out" in out
+    assert "strap should be thinner" in out
+    assert all("love this lighting" != m for m in out)
+    assert len(out) <= 4
+
+
+def test_fix_graph_injects_lessons_into_both_encoders():
+    g = sh._fix_graph("x.png", "redo the sleeves", "fixes/x",
+                      lessons=["sleeves way too wide", "color washed out"])
+    pos, neg = g["6"]["inputs"]["prompt"], g["7"]["inputs"]["prompt"]
+    assert "do not repeat" in pos and "sleeves way too wide" in pos
+    assert "sleeves way too wide" in neg and "color washed out" in neg
+
+
+def test_compose_graph_injects_lessons():
+    g = sh._compose_graph(["x.png", "y.png"], "combine them", "composes/x",
+                          lessons=["strap should be thinner"])
+    assert "strap should be thinner" in g["6"]["inputs"]["prompt"]
+    assert "strap should be thinner" in g["7"]["inputs"]["prompt"]
