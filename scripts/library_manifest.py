@@ -65,6 +65,7 @@ def library_lock(root: str):
         fh.close()
 
 IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".webp"}
+VIDEO_EXTS = {".mp4", ".webm"}
 # Written marketing content (blog posts, campaign briefs, social ad copy) is
 # first-class in the ONE index too — a .md under marketing/ is a queue asset
 # whose body is the post/brief and whose caption/hashtags(=tags) are set with
@@ -132,9 +133,10 @@ def scan(root: str) -> list[str]:
             full = os.path.join(base, f)
             rel = os.path.relpath(full, root)
             is_image = ext in IMAGE_EXTS
+            is_video = ext in VIDEO_EXTS
             is_mktg_text = (ext in MARKETING_TEXT_EXTS
                             and rel.replace(os.sep, "/").startswith("marketing/"))
-            if not (is_image or is_mktg_text):
+            if not (is_image or is_video or is_mktg_text):
                 continue
             try:
                 if os.path.getsize(full) == 0:  # skip a render caught mid-write
@@ -170,11 +172,13 @@ def build(root: str) -> dict:
         info = classify(norm, slugs)
         prev = prior.get(norm, {})
         if info is None:
-            # Taxonomy enriches, never gates: an image outside the naming
-            # scheme is still an asset. Dropping it here erased every
-            # ingest-indexed render on each sweep cycle.
-            info = {"design": prev.get("design"), "kind": prev.get("kind") or "render",
-                    "role": prev.get("role")}
+            # Taxonomy enriches, never gates: a file outside the naming scheme is
+            # still an asset. Dropping it here erased every ingest-indexed render on
+            # each sweep cycle. A video keeps kind="video" so it survives every sweep
+            # as the motion-judged, video-card kind.
+            kind = prev.get("kind") or (
+                "video" if os.path.splitext(norm)[1].lower() in VIDEO_EXTS else "render")
+            info = {"design": prev.get("design"), "kind": kind, "role": prev.get("role")}
         entry = {
             "path": norm,
             "design": info["design"],

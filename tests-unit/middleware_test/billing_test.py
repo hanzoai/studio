@@ -89,6 +89,15 @@ def test_count_outputs_handles_empty_and_none():
     assert bm.count_outputs({"outputs": {"1": {"text": "no media here"}}}) == 0
 
 
+def test_count_outputs_counts_video_extension_agnostic():
+    """Metering is extension-agnostic: a SaveVideo history entry (its output reported
+    through `images` by ui.PreviewVideo) meters exactly like an image render — the RFC's
+    shared-untouched claim."""
+    hist = {"outputs": {"12": {"images": [
+        {"filename": "video/x_00001_.mp4", "subfolder": "video", "type": "output"}]}}}
+    assert bm.count_outputs(hist) == 1
+
+
 # ---------------------------------------------------------------------------
 # record_render — the fire-and-forget metered event
 # ---------------------------------------------------------------------------

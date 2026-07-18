@@ -50,7 +50,7 @@ def test_config_defaults_and_overrides(monkeypatch):
 
 
 def _const(v):
-    async def j(image_b64, bearer):
+    async def j(images, bearer, prompt):
         return v
     return j
 
@@ -78,8 +78,8 @@ async def test_run_flags_on_fail_and_annotates_worklog(tmp_path, monkeypatch):
                    output_prefix="renders/r.png", node="spark", status="done")
     seen = {}
 
-    async def fake_judge(image_b64, bearer):
-        seen["b64"], seen["bearer"] = image_b64, bearer
+    async def fake_judge(images, bearer, prompt):
+        seen["b64"], seen["bearer"], seen["prompt"] = images, bearer, prompt
         return "FAIL - mottled, speckled skin all over the arms and shoulders here"
 
     monkeypatch.setattr(qg, "judge", fake_judge)
@@ -103,7 +103,7 @@ async def test_run_fails_open_on_pass_inconclusive_and_error(tmp_path, monkeypat
         await qg.run("acme", root, "renders/r.png", "Bearer t")
         assert _status(root) == "draft"
 
-    async def boom(image_b64, bearer):
+    async def boom(images, bearer, prompt):
         raise RuntimeError("429 rate limited")                    # 402/429/timeout/unreachable class
 
     monkeypatch.setattr(qg, "judge", boom)
@@ -126,7 +126,7 @@ async def test_run_missing_or_unreadable_is_a_no_op(tmp_path, monkeypatch):
     monkeypatch.setattr(sh.folder_paths, "get_org_output_directory", lambda o=None: str(root))
     called = {"n": 0}
 
-    async def counting_judge(image_b64, bearer):
+    async def counting_judge(images, bearer, prompt):
         called["n"] += 1
         return "FAIL"
 

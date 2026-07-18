@@ -144,6 +144,14 @@ def test_protected_paths(path):
     assert m._is_public_path(path) is False
 
 
+def test_video_never_public():
+    """A tenant video is only ever served by /v1/library/file?path=… (the URL path never
+    ends in a media suffix), so the suffix bypass cannot apply. ".mp4" must NEVER join the
+    static-suffix allowlist, and the org-scoped file route stays auth-gated — pinned here."""
+    assert m._is_public_path("/a/b.mp4") is False
+    assert m._is_public_path("/v1/library/file") is False
+
+
 # --- server-owned login entry point (/login → OIDC code flow) ---
 
 def test_login_path_is_public():

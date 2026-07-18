@@ -376,6 +376,7 @@ body.immersive #stage{display:block}
 <div id="zoom" onclick="zoomBg(event)">
   <button class="viewbtn" id="zprev" onclick="event.stopPropagation();svStep(-1)" style="position:absolute;left:18px;top:50%;transform:translateY(-50%);display:none;font-size:1.4rem" aria-label="Previous image">‹</button>
   <img id="zoomimg" onclick="event.stopPropagation()">
+  <video id="zoomvid" controls playsinline style="display:none;max-width:92vw;max-height:88vh" onclick="event.stopPropagation()"></video>
   <button class="viewbtn" id="znext" onclick="event.stopPropagation();svStep(1)" style="position:absolute;right:18px;top:50%;transform:translateY(-50%);display:none;font-size:1.4rem" aria-label="Next image">›</button>
 </div>
 <dialog id="fixdlg">
@@ -485,6 +486,10 @@ const $=id=>document.getElementById(id);
 const toast=m=>{const t=$('toast');t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),3000)};
 const imgURL=a=>`/v1/library/file?path=${encodeURIComponent(a.path)}`;
 const thumbURL=a=>`/v1/library/file?thumb=1&path=${encodeURIComponent(a.path)}`;
+// A video asset: the SAME URL scheme (poster = thumbURL ?thumb=1, playback = imgURL).
+const isVideo=p=>/\.(mp4|webm)$/i.test(p||'');
+// The output-node in a graph, any medium — used to title runs by their real prefix.
+const saver=g=>Object.values(g||{}).find(n=>n&&['SaveImage','SaveVideo','SaveWEBM'].includes(n.class_type));
 function tcard(x){return `<div class="tcard" onclick="pickTemplate('${x.k}','${x.t.replace(/'/g,"")}')"><div class="ic">${x.ic}</div><div class="tl">${x.t}</div><div class="td">${x.d}</div></div>`;}
 function tab(name){document.querySelectorAll('.tabs button').forEach(b=>b.classList.toggle('on',b.dataset.tab===name));
   // Leaving for another tab closes an open Stack detail (it lives over Assets).
@@ -526,7 +531,8 @@ function editorCtx(){ if(CTX&&CTX.id)location.href='/?advanced=1&load='+encodeUR
 // public write token. Fails silent — telemetry must never break the product.
 const DID=localStorage.hz_did||(localStorage.hz_did=(crypto.randomUUID?crypto.randomUUID():String(Math.random()).slice(2)));
 function track(ev,props){try{navigator.sendBeacon('https://insights.hanzo.ai/v1/e',JSON.stringify({api_key:'hi_nq2pI13AO3Yj5mN15uWAtK1ZvubclMpq08Ca9kn3eUO',event:ev,properties:{distinct_id:DID,product:'studio',org:(window.DATA&&DATA.org)||'',...(props||{})}}))}catch(_){}}
-function pickTemplate(k,t){$('tmpl').textContent=t; tab('assets'); $('pin').focus(); toast('Template: '+t); track('template_use',{template:t});}
+let KIND='';   // the picked template lane ('' = default fix/compose composer; 'video' = Wan)
+function pickTemplate(k,t){KIND=k;$('tmpl').textContent=t; tab('assets'); $('pin').focus(); toast('Template: '+t); track('template_use',{template:t});}
 function pickPreset(){toast('Design systems / presets — coming in the preset library');}
 // The ONE create path: the top composer's ↑ generates from its prompt + the photos
 // attached to it (via + / drag / paste / a gallery card's +). 1 photo → edit (fix),
@@ -535,6 +541,22 @@ async function create(){
   const t=$('pin').value.trim();
   const libs=TRAY.filter(r=>r.kind==='lib').map(r=>r.ref), ups=TRAY.filter(r=>r.kind==='up').map(r=>r.ref);
   const n=libs.length+ups.length;
+  if(KIND==='video'){
+    // The video lane: text-to-video, or ONE reference image (library or upload). Same
+    // queued-toast / GPU advisory path as fix/compose — no second box, no flags.
+    if(t.length<3){ toast('Describe the video you want'); return; }
+    if(n>1){ toast('Video takes at most one reference'); return; }
+    const vbtn=document.querySelector('.psend');
+    await enqueue(vbtn,'…',async()=>{
+      if(!(await gpuOnline()))toast('⚠ No GPU online — queues until a BYO-GPU connects');
+      const body={prompt:t}; if(libs.length)body.path=libs[0]; else if(ups.length)body.upload=ups[0];
+      const r=await fetch('/v1/library/video',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+      const j=await r.json().catch(()=>({}));
+      if(r.ok){ toast('Video queued → see Queue & History'); track('video',{from:'composer'}); $('pin').value=''; clearTray(); }
+      else if(!(await healStale(j))) toast('Failed: '+(errMsg(j)||('error '+r.status)));
+    });
+    return;
+  }
   if(!n){ toast(t.length<3?'Describe what to create, then attach a photo with +':'Attach a photo with + to edit or compose it'); return; }
   if(t.length<3){ toast('Describe what to make from your photo'+(n>1?'s':'')); return; }
   // Same latch as the dialog queue buttons: the ↑ / Enter can fire twice before the
@@ -618,6 +640,8 @@ function render(){
   const cards=rows.map(a=>{
     const i=DATA.assets.indexOf(a);
     const img=/\.(png|jpe?g|webp)$/i.test(a.path||'');
+    const vid=isVideo(a.path);
+    const media=img||vid;                                  // shares votes / archive / Re-run / Versions
     const prov=a.prov&&a.prov.workflow?` · ${a.prov.workflow}`:'';
     const picked=SEL.has(a.path);
     const cardClick=SELMODE?`onclick="pick(event,'${a.path.replace(/'/g,"\\'")}')"`:'';
@@ -629,24 +653,25 @@ function render(){
       <div class="droplbl">Create Stack</div>
       <div class="pick" role="checkbox" aria-checked="${picked}" aria-label="Select image" onclick="pickToggle(event,'${pe}')">${picked?'✓':''}</div>
       ${img&&!SELMODE?`<button class="addref ${inTray?'on':''}" title="Add to next generation" onclick="event.stopPropagation();addRef('${pe}')">${inTray?'✓':'+'}</button>`:''}
-      ${img&&!SELMODE&&!review?`<button class="delx" title="Move to Archive (recoverable)" onclick="event.stopPropagation();quickDel('${pe}')">🗑</button>`:''}
+      ${media&&!SELMODE&&!review?`<button class="delx" title="Move to Archive (recoverable)" onclick="event.stopPropagation();quickDel('${pe}')">🗑</button>`:''}
       ${img?`<div class="im" style="background-image:url('${thumbURL(a)}')" ${SELMODE?'':`onclick="zoom('${imgURL(a)}')"`}></div>`
-           :`<div class="doc">${esc((a.path||'').split('/').pop())}</div>`}
+        :vid?`<div class="im" style="position:relative"><video src="${imgURL(a)}" poster="${thumbURL(a)}" preload="none" muted playsinline style="width:100%;height:100%;object-fit:cover;display:block" ${SELMODE?'':`onclick="zoom('${imgURL(a)}',true)"`}></video><span style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);font-size:1.7rem;color:#fff;text-shadow:0 2px 10px #000c;pointer-events:none">▶</span></div>`
+        :`<div class="doc">${esc((a.path||'').split('/').pop())}</div>`}
       <div class="meta">
         <span class="t">${esc((a.path||'').split('/').pop())}</span>
         <span class="sub">${a.design||a.kind||''}${prov}</span>
-        <div class="row"><span class="st ${a.status}">${a.status==='deleted'?'archived':a.status}</span></div>
-        ${img&&!SELMODE?`<div class="fbrow" onclick="event.stopPropagation()">
+        <div class="row"><span class="st ${a.status}">${a.status==='deleted'?'archived':a.status}</span>${a.gate==='skipped'?`<span class="st" style="background:#7a6329;color:#ffd98a" title="Auto-judge could not sample this video — review manually">ungated</span>`:''}</div>
+        ${media&&!SELMODE?`<div class="fbrow" onclick="event.stopPropagation()">
           <button class="vote up ${(RATINGS[a.path]||{}).vote===1?'on':''}" title="Good result — 👍 teaches the model" onclick="castVote('${pe}',1)">👍</button>
           <button class="vote down ${(RATINGS[a.path]||{}).vote===-1?'on':''}" title="Wrong result — 👎 teaches the model" onclick="castVote('${pe}',-1)">👎</button>
-          <button class="vote note ${(RATINGS[a.path]||{}).notes?'has':''}" title="Critique this image — the AI sees it, replies, and learns" onclick="openFeedback('${pe}')">💬</button>
+          <button class="vote note ${(RATINGS[a.path]||{}).notes?'has':''}" title="Critique this — the AI sees it, replies, and learns" onclick="openFeedback('${pe}')">💬</button>
         </div>`:''}
         ${SELMODE?'':`<div class="row tools">
           ${review?`<button class="mini" onclick="setSt(${i},'draft')">${showDel?'Recover':'Restore'}</button>${showDel?`<button class="mini hot" onclick="purgeOne('${pe}')" title="Permanently delete — cannot be undone">🗑 Delete forever</button>`:''}`:`
           ${a.status!=='approved'?`<button class="mini" onclick="setSt(${i},'approved')">Approve</button>`:''}
           ${a.status!=='published'?`<button class="mini" onclick="setSt(${i},'published')">Publish</button>`:''}
           <button class="mini" onclick="addToStackPrompt('${pe}',event)" title="Add this image to a Stack">🗂 Stack</button>
-          ${img?`<button class="mini" onclick="rerun(${i},this)">Re-run</button><button class="mini" onclick="openLineage('${pe}')" title="Show this image's versions (what it came from + later fixes)">Versions</button><button class="mini hot" onclick="openFix(${i})">Fix</button>`:''}
+          ${media?`<button class="mini" onclick="rerun(${i},this)">Re-run</button><button class="mini" onclick="openLineage('${pe}')" title="Show this item's versions (what it came from + later fixes)">Versions</button>`:''}${img?`<button class="mini hot" onclick="openFix(${i})">Fix</button>`:''}
           <button class="mini" onclick="setSt(${i},'deleted')" title="Move to Archive (recoverable)">🗑</button>`}
         </div>`}
       </div></div>`;}).join('');
@@ -775,10 +800,9 @@ function pipes(){ $('wfgrid').innerHTML=(DATA.workflows||[]).map(w=>`<div class=
 // ── YouTube-style Queue & History ───────────────────────────────────────────
 let RATINGS={};let FAVS={};
 const vURL=im=>`/view?filename=${encodeURIComponent(im.filename)}&subfolder=${encodeURIComponent(im.subfolder||'')}&type=${im.type||'output'}`;
-const promptTitle=v=>{ // pull the SaveImage prefix / positive text from the run's graph
-  const g=(v.prompt&&v.prompt[2])||{};
-  for(const n of Object.values(g)){if(n&&n.class_type==='SaveImage')return (n.inputs.filename_prefix||'render').split('/').pop();}
-  return 'render';
+const promptTitle=v=>{ // pull the saver prefix from the run's graph — image OR video
+  const s=saver((v.prompt&&v.prompt[2])||{});
+  return s?(s.inputs.filename_prefix||'render').split('/').pop():'render';
 };
 // ── Work log: the org's dispatched renders with real status + full context ────
 let WL=[], CTX=null;
@@ -908,7 +932,7 @@ async function runs(){
   const qitem=(it,running,pos)=>{
     const id=it[1], g=it[2]||{};
     const nodes=Object.values(g);
-    const title=(nodes.find(n=>n.class_type==='SaveImage')?.inputs?.filename_prefix||id+'').split('/').pop();
+    const title=(saver(g)?.inputs?.filename_prefix||id+'').split('/').pop();
     // reference image(s) attached to this job (fix/compose sources live in input dir)
     const refs=nodes.filter(n=>n.class_type==='LoadImage').map(n=>n.inputs?.image).filter(Boolean);
     const thumb=refs.length?`/v1/library/file?thumb=1&input=1&path=${encodeURIComponent(refs[0])}`:'';
@@ -939,7 +963,10 @@ async function runs(){
     const rt=RATINGS[r.id]||{}; const st=rt.stars||0;
     const stars=[1,2,3,4,5].map(n=>`<span class="${n<=st?'on':''}" onclick="rate('${r.id}',${n})">★</span>`).join('');
     return `<div class="card">
-      ${r.im?`<div class="im" style="background-image:url('${vURL(r.im)}')" onclick="zoom('${vURL(r.im)}')"></div>`:`<div class="doc">no output</div>`}
+      ${r.im?(isVideo(r.im.filename)
+        ?`<div class="im" style="display:flex;align-items:center;justify-content:center;font-size:1.7rem;color:#fff;background:#151519" onclick="zoom('${vURL(r.im)}',true)">▶</div>`
+        :`<div class="im" style="background-image:url('${vURL(r.im)}')" onclick="zoom('${vURL(r.im)}')"></div>`)
+       :`<div class="doc">no output</div>`}
       <div class="meta">
         <span class="t">${r.title}</span>
         <div class="row" style="justify-content:space-between">
@@ -1174,9 +1201,13 @@ async function cancelJob(id){
     document.addEventListener('click',e=>{const m=$('acctmenu');if(m&&m.classList.contains('on')&&!m.contains(e.target))m.classList.remove('on');});}
   const box=document.querySelector('.prompt'); if(box){ wireDrop(box,attachFiles); wirePaste(box,attachFiles); }
 })();
-function zoom(u){const z=$('zoom');z.classList.remove('stackctx');$('zprev').style.display='none';$('znext').style.display='none';$('zoomimg').src=u;z.style.display='flex';}
+function setZoomMedia(u,video){const im=$('zoomimg'),vd=$('zoomvid');
+  if(video){im.style.display='none';im.removeAttribute('src');if(vd){vd.src=u;vd.style.display='';vd.play&&vd.play().catch(()=>{});}}
+  else{if(vd){vd.pause&&vd.pause();vd.removeAttribute('src');vd.style.display='none';}im.src=u;im.style.display='';}}
+function zoom(u,video){const z=$('zoom');z.classList.remove('stackctx');$('zprev').style.display='none';$('znext').style.display='none';setZoomMedia(u,video);z.style.display='flex';}
 function zoomBg(){closeZoom();}
-function closeZoom(){const z=$('zoom');z.style.display='none';z.classList.remove('stackctx');$('zprev').style.display='none';$('znext').style.display='none';SVI=-1;}
+function closeZoom(){const z=$('zoom');z.style.display='none';z.classList.remove('stackctx');$('zprev').style.display='none';$('znext').style.display='none';
+  const vd=$('zoomvid');if(vd){vd.pause&&vd.pause();vd.removeAttribute('src');vd.style.display='none';}$('zoomimg').style.display='';SVI=-1;}
 const ta=$('pin'); ta.addEventListener('input',()=>{ta.style.height='auto';ta.style.height=Math.min(ta.scrollHeight,180)+'px';});
 async function loadSession(){
   let s={}; try{ s=await (await fetch('/v1/session')).json(); }catch(e){ return; }
@@ -1204,7 +1235,7 @@ async function updateLivebar(){
   const run=q.queue_running||[], pend=q.queue_pending||[];
   const gpuJobs=rq.jobs||[];
   const lb=$('livebar'), st=$('lbstatus');
-  const name=it=>{try{return (Object.values(it[2]).find(n=>n.class_type==='SaveImage')?.inputs?.filename_prefix||'render').split('/').pop();}catch(_){return 'render';}};
+  const name=it=>{try{return (saver(it[2])?.inputs?.filename_prefix||'render').split('/').pop();}catch(_){return 'render';}};
   if(gpuJobs.length){
     lb.classList.remove('idle');
     const first=gpuJobs[0], more=gpuJobs.length-1;
@@ -1348,19 +1379,21 @@ function svRender(){
   $('svgrid').innerHTML=s.assets.map((m,idx)=>svCard(m.assetId,idx)).join('');
 }
 function svCard(path,idx){
-  const a=assetByPath(path),img=/\.(png|jpe?g|webp)$/i.test(path),picked=SEL.has(path),pe=qq(path),iscover=CURSTACK.coverAssetId===path;
+  const a=assetByPath(path),img=/\.(png|jpe?g|webp)$/i.test(path),vid=isVideo(path),picked=SEL.has(path),pe=qq(path),iscover=CURSTACK.coverAssetId===path;
   const cardClick=SELMODE?`onclick="pick(event,'${pe}')"`:'';
   const dnd=(!SELMODE)?`draggable="true" ondragstart="svDragStart(event,${idx})" ondragend="svDragEnd(event)" ondragover="svDragOver(event,${idx})" ondragleave="dragLeaveCard(event)" ondrop="svDrop(event,${idx})"`:'';
   const thumb='/v1/library/file?thumb=1&path='+encodeURIComponent(path);
   return `<div class="card ${SELMODE?'sel-mode':''} ${picked?'picked':''} ${iscover?'iscover':''}" data-path="${pe}" data-idx="${idx}" ${dnd} ${cardClick} aria-label="${esc(path.split('/').pop())}${iscover?' (cover)':''}">
     <div class="droplbl">Reorder</div><div class="pick" role="checkbox" aria-checked="${picked}" aria-label="Select image" onclick="pickToggle(event,'${pe}')">${picked?'✓':''}</div>${iscover?'<span class="covertag">Cover</span>':''}
-    ${img?`<div class="im" style="background-image:url('${thumb}')" ${SELMODE?'':`onclick="svOpen(${idx})"`}></div>`:`<div class="doc">${esc(path.split('/').pop())}</div>`}
+    ${img?`<div class="im" style="background-image:url('${thumb}')" ${SELMODE?'':`onclick="svOpen(${idx})"`}></div>`
+      :vid?`<div class="im" style="position:relative"><video src="${imgURL({path})}" poster="${thumb}" preload="none" muted playsinline style="width:100%;height:100%;object-fit:cover;display:block" ${SELMODE?'':`onclick="svOpen(${idx})"`}></video><span style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);font-size:1.6rem;color:#fff;text-shadow:0 2px 10px #000c;pointer-events:none">▶</span></div>`
+      :`<div class="doc">${esc(path.split('/').pop())}</div>`}
     <div class="meta"><span class="t">${esc(path.split('/').pop())}</span>
       ${a?`<div class="row"><span class="st ${a.status}">${a.status==='deleted'?'archived':a.status}</span></div>`:'<span class="sub">unavailable — asset deleted</span>'}
       ${SELMODE?'':`<div class="row tools">
         <button class="mini" onclick="setCover('${pe}')">Set cover</button>
         <button class="mini" onclick="svRemove(['${pe}'])" title="Return to gallery">Remove</button>
-        <button class="mini hot" onclick="svFix('${pe}')" title="Create variations in this Stack">Fix</button>
+        ${!vid?`<button class="mini hot" onclick="svFix('${pe}')" title="Create variations in this Stack">Fix</button>`:''}
         <button class="mini" onclick="svImgMenu('${pe}',${idx},event)" aria-haspopup="menu">⋯</button>
       </div>`}
     </div></div>`;
@@ -1409,7 +1442,7 @@ async function svDrop(e,idx){e.preventDefault();e.currentTarget.classList.remove
 }
 // ── In-Stack image viewer with previous / next (preserves Stack context) ───────
 function svOpen(i){if(!CURSTACK||!CURSTACK.assets[i])return;SVI=i;const path=CURSTACK.assets[i].assetId;
-  $('zoomimg').src=imgURL({path});const z=$('zoom');z.classList.add('stackctx');
+  setZoomMedia(imgURL({path}),isVideo(path));const z=$('zoom');z.classList.add('stackctx');
   $('zprev').style.display=$('znext').style.display=CURSTACK.assets.length>1?'block':'none';z.style.display='flex';
   announce('Image '+(i+1)+' of '+CURSTACK.assets.length);}
 function svStep(d){if(SVI<0||!CURSTACK)return;const n=CURSTACK.assets.length;SVI=(SVI+d+n)%n;svOpen(SVI);}

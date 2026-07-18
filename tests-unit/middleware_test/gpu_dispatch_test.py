@@ -160,3 +160,16 @@ def test_advisory_gate_false_when_nothing_online(monkeypatch):
     monkeypatch.delenv("STUDIO_COMMERCE_TOKEN", raising=False)
     monkeypatch.setattr(g, "_fleet_machines", lambda tok: [])
     assert g.has_online_gpu_advisory("Bearer user") is False
+
+
+# ── A BYO-GPU video job records its REAL prefix, not the "render" fallback ─────────
+def test_track_savevideo(tmp_path, monkeypatch):
+    import json
+    monkeypatch.setattr(g.folder_paths, "get_org_output_directory", lambda o=None: str(tmp_path))
+    graph = {"7": {"class_type": "LoadImage", "inputs": {"image": "ref.png"}},
+             "12": {"class_type": "SaveVideo", "inputs": {"filename_prefix": "video/beach_ab12cd"}}}
+    g._track_dispatched("acme", "pid-v", graph, node="spark")
+    jobs = json.loads((tmp_path / "render_jobs.json").read_text())
+    assert jobs[-1]["outPrefix"] == "video/beach_ab12cd"      # the video prefix, not "render"
+    assert jobs[-1]["prefix"] == "beach_ab12cd"
+    assert jobs[-1]["refs"] == ["ref.png"] and jobs[-1]["node"] == "spark"

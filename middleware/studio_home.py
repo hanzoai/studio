@@ -71,6 +71,20 @@ _QWEN_UNET = "qwen-image-edit-2511.safetensors"
 _QWEN_CLIP = "qwen2.5-vl-7b.safetensors"
 _QWEN_VAE = "qwen-image-vae.safetensors"
 
+# The Wan 2.2 TI2V-5B model set, by the EXACT filenames present on the render worker
+# (spark) — the same locality rule as the Qwen set: a graph naming a missing checkpoint
+# fails ComfyUI validation instantly. _WAN_NEG is the proven Chinese negative from the
+# spark video proof (== zen-video DEFAULT_NEGATIVE): the overbright / static / blurry /
+# caption / worst-quality / deformed-limb corruption classes for Wan.
+_WAN_UNET = "wan2.2_ti2v_5B_fp16.safetensors"
+_WAN_CLIP = "umt5_xxl_fp8_e4m3fn_scaled.safetensors"
+_WAN_VAE = "wan2.2_vae.safetensors"
+_WAN_NEG = "色调艳丽，过曝，静态，细节模糊不清，字幕，风格，作品，画作，画面，静止，整体发灰，最差质量，低质量，JPEG压缩残留，丑陋的，残缺的，多余的手指，画得不好的手部，画得不好的脸部，畸形的，毁容的，形态畸形的肢体，手指融合，静止不动的画面，杂乱的背景，三条腿，背景人很多，倒着走"
+
+_VIDEO_EXT = (".mp4", ".webm")
+_SAVE_EXT = (".png",) + _VIDEO_EXT       # the extensions the containers' savers write
+_SAVERS = ("SaveImage", "SaveVideo", "SaveWEBM")   # the output-node class types — ONE list
+
 
 def _home_default() -> bool:
     return os.environ.get("STUDIO_HOME_DEFAULT", "").lower() in ("1", "true", "yes")
@@ -122,8 +136,39 @@ def _view_params(abs_path: Path) -> dict:
     return {"filename": rel.name, "subfolder": str(rel.parent) if str(rel.parent) != "." else "", "type": "output"}
 
 
+def _embedded(path: Path) -> dict:
+    """The metadata a saver embedded in an output, for BOTH media, as a {key: raw-json}
+    mapping: a PNG carries it in PIL image ``info`` (SaveImage), an mp4/webm carries it in
+    the CONTAINER metadata (SaveVideo/SaveWEBM write the SAME JSON strings PIL returns).
+    Returns {} when absent/unreadable. The ONE reader — provenance, Open-in-Editor and
+    re-run all parse the ``prompt`` (API graph) out of it (Open-in-Editor also reads the UI
+    ``workflow``), so video never silently loses its Versions / Re-run / lessons surface."""
+    suf = path.suffix.lower()
+    try:
+        if suf == ".png":
+            from PIL import Image
+            return dict(Image.open(path).info)
+        if suf in _VIDEO_EXT:
+            import av
+            with av.open(str(path)) as c:
+                return dict(c.metadata)
+    except Exception:  # non-Comfy media, truncated file — metadata is optional
+        pass
+    return {}
+
+
+def _poster(p: Path):
+    """The first video frame as a PIL image — the card poster. PyAV in-process (the studio
+    image ships no ffmpeg binary, and SaveVideo already encodes with av, so av is present).
+    Raises on any decode failure; the caller turns that into a 404, never the whole file."""
+    import av
+    with av.open(str(p)) as c:
+        frame = next(c.decode(video=0))
+        return frame.to_image()
+
+
 def _provenance(abs_path: Path) -> dict:
-    """What made this image, from the graph ComfyUI embeds in the PNG."""
+    """What made this output, from the graph the saver embeds in it — PNG or video."""
     try:
         mtime = abs_path.stat().st_mtime
     except OSError:
@@ -133,23 +178,26 @@ def _provenance(abs_path: Path) -> dict:
     if hit and hit[0] == mtime:
         return hit[1]
     prov: dict = {}
-    if abs_path.suffix.lower() == ".png":
-        try:
-            from PIL import Image
-            info = Image.open(abs_path).info
-            graph = json.loads(info.get("prompt", "null"))
-            if isinstance(graph, dict):
-                for node in graph.values():
-                    ct = node.get("class_type", "")
-                    ins = node.get("inputs", {})
-                    if ct == "SaveImage":
-                        prov["workflow"] = ins.get("filename_prefix", "")
-                    elif "KSampler" in ct:
-                        prov.update(steps=ins.get("steps"), cfg=ins.get("cfg"),
-                                    seed=ins.get("seed", ins.get("noise_seed")))
-                prov["nodes"] = len(graph)
-        except Exception:  # non-Comfy PNG, truncated file — provenance is optional
-            prov = {}
+    try:
+        graph = json.loads(_embedded(abs_path).get("prompt", "null"))
+        if isinstance(graph, dict) and graph:
+            for node in graph.values():
+                if not isinstance(node, dict):
+                    continue
+                ct = node.get("class_type", "")
+                ins = node.get("inputs", {})
+                if ct in _SAVERS:
+                    prov["workflow"] = ins.get("filename_prefix", "")
+                elif "KSampler" in ct:
+                    prov.update(steps=ins.get("steps"), cfg=ins.get("cfg"),
+                                seed=ins.get("seed", ins.get("noise_seed")))
+                elif ct == "Wan22ImageToVideoLatent":
+                    prov["length"] = ins.get("length")
+                elif ct == "CreateVideo":
+                    prov["fps"] = ins.get("fps")
+            prov["nodes"] = len(graph)
+    except Exception:  # non-Comfy output, truncated file — provenance is optional
+        prov = {}
     _PROV_CACHE[key] = (mtime, prov)
     return prov
 
@@ -307,14 +355,14 @@ def _reseed(graph: dict) -> dict:
 
 
 def _retag(graph: dict, prefix: str) -> dict:
-    """Point every SaveImage in a re-run / template graph at a UNIQUE output prefix.
-    Without this a re-run replays the source graph's own SaveImage prefix, so its
-    file lands in the SOURCE's namespace and N re-runs share one prefix — the
-    library then attributes the newest sibling to every row (a job shows a photo
-    it did not make). fix/compose/amend already tag per dispatch; this gives
-    re-run and template-render the same job-identity guarantee."""
+    """Point every saver (SaveImage / SaveVideo / SaveWEBM) in a re-run / template graph
+    at a UNIQUE output prefix. Without this a re-run replays the source graph's own saver
+    prefix, so its file lands in the SOURCE's namespace and N re-runs share one prefix —
+    the library then attributes the newest sibling to every row (a job shows a photo it
+    did not make). fix/compose/amend already tag per dispatch; this gives re-run and
+    template-render the same job-identity guarantee, for image AND video outputs."""
     for node in graph.values():
-        if isinstance(node, dict) and node.get("class_type") == "SaveImage":
+        if isinstance(node, dict) and node.get("class_type") in _SAVERS:
             node.setdefault("inputs", {})["filename_prefix"] = prefix
     return graph
 
@@ -363,10 +411,23 @@ def _lessons(org: str, root: Path | None, rels: list[str]) -> list[str]:
 
 
 def _job_tag() -> str:
-    """Six hex chars appended to every SaveImage prefix so each dispatch owns a
+    """Six hex chars appended to every saver prefix so each dispatch owns a
     UNIQUE output namespace — a re-fix of the same source can never prefix-match an
     earlier run's (possibly rejected) file as its own result."""
     return uuid.uuid4().hex[:6]
+
+
+_TAG_RE = re.compile(r"_[0-9a-f]{6}$")
+
+
+def _stamp(prefix: str) -> str:
+    """Give an output prefix a FRESH job identity: strip a trailing job tag from its LAST
+    path segment if present (so a re-run of a re-run, or a re-render of a saved template,
+    does not accumulate tags), then append a new one. Every dispatch of a STORED graph —
+    template render, re-run — thus owns a unique output namespace (the house job rule)."""
+    head, sep, tail = prefix.rpartition("/")
+    tail = _TAG_RE.sub("", tail) + f"_{_job_tag()}"
+    return f"{head}/{tail}" if sep else tail
 
 
 # View/pose-change intent: these instructions need the empty-latent reference
@@ -448,6 +509,53 @@ def _fix_graph(ref_name: str, instruction: str, prefix: str, *, size: tuple[int,
         "14": {"class_type": "VAEDecode", "inputs": {"samples": ["13", 0], "vae": ["5", 0]}},
         "15": {"class_type": "SaveImage", "inputs": {"images": ["14", 0], "filename_prefix": prefix}},
     }
+
+
+def _video_graph(prompt: str, prefix: str, *, ref_name: str | None = None,
+                 width: int = 640, height: int = 640, length: int = 73,
+                 seed: int | None = None, lessons: list[str] | None = None) -> dict:
+    """The proven Wan 2.2 TI2V-5B text/image-to-video graph, lifted node-for-node from the
+    spark video proof. UNETLoader → ModelSamplingSD3(shift 8) → KSampler(uni_pc / simple, 20
+    steps, cfg 5.0, denoise 1.0); CLIPLoader(type ``wan``) + VAELoader feed a
+    Wan22ImageToVideoLatent whose width/height clamp to [256,1280] and snap to the 32-px grid
+    the sampler needs, and whose length clamps to [9,121] and snaps to 4n+1. A reference
+    image, when given, wires LoadImage → start_image (image-to-video); with NONE the node
+    AND its start_image key are omitted, for pure text-to-video (proof caveat). VAEDecode →
+    CreateVideo(24 fps) → SaveVideo(mp4/h264). Pure dict builder, same shape as _fix_graph;
+    cross-checked against zen-video/zen_wan_workflow.py build_prompt (not imported)."""
+    w = max(256, min(1280, int(width)))
+    w -= w % 32                                  # snap to the 32-px grid (proof caveat)
+    h = max(256, min(1280, int(height)))
+    h -= h % 32
+    n = max(9, min(121, int(length)))
+    n = ((n - 1) // 4) * 4 + 1                    # snap to 4n+1
+    pos = prompt.strip()
+    neg = _WAN_NEG
+    if lessons:
+        pos += " Known mistakes on earlier versions — do not repeat: " + "; ".join(lessons) + "."
+        neg = _WAN_NEG + ", " + ", ".join(lessons)
+    latent = {"vae": ["3", 0], "width": w, "height": h, "length": n, "batch_size": 1}
+    g = {
+        "1": {"class_type": "UNETLoader", "inputs": {"unet_name": _WAN_UNET, "weight_dtype": "default"}},
+        "2": {"class_type": "CLIPLoader", "inputs": {"clip_name": _WAN_CLIP, "type": "wan"}},
+        "3": {"class_type": "VAELoader", "inputs": {"vae_name": _WAN_VAE}},
+        "4": {"class_type": "ModelSamplingSD3", "inputs": {"model": ["1", 0], "shift": 8}},
+        "5": {"class_type": "CLIPTextEncode", "inputs": {"clip": ["2", 0], "text": pos}},
+        "6": {"class_type": "CLIPTextEncode", "inputs": {"clip": ["2", 0], "text": neg}},
+        "8": {"class_type": "Wan22ImageToVideoLatent", "inputs": latent},
+        "9": {"class_type": "KSampler", "inputs": {"model": ["4", 0], "positive": ["5", 0],
+              "negative": ["6", 0], "latent_image": ["8", 0],
+              "seed": seed or random.randrange(2**31), "steps": 20, "cfg": 5.0,
+              "sampler_name": "uni_pc", "scheduler": "simple", "denoise": 1.0}},
+        "10": {"class_type": "VAEDecode", "inputs": {"samples": ["9", 0], "vae": ["3", 0]}},
+        "11": {"class_type": "CreateVideo", "inputs": {"images": ["10", 0], "fps": 24}},
+        "12": {"class_type": "SaveVideo", "inputs": {"video": ["11", 0], "filename_prefix": prefix,
+               "format": "mp4", "codec": "h264"}},
+    }
+    if ref_name:
+        g["7"] = {"class_type": "LoadImage", "inputs": {"image": ref_name}}
+        g["8"]["inputs"]["start_image"] = ["7", 0]   # TI2V; omitted entirely for pure t2v
+    return g
 
 
 def _compose_graph(ref_names: list[str], instruction: str, prefix: str,
@@ -559,6 +667,10 @@ def _graph_params(graph: dict) -> dict:
                      seed=ins.get("seed", ins.get("noise_seed")))
         elif ct == "EmptySD3LatentImage":
             p.update(width=ins.get("width"), height=ins.get("height"))
+        elif ct == "Wan22ImageToVideoLatent":
+            p.update(width=ins.get("width"), height=ins.get("height"), length=ins.get("length"))
+        elif ct == "CreateVideo":
+            p.update(fps=ins.get("fps"))
     return {k: v for k, v in p.items() if v is not None}
 
 
@@ -663,11 +775,11 @@ def _landed_output(root: Path | None, prefix: str) -> str | None:
     try:
         parent = root / os.path.dirname(prefix)
         stem = os.path.basename(prefix)
-        # Match SaveImage's exact "<prefix>_<counter>_.png" — NOT a loose "<prefix>*"
-        # which also matches a CHILD prefix ("a" would swallow "a_00001__00001_"),
-        # collapsing distinct lineage steps onto one output.
-        pat = re.compile(r"^" + re.escape(stem) + r"_\d+_\.png$")
-        hits = [p for p in parent.glob(stem + "_*_.png") if pat.match(p.name)]
+        # Match a saver's exact "<prefix>_<counter>_.<ext>" (png / mp4 / webm) — NOT a
+        # loose "<prefix>*" which also matches a CHILD prefix ("a" would swallow
+        # "a_00001__00001_"), collapsing distinct lineage steps onto one output.
+        pat = re.compile(r"^" + re.escape(stem) + r"_\d+_\.(?:png|mp4|webm)$")
+        hits = [p for p in parent.glob(stem + "_*_.*") if pat.match(p.name)]
         hits.sort(key=lambda p: p.stat().st_mtime, reverse=True)
         if hits:
             return str(hits[0].relative_to(root))
@@ -814,6 +926,61 @@ async def dispatch_fix(request: web.Request, server, org: str, rel: str,
     if note:
         out["note"] = note
     return out
+
+
+async def dispatch_video(request: web.Request, server, org: str, prompt: str,
+                         rel: str | None = None, upload: str | None = None,
+                         width: int | None = None, height: int | None = None,
+                         length: int | None = None, seed: int | None = None,
+                         stack: str | None = None) -> dict:
+    """Generate a video from a text prompt and AT MOST ONE reference image — the proven
+    Wan 2.2 TI2V-5B graph. The reference is EITHER a library asset (``rel``, staged into the
+    org input dir like fix) OR an image just uploaded via ``/upload/image`` (``upload``);
+    with neither it is pure text-to-video. The ONE video path: the /v1/library/video route
+    (and, later, the chat `create` capability) both call this.
+
+    No lane-forcing here — _dispatch's self-POST already routes to gpu-jobs when a BYO GPU is
+    online and surfaces the real DispatchError ("unet_name … not in []" / "no GPU worker")
+    when not, so the model-locality reality (wan2.2 lives on spark) rides the existing
+    advisory rather than a second gate."""
+    prompt = (prompt or "").strip()
+    if not 3 <= len(prompt) <= 500:
+        raise DispatchError("prompt required (3-500 chars)")
+    if upload and rel:
+        raise DispatchError("use at most one reference (a library image OR an upload)")
+    root = _library_root(org)
+    in_dir = Path(folder_paths.get_org_input_directory(org))
+    in_dir.mkdir(parents=True, exist_ok=True)
+    ref_name = None
+    staged = False
+    if upload:
+        names = _resolve_uploads(org, [upload])
+        if not names:
+            raise DispatchError(f"unknown upload: {upload}")
+        ref_name = names[0]
+    elif rel:
+        # Iteration hygiene, same as fix: a corrupt base falls back to its clean ancestor.
+        rel, _sub = _clean_base(org, root, rel)
+        p = _safe_asset(root, rel) if root else None
+        if p is None or p.suffix.lower() != ".png":
+            raise DispatchError(f"unknown asset: {rel}")
+        ref_name = f"video_src_{abs(hash((str(p), p.stat().st_mtime))) % 10**10}.png"
+        (in_dir / ref_name).write_bytes(p.read_bytes())
+        staged = True
+    base = Path(ref_name).stem if ref_name else " ".join(prompt.split()[:8])
+    stem = re.sub(r"[^a-zA-Z0-9_-]", "_", base)[:48] + f"_{_job_tag()}"
+    lessons = _lessons(org, root, [rel] if rel else [])
+    pid = await _dispatch(
+        request, server, org,
+        _video_graph(prompt, f"video/{stem}", ref_name=ref_name,
+                     width=width or 640, height=height or 640, length=length or 73,
+                     seed=seed, lessons=lessons),
+        lessons=lessons, kind="video", prompt=prompt,
+        refs=[ref_name] if staged else [], uploads=[upload] if upload else [],
+        parents=[rel] if rel else [], output_prefix=f"video/{stem}")
+    if stack:
+        stacks_store.route_prefix(org, f"video/{stem}", stack, added_by=_owner_of(request))
+    return {"ok": True, "prompt_id": pid, "output_prefix": f"video/{stem}"}
 
 
 async def dispatch_compose(request: web.Request, server, org: str, paths: list,
@@ -1062,11 +1229,12 @@ async def _wallet(request: web.Request, org: str) -> dict:
     return out
 
 
-_MAX_UPLOAD = 100 * 1024 * 1024       # 100 MB — 4k masters run 30-60MB; the cap must hold the largest real render
-_UPLOAD_EXT = (".png", ".jpg", ".jpeg", ".webp")
+_MAX_UPLOAD = 256 * 1024 * 1024       # 256 MB — ONE ceiling, equal to the worker mirror cap (gpu.go outputMax); holds a 4k master OR a short render's video
+_UPLOAD_EXT = (".png", ".jpg", ".jpeg", ".webp", ".mp4", ".webm")
 # Explicit types for served assets: the runtime's mimetypes table lacks webp, and
-# octet-stream + nosniff breaks <img> rendering of attached webp references.
-_CTYPE = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp"}
+# octet-stream + nosniff breaks <img>/<video> rendering of attached references.
+_CTYPE = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp",
+          ".mp4": "video/mp4", ".webm": "video/webm"}
 _SUBPATH_RE = re.compile(r"[A-Za-z0-9_-]+(?:/[A-Za-z0-9_-]+)*")
 
 
@@ -1282,13 +1450,9 @@ def add_studio_home_routes(routes: web.RouteTableDef, server) -> None:
         _finalize_landed(org, root, rows, int(time.time()))
         landed = _row_output(root, row.get("output_prefix")) if row.get("status") == "done" else None
         p = _safe_asset(root, landed) if (root and landed) else None
-        if p is None or p.suffix.lower() != ".png":
+        if p is None or p.suffix.lower() not in _SAVE_EXT:
             return web.json_response({"error": "workflow not available yet"}, status=404)
-        try:
-            from PIL import Image
-            info = Image.open(p).info
-        except Exception:
-            info = {}
+        info = _embedded(p)   # PNG info OR video-container metadata — the ONE reader
         for key, fmt in (("workflow", "ui"), ("prompt", "api")):
             try:
                 g = json.loads(info.get(key, "null"))
@@ -1369,9 +1533,9 @@ def add_studio_home_routes(routes: web.RouteTableDef, server) -> None:
                 {"error": "this template has no runnable graph — open it in the Editor to run"}, status=422)
         out_prefix = ""
         for n in prompt.values():
-            if isinstance(n, dict) and n.get("class_type") == "SaveImage":
+            if isinstance(n, dict) and n.get("class_type") in _SAVERS:
                 out_prefix = n.get("inputs", {}).get("filename_prefix", "") or out_prefix
-        out_prefix = (out_prefix or f"templates/{slug}") + f"_{_job_tag()}"   # unique per render
+        out_prefix = _stamp(out_prefix or f"templates/{slug}")   # unique per render (image OR video)
         sid = _dest_stack(org, body.get("stack"), prompt=rec.get("name", slug),
                           multi=_graph_is_batch(prompt), owner=_owner_of(request),
                           workspace=_workspace_of(request))
@@ -1445,7 +1609,8 @@ def add_studio_home_routes(routes: web.RouteTableDef, server) -> None:
             row = dict(a)
             row["view"] = _view_params(p)
             row["mtime"] = int(p.stat().st_mtime)
-            if p.suffix.lower() == ".png":
+            suf = p.suffix.lower()
+            if suf == ".png" or suf in _VIDEO_EXT:
                 row["prov"] = _provenance(p)
             assets.append(row)
         return web.json_response({"org": org, "assets": assets, "workflows": _workflows(org)},
@@ -1473,7 +1638,8 @@ def add_studio_home_routes(routes: web.RouteTableDef, server) -> None:
             p = _safe_asset(root, request.query.get("path", "")) if root else None
             if p is None:
                 return web.Response(status=404)
-        if request.query.get("thumb") and p.suffix.lower() in (".png", ".jpg", ".jpeg", ".webp"):
+        suf = p.suffix.lower()
+        if request.query.get("thumb") and suf in _REF_EXT:
             try:
                 tdir = root / ".thumbs"
                 tdir.mkdir(exist_ok=True)
@@ -1487,7 +1653,25 @@ def add_studio_home_routes(routes: web.RouteTableDef, server) -> None:
                 return web.FileResponse(tp, headers={"Cache-Control": "public, max-age=86400"})
             except Exception:
                 pass  # fall through to full-res on any thumbnail failure
-        ct = _CTYPE.get(p.suffix.lower())
+        elif request.query.get("thumb") and suf in _VIDEO_EXT:
+            # A video's poster is its first frame — the SAME cache scheme as images. On ANY
+            # failure return 404, NEVER the full file (falling through would serve the whole
+            # mp4 as an <img>). root is the tenant library here, so it is never None.
+            try:
+                if root is None:
+                    return web.Response(status=404)
+                tdir = root / ".thumbs"
+                tdir.mkdir(exist_ok=True)
+                key = re.sub(r"[^a-zA-Z0-9]", "_", str(p))[-120:]
+                tp = tdir / f"{key}.jpg"
+                if not tp.is_file() or tp.stat().st_mtime < p.stat().st_mtime:
+                    im = _poster(p)
+                    im.thumbnail((480, 720))
+                    im.convert("RGB").save(tp, "JPEG", quality=82)
+                return web.FileResponse(tp, headers={"Cache-Control": "public, max-age=86400"})
+            except Exception:
+                return web.Response(status=404)
+        ct = _CTYPE.get(suf)
         return web.FileResponse(p, headers={"Content-Type": ct} if ct else None)
 
     @routes.post("/v1/library/upload")
@@ -1518,7 +1702,7 @@ def add_studio_home_routes(routes: web.RouteTableDef, server) -> None:
             data = await request.read()
             name = os.path.basename(request.query.get("name", ""))
         if not name or os.path.splitext(name)[1].lower() not in _UPLOAD_EXT:
-            return web.json_response({"error": "image name required (.png/.jpg/.jpeg/.webp)"}, status=400)
+            return web.json_response({"error": "file name required (.png/.jpg/.jpeg/.webp/.mp4/.webm)"}, status=400)
         if name.startswith("."):
             # `._foo.png` (AppleDouble fork) and other dotfiles pass the extension
             # check but are not renders.
@@ -1535,9 +1719,11 @@ def add_studio_home_routes(routes: web.RouteTableDef, server) -> None:
             return web.json_response({"error": "file too large"}, status=413)
         if not (data[:8] == b"\x89PNG\r\n\x1a\n"
                 or data[:3] == b"\xff\xd8\xff"
-                or (data[:4] == b"RIFF" and data[8:12] == b"WEBP")):
+                or (data[:4] == b"RIFF" and data[8:12] == b"WEBP")
+                or (len(data) > 12 and data[4:8] == b"ftyp")   # mp4/mov: brand box at OFFSET 4
+                or data[:4] == b"\x1a\x45\xdf\xa3"):           # webm/mkv: EBML header
             # The name lies sometimes; the bytes never do.
-            return web.json_response({"error": "not an image"}, status=400)
+            return web.json_response({"error": "not a supported media file"}, status=400)
         out_root = Path(folder_paths.get_org_output_directory(org))
         dest = (out_root / sub / name).resolve()
         if not str(dest).startswith(str(out_root.resolve()) + os.sep):
@@ -1552,10 +1738,16 @@ def add_studio_home_routes(routes: web.RouteTableDef, server) -> None:
             tmp = dest.with_name(dest.name + ".tmp")
             tmp.write_bytes(data)
             tmp.replace(dest)
-        # index at ingest → instantly findable in Assets + Queue & History (with node)
+        # A FIX render arriving through this door (the worker mirror) keeps its colour
+        # restore — self-scoped to fixes/, fail-safe, image-only in practice.
+        colormatch_fix_ingest(request, sub, name)
+        # index at ingest → instantly findable in Assets + Queue & History (with node).
+        # kind defaults by suffix so a video row selects the motion judge + the video card.
+        kind = request.query.get("kind") or (
+            "video" if os.path.splitext(name)[1].lower() in _VIDEO_EXT else "render")
         created = _index_upload(org, out_root, rel,
                                 design=request.query.get("design") or None,
-                                kind=request.query.get("kind") or "render",
+                                kind=kind,
                                 role=request.query.get("role") or None,
                                 node=request.query.get("node") or "upload")
         if created:
@@ -1616,7 +1808,7 @@ def add_studio_home_routes(routes: web.RouteTableDef, server) -> None:
                 try:
                     parent = root / os.path.dirname(out_prefix)
                     stem = os.path.basename(out_prefix)
-                    landed = any(parent.glob(stem + "*.png"))
+                    landed = any(any(parent.glob(stem + "*" + e)) for e in _SAVE_EXT)
                 except Exception:
                     landed = False
             if landed and age > 20:
@@ -1666,7 +1858,11 @@ def add_studio_home_routes(routes: web.RouteTableDef, server) -> None:
             if p is None:
                 continue
             try:
-                h = hashlib.md5(p.read_bytes()).hexdigest()
+                digest = hashlib.md5()
+                with p.open("rb") as fh:   # bounded chunks — a 256MB video never lands in memory
+                    for chunk in iter(lambda: fh.read(1 << 20), b""):
+                        digest.update(chunk)
+                h = digest.hexdigest()
             except OSError:
                 continue
             if h in seen:
@@ -1750,26 +1946,25 @@ def add_studio_home_routes(routes: web.RouteTableDef, server) -> None:
         org = _org_of(request)
         root = _library_root(org)
         p = _safe_asset(root, body.get("path", "")) if root else None
-        if p is None or p.suffix.lower() != ".png":
+        if p is None or p.suffix.lower() not in _SAVE_EXT:
             return web.json_response({"error": "unknown asset"}, status=404)
         try:
-            from PIL import Image
-            graph = json.loads(Image.open(p).info.get("prompt", "null"))
+            graph = json.loads(_embedded(p).get("prompt", "null"))   # PNG OR video metadata
         except Exception:
             graph = None
-        if not isinstance(graph, dict):
-            return web.json_response({"error": "no embedded workflow in this image"}, status=422)
+        if not isinstance(graph, dict) or not graph:
+            return web.json_response({"error": "no embedded workflow in this output"}, status=422)
         rel = body.get("path", "")
         out_prefix = ""
         instr = ""
         for n in graph.values():
             if not isinstance(n, dict):
                 continue
-            if n.get("class_type") == "SaveImage":
+            if n.get("class_type") in _SAVERS:
                 out_prefix = n.get("inputs", {}).get("filename_prefix", "") or out_prefix
             elif "TextEncode" in n.get("class_type", "") and not instr:
                 t = n.get("inputs", {}).get("prompt") or n.get("inputs", {}).get("text") or ""
-                if t and t != _NEG:
+                if t and t != _NEG and t != _WAN_NEG:   # the positive, not either negative
                     instr = t
         count = max(1, min(int(body.get("count", 1)), 4))
         base = out_prefix or f"reruns/{re.sub(r'[^a-zA-Z0-9_-]', '_', p.stem)[:40]}"
@@ -1781,7 +1976,7 @@ def add_studio_home_routes(routes: web.RouteTableDef, server) -> None:
         ids = []
         try:
             for _ in range(count):
-                tag = f"{base}_{_job_tag()}"          # each rerun owns a unique namespace
+                tag = _stamp(base)                    # each rerun owns a unique namespace (no tag accumulation)
                 g = _retag(_reseed(json.loads(json.dumps(graph))), tag)
                 ids.append(await _dispatch(
                     request, server, org, g,
@@ -1912,6 +2107,22 @@ def add_studio_home_routes(routes: web.RouteTableDef, server) -> None:
             return web.json_response(await dispatch_fix(
                 request, server, _org_of(request), body.get("path", ""),
                 body.get("instruction", ""), body.get("upload"), body.get("stack")))
+        except DispatchError as e:
+            return web.json_response({"error": str(e)}, status=400)
+
+    @routes.post("/v1/library/video")
+    async def video(request: web.Request):
+        """Generate a video from {prompt, path?, upload?, width?, height?, length?, seed?,
+        stack?}. Org is the bearer-token claim (IAM middleware) ONLY — an ``org`` field in
+        the body or query is never read. The proven Wan 2.2 graph, dispatched through the
+        ONE funnel; a bad request surfaces as {"error": …} 400, never a silent nothing."""
+        body = await request.json()
+        try:
+            return web.json_response(await dispatch_video(
+                request, server, _org_of(request), body.get("prompt", ""),
+                rel=body.get("path"), upload=body.get("upload"),
+                width=body.get("width"), height=body.get("height"),
+                length=body.get("length"), seed=body.get("seed"), stack=body.get("stack")))
         except DispatchError as e:
             return web.json_response({"error": str(e)}, status=400)
 

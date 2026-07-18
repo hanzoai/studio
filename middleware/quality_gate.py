@@ -50,6 +50,15 @@ PROMPT = (
     "poster border, or glyph/pixel-garbage regions. Otherwise PASS."
 )
 
+# The motion judge — the SAME strict binary contract as PROMPT, but the failure classes
+# are the observed corruption modes of the video pipeline (it is shown start/mid/end frames).
+MOTION = (
+    "You are a render QA gate for generated video, shown frames sampled across its "
+    "duration. Answer exactly PASS or FAIL. FAIL if: frame-to-frame flicker, "
+    "identity/clothing morphing between frames, frozen/static motion where movement is "
+    "expected, temporal ghosting or trails, or glyph/pixel-garbage regions. Otherwise PASS."
+)
+
 _OFF = ("off", "0", "false", "no")
 _FAIL_RE = re.compile(r"\bfail\b", re.I)
 _PASS_RE = re.compile(r"\bpass\b", re.I)
@@ -88,18 +97,67 @@ def parse_verdict(reply: str) -> str:
     return "inconclusive"
 
 
-def _downscale(path: Path) -> str | None:
-    """The stored render as a ~512px JPEG, base64 — small enough for a fast vision
-    call. Returns None if the image can't be read (→ the gate fails open)."""
+def _encode(im) -> str | None:
+    """A PIL image as a ~512px JPEG, base64 — the ONE frame-encode contract, small
+    enough for a fast vision call. Returns None on any failure."""
     try:
-        from PIL import Image
-        im = Image.open(path).convert("RGB")
+        im = im.convert("RGB")
         im.thumbnail((512, 512))
         buf = io.BytesIO()
         im.save(buf, "JPEG", quality=80)
         return base64.b64encode(buf.getvalue()).decode()
     except Exception:
         return None
+
+
+def _downscale(path: Path) -> str | None:
+    """The stored image as a ~512px JPEG, base64. None if it can't be read (→ fail open)."""
+    try:
+        from PIL import Image
+        return _encode(Image.open(path))
+    except Exception:
+        return None
+
+
+def _video_frame(path: str, t: float) -> str | None:
+    """One ~512px JPEG (base64) decoded at ``t`` seconds — seek then take the next frame.
+    A fresh container per frame keeps the decode robust (no abandoned-generator state)."""
+    try:
+        import av
+        with av.open(path) as c:
+            st = c.streams.video[0]
+            if t > 0 and st.time_base:
+                c.seek(int(t / st.time_base), stream=st)
+            for frame in c.decode(st):
+                return _encode(frame.to_image())
+    except Exception:
+        return None
+    return None
+
+
+def _frames(path: Path) -> list[str] | None:
+    """Up to three ~512px JPEG frames (base64) to judge, or None when unreadable. A video
+    (.mp4/.webm) is sampled at start / middle / end so the motion judge sees temporal
+    coherence; any other file is the single downscaled image. None → the caller decides
+    (an image fails open; a video is marked ungated, never a silent pass)."""
+    if path.suffix.lower() in (".mp4", ".webm"):
+        try:
+            import av
+            with av.open(str(path)) as probe:
+                st = probe.streams.video[0]
+                if st.duration and st.time_base:
+                    dur = float(st.duration * st.time_base)
+                elif probe.duration:
+                    dur = float(probe.duration) / 1_000_000
+                else:
+                    dur = 0.0
+            targets = [0.0, dur / 2, dur] if dur > 0 else [0.0]
+            out = [b for b in (_video_frame(str(path), t) for t in targets) if b]
+            return out or None
+        except Exception:
+            return None
+    b = _downscale(path)
+    return [b] if b else None
 
 
 def _reply_text(data: dict) -> str:
@@ -120,15 +178,16 @@ def _reply_text(data: dict) -> str:
     return str(content)
 
 
-async def judge(image_b64: str, bearer: str) -> str | None:
-    """Ask the vision judge to score one image. Returns its reply text, or None on
-    ANY error (non-200, bad JSON, timeout, unreachable) — the caller fails open."""
+async def judge(images: list[str], bearer: str, prompt: str) -> str | None:
+    """Ask the vision judge to score N frames against ``prompt`` (PROMPT for a still image,
+    MOTION for a video's sampled frames) — one text part + N image parts. Returns its reply
+    text, or None on ANY error (non-200, bad JSON, timeout, unreachable) — caller fails open."""
+    content = [{"type": "text", "text": prompt}]
+    for b64 in images:
+        content.append({"type": "image_url", "image_url": {"url": "data:image/jpeg;base64," + b64}})
     payload = {
         "model": _model(),
-        "messages": [{"role": "user", "content": [
-            {"type": "text", "text": PROMPT},
-            {"type": "image_url", "image_url": {"url": "data:image/jpeg;base64," + image_b64}},
-        ]}],
+        "messages": [{"role": "user", "content": content}],
         "temperature": 0,
         "max_tokens": 768,   # reasoning models think before the verdict — 8 starved them into fail-open
     }
@@ -166,18 +225,43 @@ def _flag(org: str, root: Path, rel: str, reply: str) -> bool:
     return False
 
 
+def _skip(org: str, root: Path, rel: str) -> None:
+    """A video whose frames could not be sampled is marked visibly UNGATED — NEVER a
+    silent pass: set the asset row's ``gate`` field to ``skipped`` (the card renders an
+    'ungated' badge from it) and log an ``ungated`` work-log event. Same single-writer
+    library pattern as ``_flag``; leaves status untouched."""
+    from middleware import studio_home as sh  # lazy: avoid an import cycle
+    lib = sh._load_library(root)
+    hit = False
+    for a in lib.get("assets", []):
+        if a.get("path") == rel:
+            a["gate"] = "skipped"
+            a["updatedAt"] = int(time.time())
+            hit = True
+    if hit:
+        sh._save_library(root, lib)
+    worklog.add_event(org, rel, "ungated", "gate could not sample frames")
+    log.info("gate: UNGATED %s/%s", org, rel)
+
+
 async def run(org: str, root: Path, rel: str, bearer: str) -> None:
-    """Judge one just-stored render and flag it on a clear FAIL. Never raises — a
-    background task that fails open on everything else."""
+    """Judge one just-stored render — a still image against PROMPT, a video against MOTION
+    over its sampled frames — and flag it on a clear FAIL. A video whose frames can't be
+    sampled is marked UNGATED (never a silent pass); an unreadable image fails open. Never
+    raises — a background task that fails open on everything else."""
     try:
         p = Path(root) / rel
         if not p.is_file():
             return
-        image_b64 = _downscale(p)
-        if image_b64 is None:
-            log.info("gate: unreadable %s/%s — pass (fail-open)", org, rel)
+        video = p.suffix.lower() in (".mp4", ".webm")
+        frames = _frames(p)
+        if frames is None:
+            if video:
+                _skip(org, root, rel)   # honest: an ungated video is badged, never passed silently
+            else:
+                log.info("gate: unreadable %s/%s — pass (fail-open)", org, rel)
             return
-        reply = await judge(image_b64, bearer)
+        reply = await judge(frames, bearer, MOTION if video else PROMPT)
         verdict = parse_verdict(reply or "")
         if verdict == "fail":
             _flag(org, root, rel, reply or "")

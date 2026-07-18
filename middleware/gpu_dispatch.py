@@ -281,7 +281,7 @@ def _track_dispatched(org_id: str, prompt_id: str, prompt: dict, node: str = "gp
             if not isinstance(n, dict):
                 continue
             ct = n.get("class_type", "")
-            if ct == "SaveImage":
+            if ct in ("SaveImage", "SaveVideo", "SaveWEBM"):
                 full_prefix = n.get("inputs", {}).get("filename_prefix") or "render"
             elif "LoadImage" in ct:
                 im = n.get("inputs", {}).get("image")
