@@ -1447,6 +1447,12 @@ def add_studio_home_routes(routes: web.RouteTableDef, server) -> None:
             # `._foo.png` (AppleDouble fork) and other dotfiles pass the extension
             # check but are not renders.
             return web.json_response({"error": "hidden file"}, status=400)
+        # The name is rendered into gallery card HTML downstream, so <>"'& in it is
+        # a stored-XSS vector. Collapse to a safe charset at the boundary (keep the
+        # already-validated extension) — the pipeline's own names are safe already,
+        # so this only ever touches a hostile upload name.
+        _stem, _ext = os.path.splitext(name)
+        name = (re.sub(r"[^A-Za-z0-9._-]", "_", _stem)[:120] or "upload") + _ext.lower()
         if not data:
             return web.json_response({"error": "empty body"}, status=400)
         if len(data) > _MAX_UPLOAD:
@@ -1897,6 +1903,97 @@ def add_studio_home_routes(routes: web.RouteTableDef, server) -> None:
         if ("vote" in body) or ("notes" in body) or (stars is not None):
             _append_feedback(request, root, org, key, entry)
         return web.json_response({"ok": True, "key": key, "entry": entry})
+
+    @routes.post("/v1/library/critique")
+    async def critique(request: web.Request):
+        """A conversation ABOUT one generated image, for critiquing the AI's work on
+        it. Unlike the node-editor copilot (/v1/copilot/chat, graph-only), this loads
+        the actual image so the reply is grounded in what was rendered — and EVERY
+        user turn is recorded as a training lesson on this image's lineage (the same
+        notes→_mistakes→_lessons flywheel a 💬 note feeds), so critiquing here
+        conditions the next generation. Body: {path, message}. Reply: {reply, thread}."""
+        body = await request.json()
+        rel = (body.get("path") or "").strip()
+        msg = (body.get("message") or "").strip()
+        if not rel or not msg:
+            return web.json_response({"error": "path and message required"}, status=400)
+        org = _org_of(request)
+        root = _library_root(org)
+        p = _safe_asset(root, rel) if root else None
+        if p is None:
+            return web.json_response({"error": "unknown asset"}, status=404)
+        # The running thread lives on the image's rating row.
+        rf = root / "ratings.json"
+        try:
+            data = json.loads(rf.read_text())
+        except Exception:
+            data = {}
+        entry = data.get(rel, {})
+        thread = entry.get("thread") or []
+        thread.append({"role": "user", "content": msg[:2000], "ts": int(time.time())})
+
+        # Ask a vision model, grounded in the actual image + the critique so far.
+        from middleware.gpu_dispatch import CLOUD, _bearer
+        from middleware import quality_gate as qg
+        tok = _bearer(request)
+        b64 = qg._downscale(p)
+        reply = ""
+        if b64:
+            sys_prompt = ("You are the studio's critique copilot. The user is critiquing a "
+                          "generated image to improve FUTURE generations of this design. Look at "
+                          "the image, acknowledge the specific flaw they point out, and restate it "
+                          "as a precise, actionable correction the image model should apply next "
+                          "time (color, likeness, pose, lighting, anatomy, fabric, framing). Be "
+                          "concise — two sentences. Do not apologize; do not offer to regenerate.")
+            content = [{"type": "text", "text": sys_prompt}]
+            for t in thread[-8:]:
+                content.append({"type": "text", "text": f"{t['role'].upper()}: {t['content']}"})
+            content.append({"type": "image_url",
+                            "image_url": {"url": "data:image/jpeg;base64," + b64}})
+            payload = {"model": os.environ.get("STUDIO_GATE_MODEL", "").strip() or "zen-vl",
+                       "messages": [{"role": "user", "content": content}],
+                       "temperature": 0.2, "max_tokens": 400}
+            headers = {"Content-Type": "application/json"}
+            if tok:
+                headers["Authorization"] = tok
+            try:
+                async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=60)) as s:
+                    async with s.post(f"{CLOUD}/v1/chat/completions", json=payload, headers=headers) as r:
+                        if r.status == 200:
+                            reply = qg._reply_text(await r.json()).strip()
+            except Exception as e:
+                log.warning("critique: judge unreachable: %s", e)
+        if not reply:
+            reply = "Noted — I've recorded this so the next render avoids it."
+        thread.append({"role": "assistant", "content": reply, "ts": int(time.time())})
+
+        # The flywheel: the user's critique points become the note _mistakes reads,
+        # so the next fix/compose over this lineage is conditioned to avoid them.
+        crit = " ".join(t["content"] for t in thread if t["role"] == "user")[-2000:]
+        entry["thread"] = thread[-40:]
+        entry["notes"] = crit
+        entry["path"] = rel
+        entry["updatedAt"] = int(time.time())
+        data[rel] = entry
+        tmp = root / "ratings.json.tmp"
+        tmp.write_text(json.dumps(data, indent=1))
+        tmp.replace(rf)
+        _append_feedback(request, root, org, rel, entry)
+        return web.json_response({"ok": True, "reply": reply, "thread": thread})
+
+    @routes.get("/v1/library/critique")
+    async def critique_thread(request: web.Request):
+        """The saved critique thread for one image (to reopen the conversation)."""
+        org = _org_of(request)
+        root = _library_root(org)
+        rel = (request.query.get("path") or "").strip()
+        if root is None or not rel:
+            return web.json_response({"thread": []})
+        try:
+            data = json.loads((root / "ratings.json").read_text())
+        except Exception:
+            data = {}
+        return web.json_response({"thread": (data.get(rel, {}) or {}).get("thread") or []})
 
     @routes.get("/v1/feedback/stats")
     async def feedback_stats(request: web.Request):

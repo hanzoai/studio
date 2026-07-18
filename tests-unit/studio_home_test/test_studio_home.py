@@ -741,3 +741,53 @@ async def test_template_accepts_flow_payload_not_just_graph(tmp_path, monkeypatc
     # neither graph nor flow -> 400 (a template must capture something)
     assert (await client.post("/v1/templates", json={"name": "empty"}, headers={"X-Org": "acme"})).status == 400
     await client.close()
+
+
+@pytest.mark.asyncio
+async def test_critique_persists_thread_and_records_lesson(tmp_path, monkeypatch):
+    """A critique message: 200, replies (canned fallback when the vision call is
+    unavailable), persists a user+assistant thread on the image, and writes the
+    user's words as the note _mistakes reads — so critiquing trains the next render."""
+    from middleware import quality_gate as qg
+    monkeypatch.setattr(qg, "_downscale", lambda p: None)  # skip the network vision call
+    outd, _ = _orgaware(tmp_path, monkeypatch)
+    root = Path(sh.folder_paths.get_org_output_directory("acme"))
+    (root / "library.json").write_text('{"assets":[]}')
+    (root / "fixes").mkdir(parents=True, exist_ok=True)
+    from PIL import Image
+    Image.new("RGB", (8, 8)).save(root / "fixes" / "x_00001_.png", "PNG")
+    client = await _client(_FakeServer())
+    rel = "fixes/x_00001_.png"
+    r = await client.post("/v1/library/critique", json={"path": rel, "message": "skin is too orange"}, headers={"X-Org": "acme"})
+    assert r.status == 200
+    body = await r.json()
+    assert body["reply"] and len(body["thread"]) == 2
+    assert body["thread"][0]["role"] == "user" and body["thread"][1]["role"] == "assistant"
+    # the note the flywheel reads carries the critique; reopening returns the thread
+    ratings = await (await client.get("/v1/library/ratings", headers={"X-Org": "acme"})).json()
+    assert "skin is too orange" in ratings[rel]["notes"]
+    got = await (await client.get("/v1/library/critique?path=" + rel, headers={"X-Org": "acme"})).json()
+    assert len(got["thread"]) == 2
+    # guards: unknown asset 404, missing fields 400, tenant isolation
+    assert (await client.post("/v1/library/critique", json={"path": "nope.png", "message": "x"}, headers={"X-Org": "acme"})).status == 404
+    assert (await client.post("/v1/library/critique", json={"path": rel, "message": ""}, headers={"X-Org": "acme"})).status == 400
+    other = await (await client.get("/v1/library/critique?path=" + rel, headers={"X-Org": "globex"})).json()
+    assert other["thread"] == []
+    await client.close()
+
+
+@pytest.mark.asyncio
+async def test_upload_name_sanitized_against_html_injection(tmp_path, monkeypatch):
+    """A hostile upload filename (HTML/JS metacharacters) is collapsed to a safe
+    charset at ingest — the stored path can never carry a stored-XSS payload."""
+    _orgaware(tmp_path, monkeypatch)
+    root = Path(sh.folder_paths.get_org_output_directory("acme"))
+    (root / "library.json").write_text('{"assets":[]}')
+    client = await _client(_FakeServer())
+    png = b"\x89PNG\r\n\x1a\n" + b"\x00" * 64
+    r = await client.post('/v1/library/upload?name=<img src=x onerror=alert(1)>.png', data=png, headers={"X-Org": "acme"})
+    assert r.status == 200
+    path = (await r.json())["path"]
+    assert "<" not in path and ">" not in path and '"' not in path and "'" not in path
+    assert path.endswith(".png")
+    await client.close()
