@@ -14,6 +14,9 @@ storage or lifecycle:
     POST /v1/library/fix         {path, instruction}  chat-fix: Qwen edit pass on that output
     POST /v1/library/compose     {paths[], uploads[]?, instruction}  multi-reference render
                                  (library assets and/or images uploaded via /upload/image)
+    POST /v1/library/dedup       soft-delete exact-duplicate images (recoverable)
+    POST /v1/library/purge       {paths[] | all}  permanently remove ARCHIVED assets —
+                                 unlink file + drop record, irreversible, archive-only
 
 One source of truth per concern, all pre-existing:
   * assets + curation state  -> orgs/<org>/output/library.json (library_manifest.py)
@@ -188,6 +191,18 @@ def _safe_asset(root: Path, rel: str) -> Path | None:
         return None
     p = (root / rel).resolve()
     return p if p.is_file() and str(p).startswith(str(root.resolve())) else None
+
+
+def _drop_thumb(root: Path, rel: str) -> None:
+    """Remove an asset's cached grid thumbnail, if one exists. Mirrors the key scheme
+    get_asset_file writes (sanitized resolved path → root/.thumbs/<key>.jpg) so a
+    permanent delete leaves no orphaned thumbnail behind. Best-effort."""
+    try:
+        p = (root / rel).resolve()
+        key = re.sub(r"[^a-zA-Z0-9]", "_", str(p))[-120:]
+        (root / ".thumbs" / f"{key}.jpg").unlink(missing_ok=True)
+    except OSError:
+        pass
 
 
 _REF_EXT = (".png", ".jpg", ".jpeg", ".webp")
@@ -1372,6 +1387,46 @@ def add_studio_home_routes(routes: web.RouteTableDef, server) -> None:
             _save_library(root, lib)
         return web.json_response({"removed": len(moved), "deleted": moved},
                                  headers={"Cache-Control": "no-store"})
+
+    @routes.post("/v1/library/purge")
+    async def purge(request: web.Request):
+        """Permanently remove ARCHIVED assets — unlink the file AND drop the library
+        record. Irreversible: no ⌘Z can bring back an unlinked file, so the UI confirms
+        first. Archive-only by design — an asset must already be soft-deleted
+        (status='deleted'); a live asset is never hard-deleted directly, so a mis-click
+        in the gallery can only ever archive (recoverable), never destroy. Body is
+        {paths:[...]} to purge those, or {all:true} to empty the whole Archive."""
+        org = _org_of(request)
+        root = _library_root(org)
+        if root is None:
+            return web.json_response({"removed": []}, headers={"Cache-Control": "no-store"})
+        try:
+            body = await request.json()
+        except Exception:
+            body = {}
+        want_all = bool(body.get("all"))
+        ids = {p for p in (body.get("paths") or ([body["path"]] if body.get("path") else []))
+               if isinstance(p, str)}
+        if not want_all and not ids:
+            return web.json_response({"error": "paths or all required"}, status=400)
+        lib = _load_library(root)
+        kept, removed = [], []
+        for a in lib.get("assets", []):
+            if a.get("status") == "deleted" and (want_all or a.get("path") in ids):
+                p = _safe_asset(root, a.get("path", ""))
+                if p is not None:
+                    try:
+                        p.unlink()
+                    except OSError:
+                        pass
+                _drop_thumb(root, a.get("path", ""))
+                removed.append(a.get("path"))
+            else:
+                kept.append(a)
+        if removed:
+            lib["assets"] = kept
+            _save_library(root, lib)
+        return web.json_response({"removed": removed}, headers={"Cache-Control": "no-store"})
 
     @routes.post("/v1/library/tags")
     async def add_tags(request: web.Request):

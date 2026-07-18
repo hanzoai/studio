@@ -288,10 +288,10 @@ body.immersive #stage{display:block}
     <button data-tab="templates" onclick="tab('templates')">Templates</button>
     <button data-tab="pipelines" onclick="tab('pipelines')">Workflows</button>
     <button data-tab="runs" onclick="tab('runs')">Queue &amp; History</button>
-    <button data-tab="deleted" onclick="tab('deleted')" title="Deleted content — recoverable">🗑 Deleted</button>
+    <button data-tab="deleted" onclick="tab('deleted')" title="Archived content — recover it, or delete forever">🗄 Archive</button>
     <span class="sp"></span>
     <button class="btn" id="selbtn" onclick="toggleSel()" style="padding:6px 12px" title="Select images — or tap the circle on any image — then delete, stack, or move them together">Select</button>
-    <button class="btn" onclick="dedup()" style="padding:6px 12px" title="Move exact-duplicate images to Deleted (recoverable, ⌘Z to undo)">Dedupe</button>
+    <button class="btn" onclick="dedup()" style="padding:6px 12px" title="Move exact-duplicate images to Archive (recoverable, ⌘Z to undo)">Dedupe</button>
     <input class="search" id="q" placeholder="Search…" oninput="render()">
   </div>
   <section id="assets">
@@ -300,6 +300,10 @@ body.immersive #stage{display:block}
       <button class="mini" onclick="newStackPrompt()" title="Create an empty Stack">🗂 New Stack</button>
       <label class="row" style="gap:6px;color:var(--dim);font-size:.78rem;cursor:pointer" title="Auto-create a Stack for each multi-image generation">
         <input type="checkbox" id="autostack" onchange="setAutoStack(this.checked)"> Auto-stack batch generations</label>
+    </div>
+    <div class="row" id="archivebar" hidden style="margin:-6px 0 14px;gap:10px;align-items:center">
+      <span style="color:var(--dim);font-size:.78rem">Archived items are kept so you can always see what was made — recover any, or remove permanently.</span>
+      <button class="mini hot" onclick="emptyArchive()" style="margin-left:auto" title="Permanently delete every archived item — cannot be undone">🗑 Empty Archive</button>
     </div>
     <div class="grid" id="agrid" aria-label="Gallery: Stacks and images"></div>
   </section>
@@ -336,7 +340,8 @@ body.immersive #stage{display:block}
     <button class="mini" id="bulktags" onclick="tagSel()">Add tags</button>
     <button class="mini" id="bulkapprove" onclick="bulk('approved')">Approve</button>
     <button class="mini" id="bulkpublish" onclick="bulk('published')">Publish</button>
-    <button class="mini" id="bulkdelete" onclick="bulk('deleted')">🗑 Delete selected</button>
+    <button class="mini" id="bulkdelete" onclick="bulk('deleted')">🗄 Archive selected</button>
+    <button class="mini hot" id="bulkpurge" onclick="purgeSel()" style="display:none" title="Permanently delete the selected items — cannot be undone">🗑 Delete forever</button>
     <button class="mini" onclick="clearSel()">Cancel</button>
   </div>
   <section id="templates" hidden>
@@ -422,7 +427,7 @@ body.immersive #stage{display:block}
     <label><input type="radio" name="delmode" value="only" checked>
       <span><span class="dt">Delete Stack Only</span><span class="dd">The images return to your main gallery. Nothing is deleted.</span></span></label>
     <label><input type="radio" name="delmode" value="images">
-      <span><span class="dt">Delete Stack and Images</span><span class="dd">The Stack and its images move to Deleted (recoverable).</span></span></label>
+      <span><span class="dt">Delete Stack and Images</span><span class="dd">The Stack and its images move to Archive (recoverable).</span></span></label>
   </div>
   <div class="row" style="justify-content:flex-end;gap:6px"><button class="mini" onclick="delstackdlg.close()">Cancel</button><button class="mini hot" onclick="confirmDeleteStack()">Delete</button></div>
 </dialog>
@@ -467,7 +472,7 @@ function tab(name){document.querySelectorAll('.tabs button').forEach(b=>b.classL
   // Leaving for another tab closes an open Stack detail (it lives over Assets).
   if(CURSTACK){CURSTACK=null;if(SELMODE){SELMODE=false;SEL.clear();updateBulk();}}
   $('stackview').hidden=true;
-  const sec=name==='deleted'?'assets':name;   // Deleted reuses the assets grid, filtered to trash
+  const sec=name==='deleted'?'assets':name;   // Archive reuses the assets grid, filtered to archived (status==='deleted')
   for(const s of ['assets','templates','pipelines','runs'])$(s).hidden=s!==sec;
   if(name==='deleted'){FILTER='deleted';}
   else if(name==='assets'&&(FILTER==='deleted'||FILTER==='flagged')){FILTER='all';}
@@ -517,7 +522,7 @@ function paintChips(){
   const chips=['all','marketing',...groups];
   $('filters').innerHTML=chips.map(g=>`<span class="chip ${g===FILTER?'on':''}" onclick="FILTER='${g}';paintChips();render()">${g}</span>`).join('')
     +`<span class="chip ${FILTER==='flagged'?'on':''}" onclick="FILTER='flagged';paintChips();render()" style="margin-left:auto" title="Renders the quality gate flagged — review and restore">⚑ Flagged${flagN?' ('+flagN+')':''}</span>`;
-  const dt=document.querySelector('[data-tab="deleted"]'); if(dt)dt.textContent='🗑 Deleted'+(delN?' ('+delN+')':'');
+  const dt=document.querySelector('[data-tab="deleted"]'); if(dt)dt.textContent='🗄 Archive'+(delN?' ('+delN+')':'');
 }
 let SELMODE=false; const SEL=new Set();
 // Selection is shared by the gallery and an open Stack — only one view is active
@@ -531,7 +536,8 @@ function clearSel(){SEL.clear();SELMODE=false;selUI();updateBulk();drawSel();}
 function updateBulk(){const on=SELMODE&&SEL.size>0, del=FILTER==='deleted'&&!CURSTACK;
   $('bulkbar').classList.toggle('on',on&&!CURSTACK);$('bulkn').textContent=SEL.size+' selected';
   $('svbulk').hidden=!(on&&CURSTACK);$('svbulkn')&&($('svbulkn').textContent=SEL.size+' selected');
-  $('bulkrecover').style.display=del?'':'none';                                  // trash: bulk-recover only
+  $('bulkrecover').style.display=del?'':'none';                                  // archive: recover + delete-forever only
+  $('bulkpurge').style.display=del?'':'none';
   ['bulkstack','bulkmove','bulkcompose','bulkdownload','bulktags','bulkapprove','bulkpublish','bulkdelete'].forEach(id=>{const el=$(id);if(el)el.style.display=del?'none':'';});
 }
 function pick(ev,path){ev.stopPropagation();if(SEL.has(path))SEL.delete(path);else SEL.add(path);if(!SEL.size){clearSel();return;}updateBulk();drawSel();}
@@ -541,7 +547,9 @@ function render(){
   const q=($('q').value||'').toLowerCase();
   const showDel=FILTER==='deleted';
   const showFlag=FILTER==='flagged';
-  const review=showDel||showFlag;                       // a status-review view (trash / quality gate)
+  const review=showDel||showFlag;                       // a status-review view (archive / quality gate)
+  $('archivebar').hidden=!showDel;                       // Empty-Archive bar shows only in the Archive
+  $('stackbar').hidden=review;                           // New-Stack / auto-stack are gallery tools, not review views
   // Stacks (Procreate folders) lead the gallery in the "all" view; a member asset
   // lives INSIDE its Stack, so it's hidden from the loose grid (never in a review view).
   let scards='';
@@ -572,23 +580,23 @@ function render(){
       <div class="droplbl">Create Stack</div>
       <div class="pick" role="checkbox" aria-checked="${picked}" aria-label="Select image" onclick="pickToggle(event,'${pe}')">${picked?'✓':''}</div>
       ${img&&!SELMODE?`<button class="addref ${inTray?'on':''}" title="Add to next generation" onclick="event.stopPropagation();addRef('${pe}')">${inTray?'✓':'+'}</button>`:''}
-      ${img&&!SELMODE&&!review?`<button class="delx" title="Move to Deleted (recoverable)" onclick="event.stopPropagation();quickDel('${pe}')">🗑</button>`:''}
+      ${img&&!SELMODE&&!review?`<button class="delx" title="Move to Archive (recoverable)" onclick="event.stopPropagation();quickDel('${pe}')">🗑</button>`:''}
       ${img?`<div class="im" style="background-image:url('${thumbURL(a)}')" ${SELMODE?'':`onclick="zoom('${imgURL(a)}')"`}></div>`
            :`<div class="doc">${(a.path||'').split('/').pop()}</div>`}
       <div class="meta">
         <span class="t">${(a.path||'').split('/').pop()}</span>
         <span class="sub">${a.design||a.kind||''}${prov}</span>
-        <div class="row"><span class="st ${a.status}">${a.status}</span></div>
+        <div class="row"><span class="st ${a.status}">${a.status==='deleted'?'archived':a.status}</span></div>
         ${SELMODE?'':`<div class="row tools">
-          ${review?`<button class="mini" onclick="setSt(${i},'draft')">${showDel?'Recover':'Restore'}</button>`:`
+          ${review?`<button class="mini" onclick="setSt(${i},'draft')">${showDel?'Recover':'Restore'}</button>${showDel?`<button class="mini hot" onclick="purgeOne('${pe}')" title="Permanently delete — cannot be undone">🗑 Delete forever</button>`:''}`:`
           ${a.status!=='approved'?`<button class="mini" onclick="setSt(${i},'approved')">Approve</button>`:''}
           ${a.status!=='published'?`<button class="mini" onclick="setSt(${i},'published')">Publish</button>`:''}
           <button class="mini" onclick="addToStackPrompt('${pe}',event)" title="Add this image to a Stack">🗂 Stack</button>
           ${img?`<button class="mini" onclick="rerun(${i})">Re-run</button><button class="mini" onclick="openLineage('${pe}')" title="Show this image's versions (what it came from + later fixes)">Versions</button><button class="mini hot" onclick="openFix(${i})">Fix</button>`:''}
-          <button class="mini" onclick="setSt(${i},'deleted')" title="Move to Deleted (recoverable)">🗑</button>`}
+          <button class="mini" onclick="setSt(${i},'deleted')" title="Move to Archive (recoverable)">🗑</button>`}
         </div>`}
       </div></div>`;}).join('');
-  $('agrid').innerHTML=(scards+cards)||`<div class="empty">${showDel?'Deleted is empty.':showFlag?'Nothing flagged — the quality gate has passed every render.':'No assets in this view yet.'}</div>`;
+  $('agrid').innerHTML=(scards+cards)||`<div class="empty">${showDel?'Archive is empty.':showFlag?'Nothing flagged — the quality gate has passed every render.':'No assets in this view yet.'}</div>`;
 }
 async function bulk(status){
   if(!SEL.size)return;
@@ -596,7 +604,7 @@ async function bulk(status){
   pushUndo(paths.map(p=>({path:p,prev:(DATA.assets.find(x=>x.path===p)||{}).status})));
   for(const p of paths){await fetch('/v1/library/status',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({path:p,status})});
     const a=DATA.assets.find(x=>x.path===p);if(a)a.status=status;}
-  toast(paths.length+(status==='deleted'?' deleted — ⌘Z to undo':status==='draft'?' recovered':' → '+status)); clearSel(); paintChips();
+  toast(paths.length+(status==='deleted'?' archived — ⌘Z to undo':status==='draft'?' recovered':' → '+status)); clearSel(); paintChips();
 }
 // ── Undo: soft-deletes (and any status change) are reversible. Each change stacks
 // the prior state; ⌘Z / Ctrl+Z pops it and writes the status back — no dialogs. ──
@@ -913,7 +921,7 @@ async function setSt(i,status){const a=DATA.assets[i];const prev=a.status;const 
 // then persist. On failure, revert. This is the always-visible 🗑 on each card.
 async function quickDel(path){
   const a=DATA.assets.find(x=>x.path===path); if(!a)return;
-  const prev=a.status; pushUndo([{path,prev}]); a.status='deleted'; render(); paintChips(); toast('Moved to Deleted — ⌘Z to undo');
+  const prev=a.status; pushUndo([{path,prev}]); a.status='deleted'; render(); paintChips(); toast('Moved to Archive — ⌘Z to undo');
   try{const r=await fetch('/v1/library/status',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({path,status:'deleted'})});
     if(!r.ok)throw 0;}catch(_){a.status=prev;UNDO.pop();render();paintChips();toast('Delete failed — restored');}
 }
@@ -928,7 +936,43 @@ async function dedup(){
   pushUndo(moved.map(m=>({path:m.path,prev:m.prev})));
   moved.forEach(m=>{const a=DATA.assets.find(x=>x.path===m.path); if(a)a.status='deleted';});
   render(); paintChips();
-  toast('Removed '+moved.length+' duplicate'+(moved.length>1?'s':'')+' → Trash · ⌘Z to undo');
+  toast('Removed '+moved.length+' duplicate'+(moved.length>1?'s':'')+' → Archive · ⌘Z to undo');
+}
+// ── Permanent removal (Archive only): unlink the file AND drop the record. NOT
+// ⌘Z-undoable — the file is gone — so every path confirms first via ask(). The
+// server enforces archive-only, so this can never destroy a live gallery image. ──
+async function purgePaths(paths){
+  if(!paths.length)return;
+  let r; try{ r=await fetch('/v1/library/purge',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({paths})}); }
+  catch(_){ toast('Delete failed'); return; }
+  if(!r.ok){ toast('Delete failed'); return; }
+  const j=await r.json().catch(()=>({removed:paths}));
+  const gone=new Set(j.removed||paths);
+  DATA.assets=DATA.assets.filter(a=>!gone.has(a.path));
+  clearSel(); render(); paintChips();
+  toast('Permanently deleted '+gone.size+' '+(gone.size===1?'item':'items'));
+}
+async function purgeOne(path){
+  if(!await ask('Permanently delete this item? This cannot be undone.'))return;
+  purgePaths([path]);
+}
+async function purgeSel(){
+  if(!SEL.size)return;
+  if(!await ask('Permanently delete '+SEL.size+' item'+(SEL.size>1?'s':'')+'? This cannot be undone.'))return;
+  purgePaths([...SEL]);
+}
+async function emptyArchive(){
+  const n=DATA.assets.filter(a=>a.status==='deleted').length;
+  if(!n){ toast('Archive is empty'); return; }
+  if(!await ask('Permanently delete all '+n+' archived item'+(n>1?'s':'')+'? This cannot be undone.'))return;
+  let r; try{ r=await fetch('/v1/library/purge',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({all:true})}); }
+  catch(_){ toast('Empty Archive failed'); return; }
+  if(!r.ok){ toast('Empty Archive failed'); return; }
+  const j=await r.json().catch(()=>({removed:[]}));
+  const gone=new Set(j.removed||[]);
+  DATA.assets=DATA.assets.filter(a=>!gone.has(a.path));
+  clearSel(); render(); paintChips();
+  toast('Archive emptied — '+gone.size+' item'+(gone.size===1?'':'s')+' permanently deleted');
 }
 // ── Fix surface: base image + up to 4 references (history picks + drag/drop
 // uploads). No references → the single-image edit (/v1/library/fix); any
@@ -1220,7 +1264,7 @@ function svCard(path,idx){
     <div class="droplbl">Reorder</div><div class="pick" role="checkbox" aria-checked="${picked}" aria-label="Select image" onclick="pickToggle(event,'${pe}')">${picked?'✓':''}</div>${iscover?'<span class="covertag">Cover</span>':''}
     ${img?`<div class="im" style="background-image:url('${thumb}')" ${SELMODE?'':`onclick="svOpen(${idx})"`}></div>`:`<div class="doc">${esc(path.split('/').pop())}</div>`}
     <div class="meta"><span class="t">${esc(path.split('/').pop())}</span>
-      ${a?`<div class="row"><span class="st ${a.status}">${a.status}</span></div>`:'<span class="sub">unavailable — asset deleted</span>'}
+      ${a?`<div class="row"><span class="st ${a.status}">${a.status==='deleted'?'archived':a.status}</span></div>`:'<span class="sub">unavailable — asset deleted</span>'}
       ${SELMODE?'':`<div class="row tools">
         <button class="mini" onclick="setCover('${pe}')">Set cover</button>
         <button class="mini" onclick="svRemove(['${pe}'])" title="Return to gallery">Remove</button>
@@ -1249,14 +1293,14 @@ async function svRemove(paths){const r=await fetch('/v1/stacks/'+encodeURICompon
 function svRemoveSel(){if(!SEL.size)return;const ids=[...SEL];SEL.clear();SELMODE=false;updateBulk();svRemove(ids);}
 function svFix(path){if(!assetByPath(path)){toast('Image unavailable');return;}openFixPath(path,'');}
 async function rerunInStack(path){toast('Queueing into this Stack…');const r=await fetch('/v1/library/rerun',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({path,stack:CURSTACK.id})});toast(r.ok?'Queued → lands in this Stack':'Failed');}
-async function svDeleteImg(path){if(!await ask('Delete this image? (recoverable in Deleted)'))return;
+async function svDeleteImg(path){if(!await ask('Delete this image? (recoverable in Archive)'))return;
   await fetch('/v1/library/status',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({path,status:'deleted'})});
   await fetch('/v1/stacks/'+encodeURIComponent(CURSTACK.id)+'/assets',{method:'DELETE',headers:{'Content-Type':'application/json'},body:JSON.stringify({assetIds:[path]})});
-  CURSTACK=await fetchStack(CURSTACK.id);await load();svRender();toast('Deleted');}
+  CURSTACK=await fetchStack(CURSTACK.id);await load();svRender();toast('Archived');}
 async function svDeleteSel(){if(!SEL.size)return;if(!await ask('Delete '+SEL.size+' image(s)? (recoverable)'))return;const ids=[...SEL];SEL.clear();SELMODE=false;updateBulk();
   (async()=>{for(const p of ids)await fetch('/v1/library/status',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({path:p,status:'deleted'})});
     await fetch('/v1/stacks/'+encodeURIComponent(CURSTACK.id)+'/assets',{method:'DELETE',headers:{'Content-Type':'application/json'},body:JSON.stringify({assetIds:ids})});
-    CURSTACK=await fetchStack(CURSTACK.id);await load();svRender();toast('Deleted');})();}
+    CURSTACK=await fetchStack(CURSTACK.id);await load();svRender();toast('Archived');})();}
 function svDownload(){if(!SEL.size)return;for(const p of [...SEL])dl(imgURL({path:p}),p.split('/').pop());toast('Downloading '+SEL.size);}
 function svMoveTo(){if(!SEL.size)return;moveSelTo({clientX:innerWidth/2,clientY:130,stopPropagation(){}});}
 function moveOneTo(path,ev){const items=activeStacks().filter(s=>s.id!==CURSTACK.id).map(s=>({label:'🗂 '+s.name,on:()=>addAssetsToStack(s.id,[path])}));items.push({sep:true});items.push({label:'＋ New Stack…',on:async()=>{const n=await ask('Name this Stack','Untitled Stack');if(n===null)return;await createStack(n||'Untitled Stack',[path]);}});floatMenu(items,ev);}
@@ -1296,7 +1340,7 @@ function setAutoStack(on){fetch('/v1/stacks/settings',{method:'PATCH',headers:{'
 function deleteStackPrompt(id){DELSTACK=id;const r=document.querySelector('input[name=delmode][value=only]');if(r)r.checked=true;$('delstackdlg').showModal();}
 async function confirmDeleteStack(){const id=DELSTACK;if(!id)return;const mode=(document.querySelector('input[name=delmode]:checked')||{}).value||'only';
   const r=await fetch('/v1/stacks/'+encodeURIComponent(id)+'?mode='+mode,{method:'DELETE'});$('delstackdlg').close();DELSTACK=null;
-  if(r.ok){if(CURSTACK&&CURSTACK.id===id)closeStack();await load();toast(mode==='images'?'Stack deleted; images moved to Deleted':'Stack deleted; images returned to gallery');}
+  if(r.ok){if(CURSTACK&&CURSTACK.id===id)closeStack();await load();toast(mode==='images'?'Stack deleted; images moved to Archive':'Stack deleted; images returned to gallery');}
   else toast('Couldn’t delete');}
 // ── Stack overflow menu ───────────────────────────────────────────────────────
 function stackMenu(id,ev,isDetail){ev&&ev.stopPropagation();
