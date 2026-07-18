@@ -16,6 +16,11 @@ import folder_paths
 
 CLOUD = os.environ.get("STUDIO_CLOUD_API_URL", "https://api.hanzo.ai").rstrip("/")
 JOBS_NS = os.environ.get("STUDIO_GPU_JOBS_NS", "gpu-jobs")
+
+# The ComfyUI output-node class types — the ONE Python list, defined in this base
+# module (no studio_home dependency) so studio_home can import it without a cycle.
+# The client mirror lives in studio_home.html (a separate JS runtime).
+SAVE_NODES = ("SaveImage", "SaveVideo", "SaveWEBM")
 # Public base of THIS studio deployment — where the BYO-GPU worker returns finished
 # outputs (POST /upload/output → orgs/{org}/output → gallery). The worker uploads
 # here with the user's IAM token; no S3/rclone credentials ever touch the box.
@@ -281,7 +286,7 @@ def _track_dispatched(org_id: str, prompt_id: str, prompt: dict, node: str = "gp
             if not isinstance(n, dict):
                 continue
             ct = n.get("class_type", "")
-            if ct in ("SaveImage", "SaveVideo", "SaveWEBM"):
+            if ct in SAVE_NODES:
                 full_prefix = n.get("inputs", {}).get("filename_prefix") or "render"
             elif "LoadImage" in ct:
                 im = n.get("inputs", {}).get("image")

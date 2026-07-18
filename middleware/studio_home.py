@@ -83,7 +83,10 @@ _WAN_NEG = "色调艳丽，过曝，静态，细节模糊不清，字幕，风�
 
 _VIDEO_EXT = (".mp4", ".webm")
 _SAVE_EXT = (".png",) + _VIDEO_EXT       # the extensions the containers' savers write
-_SAVERS = ("SaveImage", "SaveVideo", "SaveWEBM")   # the output-node class types — ONE list
+try:
+    from middleware.gpu_dispatch import SAVE_NODES as _SAVERS   # the ONE output-node list
+except ImportError:  # alternate package anchor (same fallback the lazy gpu_dispatch imports use)
+    from .middleware.gpu_dispatch import SAVE_NODES as _SAVERS
 
 
 def _home_default() -> bool:

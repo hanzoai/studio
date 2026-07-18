@@ -283,7 +283,7 @@ body.immersive #stage{display:block}
       <span class="pico" title="Attach a photo" onclick="attachPick()">+</span>
       <input id="attachfile" type="file" accept="image/*" multiple hidden>
       <span class="pchip" onclick="pickPreset()"><span class="k">Design system</span><span class="v" id="ds">None</span></span>
-      <span class="pchip" onclick="tab('templates')"><span class="k">Template</span><span class="v" id="tmpl">None</span></span>
+      <span class="pchip" onclick="laneChip()" title="Pick a template lane — or click to return to edit / compose"><span class="k">Template</span><span class="v" id="tmpl">None</span></span>
       <span class="pico" title="Code">&lt;/&gt;</span>
       <span class="pchip" style="margin-left:auto"><span class="k">Model</span><span class="v">Opus 4.8</span></span>
       <button class="psend" onclick="create()" title="Create">↑</button>
@@ -533,6 +533,12 @@ const DID=localStorage.hz_did||(localStorage.hz_did=(crypto.randomUUID?crypto.ra
 function track(ev,props){try{navigator.sendBeacon('https://insights.hanzo.ai/v1/e',JSON.stringify({api_key:'hi_nq2pI13AO3Yj5mN15uWAtK1ZvubclMpq08Ca9kn3eUO',event:ev,properties:{distinct_id:DID,product:'studio',org:(window.DATA&&DATA.org)||'',...(props||{})}}))}catch(_){}}
 let KIND='';   // the picked template lane ('' = default fix/compose composer; 'video' = Wan)
 function pickTemplate(k,t){KIND=k;$('tmpl').textContent=t; tab('assets'); $('pin').focus(); toast('Template: '+t); track('template_use',{template:t});}
+// Return the composer to the neutral fix/compose lane. Called after a video
+// dispatch (so the NEXT single-photo generate is an edit, not another video —
+// the KIND='video' flag routes create(), and a stuck flag silently sends a
+// billable image-to-video) and by clicking the Template chip while a lane is set.
+function clearLane(){KIND='';$('tmpl').textContent='None';}
+function laneChip(){ if(KIND){clearLane();toast('Back to edit / compose');} else tab('templates'); }
 function pickPreset(){toast('Design systems / presets — coming in the preset library');}
 // The ONE create path: the top composer's ↑ generates from its prompt + the photos
 // attached to it (via + / drag / paste / a gallery card's +). 1 photo → edit (fix),
@@ -552,7 +558,7 @@ async function create(){
       const body={prompt:t}; if(libs.length)body.path=libs[0]; else if(ups.length)body.upload=ups[0];
       const r=await fetch('/v1/library/video',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
       const j=await r.json().catch(()=>({}));
-      if(r.ok){ toast('Video queued → see Queue & History'); track('video',{from:'composer'}); $('pin').value=''; clearTray(); }
+      if(r.ok){ toast('Video queued → see Queue & History'); track('video',{from:'composer'}); $('pin').value=''; clearTray(); clearLane(); }
       else if(!(await healStale(j))) toast('Failed: '+(errMsg(j)||('error '+r.status)));
     });
     return;
