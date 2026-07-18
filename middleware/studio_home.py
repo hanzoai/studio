@@ -494,6 +494,45 @@ def _landed_output(root: Path | None, prefix: str) -> str | None:
     return None
 
 
+def _fix_source_ref(out_dir: Path, subfolder: str, name: str) -> str | None:
+    """The source ref staged for the fix output <subfolder>/<name>, read from the
+    render-jobs record (outPrefix → refs[0]) gpu_dispatch writes on dispatch. None
+    if the output is not a tracked fix or the record is gone."""
+    try:
+        jobs = json.loads((out_dir / "render_jobs.json").read_text())
+    except Exception:
+        return None
+    rel = f"{subfolder}/{name}" if subfolder else name
+    for j in jobs:
+        op, refs = j.get("outPrefix") or "", j.get("refs") or []
+        if op and refs and rel.startswith(op):
+            return refs[0]
+    return None
+
+
+def colormatch_fix_ingest(request, subfolder: str, name: str) -> None:
+    """When a BYO-GPU worker uploads a finished FIX render, restore its global colour
+    to the source — undoing the white-balance/exposure/saturation drift a full-frame
+    Qwen edit (denoise 1.0) introduces, and its fix-of-a-fix compounding. Scoped to
+    ``fixes/…`` outputs only (never compose/normal renders) whose staged source ref
+    is still present; a render that did not drift is matched to itself = untouched.
+    Fail-safe: never raises, and leaves the file exactly as uploaded on any doubt."""
+    try:
+        sub, nm = subfolder or "", name or ""
+        if "fixes" not in sub and "fixes/" not in nm:
+            return
+        org = _org_of(request)
+        out_dir = Path(folder_paths.get_org_output_directory(org))
+        src_ref = _fix_source_ref(out_dir, sub, nm)
+        if not src_ref:
+            return
+        src_path = Path(folder_paths.get_org_input_directory(org)) / src_ref
+        from middleware import color_fidelity
+        color_fidelity.match_in_place(str(out_dir / sub / nm), str(src_path))
+    except Exception:
+        pass
+
+
 async def _dispatch(request, server, org: str, graph: dict, *, kind: str, prompt: str,
                     refs: list, uploads: list, parents: list, output_prefix: str) -> str:
     """The ONE place a render is queued AND recorded. On success writes a `queued`

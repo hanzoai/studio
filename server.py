@@ -577,7 +577,19 @@ class PromptServer():
             # Force type=output regardless of what the client sent.
             forced = dict(post)
             forced["type"] = "output"
-            return image_upload(forced, request=request)
+            resp = image_upload(forced, request=request)
+            # Fix outputs: restore the render's global colour to its source, undoing
+            # the full-regen (denoise 1.0) white-balance/exposure drift and its
+            # fix-of-a-fix compounding. Pod-side + fail-safe, so it can never affect a
+            # render's success; a render that didn't drift matches to itself untouched.
+            try:
+                saved = json.loads(resp.body) if getattr(resp, "body", None) else {}
+                if saved.get("name"):
+                    from middleware.studio_home import colormatch_fix_ingest
+                    colormatch_fix_ingest(request, saved.get("subfolder", ""), saved["name"])
+            except Exception:
+                pass
+            return resp
 
         @routes.post("/upload/mask")
         async def upload_mask(request):
