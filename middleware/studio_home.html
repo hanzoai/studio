@@ -386,7 +386,7 @@ body.immersive #stage{display:block}
   <div id="fixerr" class="dlgerr"></div>
   <div class="row" style="justify-content:space-between">
     <button class="mini" id="fixhistbtn" onclick="toggleFixHistory()">+ From history</button>
-    <div class="row"><button class="mini" onclick="fixdlg.close()">Cancel</button><button class="mini hot" onclick="sendFix()">Queue fix</button></div>
+    <div class="row"><button class="mini" onclick="fixdlg.close()">Cancel</button><button class="mini hot" id="fixgo" onclick="enqueue(this,'Queueing…',sendFix)">Queue fix</button></div>
   </div>
   <div id="fixhist" style="display:none;max-height:210px;overflow:auto;margin-top:10px;border-top:1px solid var(--line);padding-top:10px"></div>
 </dialog>
@@ -418,7 +418,7 @@ body.immersive #stage{display:block}
   <textarea id="comptext" placeholder="e.g. combine these — garment from #1 on the model + pose from #2, studio white background"></textarea>
   <div id="gpuwarn2" style="display:none;color:var(--warn);font-size:.78rem;margin:-4px 0 8px"></div>
   <div class="destrow"><span class="dl">Save outputs to</span><select class="destsel" id="compdest"></select></div>
-  <div class="row" style="justify-content:flex-end"><button class="mini" onclick="compdlg.close()">Cancel</button><button class="mini hot" onclick="sendCompose()">Generate</button></div>
+  <div class="row" style="justify-content:flex-end"><button class="mini" onclick="compdlg.close()">Cancel</button><button class="mini hot" id="compgo" onclick="enqueue(this,'Queueing…',sendCompose)">Generate</button></div>
 </dialog>
 <dialog id="delstackdlg" aria-label="Delete Stack">
   <h3 style="font-size:1rem">Delete Stack</h3>
@@ -592,7 +592,7 @@ function render(){
           ${a.status!=='approved'?`<button class="mini" onclick="setSt(${i},'approved')">Approve</button>`:''}
           ${a.status!=='published'?`<button class="mini" onclick="setSt(${i},'published')">Publish</button>`:''}
           <button class="mini" onclick="addToStackPrompt('${pe}',event)" title="Add this image to a Stack">🗂 Stack</button>
-          ${img?`<button class="mini" onclick="rerun(${i})">Re-run</button><button class="mini" onclick="openLineage('${pe}')" title="Show this image's versions (what it came from + later fixes)">Versions</button><button class="mini hot" onclick="openFix(${i})">Fix</button>`:''}
+          ${img?`<button class="mini" onclick="rerun(${i},this)">Re-run</button><button class="mini" onclick="openLineage('${pe}')" title="Show this image's versions (what it came from + later fixes)">Versions</button><button class="mini hot" onclick="openFix(${i})">Fix</button>`:''}
           <button class="mini" onclick="setSt(${i},'deleted')" title="Move to Archive (recoverable)">🗑</button>`}
         </div>`}
       </div></div>`;}).join('');
@@ -623,10 +623,6 @@ document.addEventListener('keydown',ev=>{
     ev.preventDefault(); undoLast();
   }
 });
-async function bulkFork(){ if(!SEL.size)return; toast('Fork/redo '+SEL.size+' — re-running each with a fresh seed');
-  for(const p of [...SEL]){const rr=await fetch('/v1/library/rerun',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({path:p})});
-    if(!rr.ok&&await healStale(await rr.json().catch(()=>({}))))return;}
-  clearSel(); }
 // ── Shared image-upload lane (ONE implementation) ────────────────────────────
 // Every "add a photo" surface (composer "+", Fix dialog, drag/drop, paste) funnels
 // through here → POST /upload/image, which lands the file in the caller's org input
@@ -717,6 +713,16 @@ async function openCompose(){
   $('gpuwarn2').style.display=(await gpuOnline())?'none':'block';
   $('gpuwarn2').textContent='⚠ No GPU worker online — this queues but renders only when a BYO-GPU (e.g. spark) is connected.';
   $('compdlg').showModal();
+}
+// One queue submit at a time: the pressed button disables + relabels the instant
+// it is clicked, so a second click can never enqueue the same action twice.
+let QBUSY=false;
+async function enqueue(btn,pending,fn){
+  if(QBUSY)return; QBUSY=true;
+  const t=btn&&btn.textContent;
+  if(btn){btn.disabled=true;btn.textContent=pending;}
+  try{ await fn(); }
+  finally{ QBUSY=false; if(btn){btn.disabled=false;btn.textContent=t;} }
 }
 async function sendCompose(){
   const t=$('comptext').value.trim(); if(t.length<3){toast('Describe how to combine them');return;}
@@ -925,7 +931,7 @@ async function quickDel(path){
   try{const r=await fetch('/v1/library/status',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({path,status:'deleted'})});
     if(!r.ok)throw 0;}catch(_){a.status=prev;UNDO.pop();render();paintChips();toast('Delete failed — restored');}
 }
-async function rerun(i){const a=DATA.assets[i];toast('Queueing re-run…');const r=await fetch('/v1/library/rerun',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({path:a.path})});const j=await r.json();toast(r.ok?`Re-run queued — see Runs`:'Failed');}
+async function rerun(i,btn){const a=DATA.assets[i];await enqueue(btn,'Queueing…',async()=>{toast('Queueing re-run…');const r=await fetch('/v1/library/rerun',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({path:a.path})});await r.json().catch(()=>({}));toast(r.ok?`Re-run queued — see Runs`:'Failed');});}
 // Dedupe: server hashes visible assets, soft-deletes exact byte-identical copies
 // (keeps one), returns the moved paths so ⌘Z undoes the whole sweep at once.
 async function dedup(){
@@ -1292,7 +1298,7 @@ async function setCover(path){const r=await fetch('/v1/stacks/'+encodeURICompone
 async function svRemove(paths){const r=await fetch('/v1/stacks/'+encodeURIComponent(CURSTACK.id)+'/assets',{method:'DELETE',headers:{'Content-Type':'application/json'},body:JSON.stringify({assetIds:paths})});if(r.ok){CURSTACK=await r.json();svRender();await loadStacks();toast('Removed — back in gallery');announce('Removed from Stack');}else toast('Couldn’t remove');}
 function svRemoveSel(){if(!SEL.size)return;const ids=[...SEL];SEL.clear();SELMODE=false;updateBulk();svRemove(ids);}
 function svFix(path){if(!assetByPath(path)){toast('Image unavailable');return;}openFixPath(path,'');}
-async function rerunInStack(path){toast('Queueing into this Stack…');const r=await fetch('/v1/library/rerun',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({path,stack:CURSTACK.id})});toast(r.ok?'Queued → lands in this Stack':'Failed');}
+async function rerunInStack(path){await enqueue(null,'',async()=>{toast('Queueing into this Stack…');const r=await fetch('/v1/library/rerun',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({path,stack:CURSTACK.id})});toast(r.ok?'Queued → lands in this Stack':'Failed');});}
 async function svDeleteImg(path){if(!await ask('Delete this image? (recoverable in Archive)'))return;
   await fetch('/v1/library/status',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({path,status:'deleted'})});
   await fetch('/v1/stacks/'+encodeURIComponent(CURSTACK.id)+'/assets',{method:'DELETE',headers:{'Content-Type':'application/json'},body:JSON.stringify({assetIds:[path]})});
