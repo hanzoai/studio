@@ -140,8 +140,11 @@ dialog .drop{border:1.5px dashed var(--line);border-radius:9px;padding:14px;text
 .card .addref:hover{background:var(--brand);color:#111} .card .addref.on{background:var(--brand);color:#111}
 .card .delx{position:absolute;top:8px;left:9px;width:26px;height:26px;border-radius:50%;border:none;background:rgba(0,0,0,.6);color:#fff;font-size:.85rem;cursor:pointer;z-index:4;line-height:1;opacity:.8}
 .card .delx:hover{background:#c0392b;color:#fff;opacity:1}
-#reftray{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#1a1a24;border:1px solid #34344a;border-radius:12px;padding:10px 14px;display:none;gap:11px;align-items:center;z-index:44;box-shadow:0 10px 32px #000a}
-#reftray.on{display:flex} #reftray .rt{width:38px;height:56px;object-fit:cover;border-radius:5px;border:1px solid var(--line)}
+.pinrefs{display:none;flex-wrap:wrap;gap:8px;margin-top:12px}
+.pinrefs.on{display:flex}
+.pinrefs .pinref{position:relative;display:inline-block}
+.pinrefs .pinref img{width:44px;height:64px;object-fit:cover;border-radius:7px;border:1px solid var(--line)}
+.pinrefs .pinref button{position:absolute;top:-6px;right:-6px;width:17px;height:17px;border-radius:50%;border:none;background:#c0392b;color:#fff;font-size:.64rem;line-height:1;cursor:pointer}
 /* ── Immersive full-viewport stage (editorial hero) ────────────────────────── */
 #stage{position:relative;width:100vw;height:100vh;overflow:hidden;background:#000;display:none;user-select:none}
 body.immersive #stage{display:block}
@@ -182,7 +185,7 @@ body.immersive #stage{display:block}
   .tabs button{padding:8px 10px;font-size:.84rem}
   .search{width:120px} .tabs .sp{display:none}
   #livebar{flex-wrap:wrap;font-size:.78rem}
-  #bulkbar,#reftray{left:8px;right:8px;transform:none;flex-wrap:wrap;justify-content:center}
+  #bulkbar{left:8px;right:8px;transform:none;flex-wrap:wrap;justify-content:center}
   .card .delx,.card .addref{width:30px;height:30px}  /* bigger tap targets */
 }
 /* touch: no hover-reveal — always show card tools on touch devices */
@@ -275,6 +278,7 @@ body.immersive #stage{display:block}
   <h2 class="hero serif">What should we create?</h2>
   <div class="prompt">
     <textarea id="pin" rows="1" placeholder="Describe what you want to create…"></textarea>
+    <div id="pinrefs" class="pinrefs"></div>
     <div class="pctl">
       <span class="pico" title="Attach a photo" onclick="attachPick()">+</span>
       <input id="attachfile" type="file" accept="image/*" multiple hidden>
@@ -368,13 +372,6 @@ body.immersive #stage{display:block}
     <div class="qcol"><h3 class="qh">✓ History — rate &amp; note for better future generations</h3><div class="grid" id="rgrid"></div></div>
   </section>
 </main>
-<div id="reftray">
-  <div style="font-size:.72rem;color:var(--dim);text-transform:uppercase;letter-spacing:.05em">Next generation</div>
-  <div id="refthumbs" style="display:flex;gap:6px;align-items:center"></div>
-  <input id="refprompt" placeholder="Describe what to make from these…" style="background:#0f0f12;color:var(--txt);border:1px solid var(--line);border-radius:8px;padding:7px 11px;font:inherit;font-size:.82rem;width:280px">
-  <button class="mini hot" onclick="genFromTray()">✦ Generate</button>
-  <button class="mini" onclick="clearTray()">Clear</button>
-</div>
 <div id="toast"></div>
 <div id="zoom" onclick="zoomBg(event)">
   <button class="viewbtn" id="zprev" onclick="event.stopPropagation();svStep(-1)" style="position:absolute;left:18px;top:50%;transform:translateY(-50%);display:none;font-size:1.4rem" aria-label="Previous image">‹</button>
@@ -516,10 +513,23 @@ async function renderTemplate(slug,name){
 function editorCtx(){ if(CTX&&CTX.id)location.href='/?advanced=1&load='+encodeURIComponent(CTX.id); }
 function pickTemplate(k,t){$('tmpl').textContent=t; tab('assets'); $('pin').focus(); toast('Template: '+t);}
 function pickPreset(){toast('Design systems / presets — coming in the preset library');}
-function create(){const p=$('pin').value.trim(); const t=$('tmpl').textContent;
-  if(!p&&t==='None'){toast('Describe what to create, or pick a template');return;}
-  toast('Creation flow wires copilot → exec/tasks (HIP-0506 phase 1)');
-  // real path once phase 1 lands: POST /v1/studio/create {prompt,template,design_system}
+// The ONE create path: the top composer's ↑ generates from its prompt + the photos
+// attached to it (via + / drag / paste / a gallery card's +). 1 photo → edit (fix),
+// 2-5 → compose. Same proven graphs the gallery uses — one surface, no second box.
+async function create(){
+  const t=$('pin').value.trim();
+  const libs=TRAY.filter(r=>r.kind==='lib').map(r=>r.ref), ups=TRAY.filter(r=>r.kind==='up').map(r=>r.ref);
+  const n=libs.length+ups.length;
+  if(!n){ toast(t.length<3?'Describe what to create, then attach a photo with +':'Attach a photo with + to edit or compose it'); return; }
+  if(t.length<3){ toast('Describe what to make from your photo'+(n>1?'s':'')); return; }
+  if(!(await gpuOnline()))toast('⚠ No GPU online — queues until a BYO-GPU connects');
+  let r;
+  if(n===1){ r=await fetch('/v1/library/fix',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify(libs.length?{path:libs[0],instruction:t}:{upload:ups[0],instruction:t})}); }
+  else{ r=await fetch('/v1/library/compose',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({paths:libs,uploads:ups,instruction:t})}); }
+  const j=await r.json().catch(()=>({}));
+  if(r.ok){ toast('Queued → see Queue & History'); $('pin').value=''; clearTray(); }
+  else if(!(await healStale(j))) toast('Failed: '+(errMsg(j)||('error '+r.status)));
 }
 async function load(){
   const r=await fetch('/v1/library'); DATA=await r.json(); $('org').textContent=DATA.org||'';
@@ -693,30 +703,14 @@ function addTrayUpload(name){ if(TRAY.length>=5){toast('Up to 5 references');ret
 function removeTrayRef(i){ TRAY.splice(i,1); drawTray(); render(); }
 function clearTray(){ TRAY=[]; drawTray(); render(); }
 function drawTray(){
-  $('reftray').classList.toggle('on',TRAY.length>0);
-  $('refthumbs').innerHTML=TRAY.map((r,i)=>`<span style="position:relative;display:inline-block">
-    <img class="rt" src="${r.thumb}" title="${r.ref}">
-    <button onclick="removeTrayRef(${i})" title="Remove" style="position:absolute;top:-6px;right:-6px;width:16px;height:16px;border-radius:50%;border:none;background:#c0392b;color:#fff;font-size:.62rem;line-height:1;cursor:pointer">×</button></span>`).join('');
+  const strip=$('pinrefs'); if(!strip)return;
+  strip.innerHTML=TRAY.map((r,i)=>`<span class="pinref">
+    <img src="${r.thumb}" title="${r.ref}">
+    <button onclick="removeTrayRef(${i})" title="Remove">×</button></span>`).join('');
+  strip.classList.toggle('on',TRAY.length>0);
 }
 function attachPick(){ $('attachfile').click(); }
 async function attachFiles(files){ await uploadMany(files, addTrayUpload, err=>toast('Upload failed: '+err)); }
-async function genFromTray(){
-  const t=$('refprompt').value.trim();
-  if(!TRAY.length){toast('Add photos with + first');return;}
-  if(t.length<3){toast('Describe what to make');return;}
-  if(!(await gpuOnline()))toast('⚠ No GPU online — queues until a BYO-GPU connects');
-  const libs=TRAY.filter(r=>r.kind==='lib').map(r=>r.ref), ups=TRAY.filter(r=>r.kind==='up').map(r=>r.ref);
-  let r;
-  if(libs.length+ups.length===1){                          // single ref → edit (library or uploaded base)
-    r=await fetch('/v1/library/fix',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify(libs.length?{path:libs[0],instruction:t}:{upload:ups[0],instruction:t})});
-  }else{                                                    // 2-5 refs → compose
-    r=await fetch('/v1/library/compose',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({paths:libs,uploads:ups,instruction:t})});
-  }
-  const j=await r.json().catch(()=>({}));
-  if(r.ok){ toast('Queued → see Queue & History'); $('refprompt').value=''; clearTray(); }
-  else if(!(await healStale(j))) toast('Failed: '+(errMsg(j)||('error '+r.status)));
-}
 // ── GPU status: fix/compose need an ONLINE GPU worker (Qwen models live there) ──
 let GPU_ONLINE=null, GPU_TS=0;
 async function gpuOnline(){
@@ -1132,6 +1126,7 @@ async function cancelJob(id){
   wireDrop($('fixdlg'),uploadFixFiles); wirePaste($('fixdlg'),uploadFixFiles);
   const af=$('attachfile');
   af.addEventListener('change',e=>{attachFiles(e.target.files);e.target.value='';});
+  const pin=$('pin'); if(pin)pin.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();create();}});
   const uc=$('user'); if(uc){uc.addEventListener('click',e=>{e.stopPropagation();$('acctwho').textContent=($('org').textContent||'').trim()||'Account';$('acctmenu').classList.toggle('on');});
     document.addEventListener('click',e=>{const m=$('acctmenu');if(m&&m.classList.contains('on')&&!m.contains(e.target))m.classList.remove('on');});}
   const box=document.querySelector('.prompt'); if(box){ wireDrop(box,attachFiles); wirePaste(box,attachFiles); }
