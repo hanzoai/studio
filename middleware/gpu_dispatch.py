@@ -243,6 +243,11 @@ def dispatch_if_worker(request, org_id: str, prompt_id: str, prompt: dict) -> bo
             # render. Unset, the tasks default (~1h) reaped real renders mid-run and
             # the queue re-ran them for hours.
             "startToCloseTimeout": "14400s",
+            # Stale jobs EXPIRE instead of waiting forever for a worker. If no GPU
+            # picks this up within 30 min it is dropped — so a worker outage can't
+            # leave a backlog that silently replays (re-billing old renders) the moment
+            # a worker reconnects. A live user re-runs; nothing lingers unbounded.
+            "scheduleToStartTimeout": "1800s",
             # ONE attempt, no auto-retry. A GPU render is expensive and often
             # deterministic — re-running a failed/crashed render (e.g. spark OOM mid-
             # sample) just re-burns money on the SAME output ("the same reject over and

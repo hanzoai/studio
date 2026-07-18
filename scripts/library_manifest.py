@@ -84,6 +84,19 @@ def iso(ts: float) -> str:
     return datetime.fromtimestamp(ts, tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
+def _sha_of(path: str) -> str | None:
+    """Streamed content hash (a 40MB PNG must not balloon memory). None on error."""
+    import hashlib
+    try:
+        h = hashlib.md5()
+        with open(path, "rb") as f:
+            for chunk in iter(lambda: f.read(1 << 20), b""):
+                h.update(chunk)
+        return h.hexdigest()
+    except OSError:
+        return None
+
+
 def classify(relpath: str, slugs: set[str]) -> dict | None:
     """Map a path relative to the library root -> {design, kind, role}.
 
@@ -179,6 +192,15 @@ def build(root: str) -> dict:
             kind = prev.get("kind") or (
                 "video" if os.path.splitext(norm)[1].lower() in VIDEO_EXTS else "render")
             info = {"design": prev.get("design"), "kind": kind, "role": prev.get("role")}
+        abspath = os.path.join(root, rel)
+        mtime = os.path.getmtime(abspath)
+        # Content hash powers the dedup invariant below. Reuse the prior sha when the
+        # file is byte-stable (same mtime), so a sweep hashes only NEW/changed files —
+        # O(new), not O(all), even on a large gallery. Only images are hashed (docs are
+        # not the byte-duplicate-clutter concern).
+        is_img = norm.lower().endswith((".png", ".jpg", ".jpeg", ".webp"))
+        sha = prev.get("sha") if (prev.get("mtime") == mtime and prev.get("sha")) \
+            else (_sha_of(abspath) if is_img else None)
         entry = {
             "path": norm,
             "design": info["design"],
@@ -186,12 +208,38 @@ def build(root: str) -> dict:
             "role": info["role"],
             "status": prev.get("status", "draft"),
             "tags": prev.get("tags", []),
-            "updatedAt": iso(os.path.getmtime(os.path.join(root, rel))),
+            "mtime": mtime,
+            "sha": sha,
+            "updatedAt": iso(mtime),
         }
         caption = prev.get("caption")
         if caption:
             entry["caption"] = caption
         assets.append(entry)
+
+    # ── Structural invariant: AT MOST ONE active asset per content hash. A re-rendered
+    # byte-identical duplicate (a retried / double-dispatched render) is auto-marked
+    # deleted here — so the gallery can NEVER accumulate duplicate images, whatever bug
+    # fires upstream. Keeper = a curated asset if one exists, else the earliest by
+    # mtime; distinct renders (different seed → different bytes → different sha) are
+    # untouched. Idempotent (a prior-swept dup stays deleted) and recoverable like any
+    # soft-delete. This is the last line of defense that makes duplicate clutter
+    # impossible-by-construction, independent of dispatch/retry correctness. ──
+    from collections import defaultdict
+    _CURATED = {"approved", "published", "queued", "flagged"}
+    _by_sha: dict = defaultdict(list)
+    for a in assets:
+        if a.get("sha") and a["status"] != "deleted":
+            _by_sha[a["sha"]].append(a)
+    deduped = 0
+    for group in _by_sha.values():
+        if len(group) < 2:
+            continue
+        group.sort(key=lambda a: (a["status"] not in _CURATED, a.get("mtime", 0)))
+        for dup in group[1:]:
+            dup["status"] = "deleted"
+            dup["dedup"] = True
+            deduped += 1
 
     by_status: dict[str, int] = {}
     by_kind: dict[str, int] = {}
