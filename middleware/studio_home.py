@@ -152,6 +152,38 @@ def _provenance(abs_path: Path) -> dict:
     return prov
 
 
+def _norm_vote(v) -> int:
+    """Any vote input → the canonical preference label: 1 (👍), -1 (👎), 0 (cleared)."""
+    if isinstance(v, str):
+        return {"up": 1, "down": -1, "1": 1, "-1": -1}.get(v.strip().lower(), 0)
+    if isinstance(v, (int, float)):
+        return 1 if v > 0 else -1 if v < 0 else 0
+    return 0
+
+
+def _append_feedback(request, root: Path, org: str, key: str, entry: dict) -> None:
+    """Append ONE immutable training-feedback event to orgs/<org>/output/feedback.jsonl —
+    the flywheel dataset the model trainer consumes. ratings.json is the CURRENT-state
+    store the UI reads; THIS is the append-only log of every judgement (vote + stars +
+    text) paired with the output it judged, so preference / reward / instruction-tuning
+    signal is built downstream (the output PNG carries its own prompt + refs in its
+    embedded graph, so the record only needs to anchor to it). Best-effort — never
+    blocks or fails the rating write."""
+    try:
+        path = entry.get("path") or (key if key.lower().endswith(_REF_EXT) else "")
+        rec = {"ts": int(time.time()), "user": _owner_of(request), "org": org, "key": key,
+               "output": path, "vote": entry.get("vote"), "stars": entry.get("stars"),
+               "text": entry.get("notes") or ""}
+        if path:
+            p = _safe_asset(root, path)
+            if p is not None:
+                rec["prov"] = _provenance(p)
+        with open(root / "feedback.jsonl", "a", encoding="utf-8") as f:
+            f.write(json.dumps(rec, ensure_ascii=False) + "\n")
+    except Exception:
+        pass
+
+
 def _load_library(root: Path) -> dict:
     try:
         return json.loads((root / "library.json").read_text())
@@ -1707,7 +1739,8 @@ def add_studio_home_routes(routes: web.RouteTableDef, server) -> None:
         stars = body.get("stars")
         if stars is not None and not (isinstance(stars, int) and 0 <= stars <= 5):
             return web.json_response({"error": "stars must be 0-5"}, status=400)
-        root = _library_root(_org_of(request))
+        org = _org_of(request)
+        root = _library_root(org)
         if root is None:
             return web.json_response({"error": "no library for org"}, status=404)
         rf = root / "ratings.json"
@@ -1718,6 +1751,8 @@ def add_studio_home_routes(routes: web.RouteTableDef, server) -> None:
         entry = data.get(key, {})
         if stars is not None:
             entry["stars"] = stars
+        if "vote" in body:
+            entry["vote"] = _norm_vote(body.get("vote"))   # 👍 1 · 👎 -1 · cleared 0
         if "notes" in body:
             entry["notes"] = str(body.get("notes") or "")[:2000]
         if "path" in body:
@@ -1730,7 +1765,47 @@ def add_studio_home_routes(routes: web.RouteTableDef, server) -> None:
         tmp = root / "ratings.json.tmp"
         tmp.write_text(json.dumps(data, indent=1))
         tmp.replace(rf)
+        # Every judgement (vote / stars / text) is also logged, immutable, to the
+        # training-feedback dataset the model trainer consumes.
+        if ("vote" in body) or ("notes" in body) or (stars is not None):
+            _append_feedback(request, root, org, key, entry)
         return web.json_response({"ok": True, "key": key, "entry": entry})
+
+    @routes.get("/v1/feedback/stats")
+    async def feedback_stats(request: web.Request):
+        """👍/👎/with-text/total counts for this org's training-feedback dataset."""
+        root = _library_root(_org_of(request))
+        up = down = withtext = total = 0
+        if root is not None:
+            try:
+                for line in (root / "feedback.jsonl").read_text().splitlines():
+                    if not line.strip():
+                        continue
+                    r = json.loads(line)
+                    total += 1
+                    up += r.get("vote") == 1
+                    down += r.get("vote") == -1
+                    withtext += bool(r.get("text"))
+            except Exception:
+                pass
+        return web.json_response({"up": up, "down": down, "withText": withtext, "total": total})
+
+    @routes.get("/v1/feedback/export")
+    async def feedback_export(request: web.Request):
+        """This org's append-only training-feedback dataset (JSONL): every vote / stars
+        / text event paired with the output it judged. What the model trainer pulls to
+        build preference, reward, and instruction-tuning data — the output PNG each row
+        anchors to carries its own prompt + refs in its embedded graph."""
+        root = _library_root(_org_of(request))
+        text = ""
+        if root is not None:
+            try:
+                text = (root / "feedback.jsonl").read_text()
+            except Exception:
+                text = ""
+        return web.Response(text=text, content_type="application/x-ndjson",
+                            headers={"Content-Disposition": "attachment; filename=feedback.jsonl",
+                                     "Cache-Control": "no-store"})
 
     # ── Favorites: the heart toggle. A per-org set of saved runs/flows, keyed by run
     # id (or output path) exactly like ratings — but a SEPARATE concern: a favorite is

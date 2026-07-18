@@ -113,6 +113,12 @@ dialog::backdrop{background:rgba(0,0,0,.6)} dialog textarea{width:100%;backgroun
 .qrow .qdesc{font-size:.76rem;color:#b3b3bd;margin-top:3px;line-height:1.35;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 .qrow .qsub{font-size:.72rem;color:var(--dim);margin-top:4px}
 .stars{display:inline-flex;gap:1px;cursor:pointer} .stars span{font-size:1rem;color:#3a3a44;transition:.1s} .stars span.on{color:#ffcf4a}
+.fbrow{display:flex;gap:5px;align-items:center;margin-top:5px}
+.vote{background:none;border:1px solid var(--line);border-radius:6px;padding:1px 7px;cursor:pointer;font-size:.82rem;color:var(--dim);line-height:1.5}
+.vote:hover{border-color:#666}
+.vote.up.on{border-color:#3fb950;color:#3fb950;background:rgba(63,185,80,.12)}
+.vote.down.on{border-color:#f85149;color:#f85149;background:rgba(248,81,73,.12)}
+.vote.note.has{border-color:#4a9eff;color:#8fc3ff}
 .notebox{width:100%;background:#0f0f12;color:var(--txt);border:1px solid var(--line);border-radius:7px;padding:6px 9px;font:inherit;font-size:.76rem;margin-top:6px;min-height:34px;resize:vertical}
 .fav{cursor:pointer;font-size:1rem;color:#3a3a44} .fav.on{color:#ffcf4a}
 dialog .drop{border:1.5px dashed var(--line);border-radius:9px;padding:14px;text-align:center;color:var(--dim);font-size:.82rem;margin:8px 0;cursor:pointer}
@@ -292,6 +298,7 @@ body.immersive #stage{display:block}
     <span class="sp"></span>
     <button class="btn" id="selbtn" onclick="toggleSel()" style="padding:6px 12px" title="Select images — or tap the circle on any image — then delete, stack, or move them together">Select</button>
     <button class="btn" onclick="dedup()" style="padding:6px 12px" title="Move exact-duplicate images to Archive (recoverable, ⌘Z to undo)">Dedupe</button>
+    <button class="btn" id="fbexport" onclick="exportFeedback()" style="padding:6px 12px" title="Download this org's training-feedback dataset (JSONL) — every 👍/👎 and note the model learns from">⬇ Feedback</button>
     <input class="search" id="q" placeholder="Search…" oninput="render()">
   </div>
   <section id="assets">
@@ -436,6 +443,16 @@ body.immersive #stage{display:block}
   <input id="askin" aria-label="Value" style="width:100%;margin-top:12px;background:#0f0f12;border:1px solid var(--line);border-radius:8px;padding:8px 10px;color:inherit;font:inherit">
   <div class="row" style="justify-content:flex-end;gap:6px;margin-top:14px"><button class="mini" id="askno">Cancel</button><button class="mini hot" id="askok">OK</button></div>
 </dialog>
+<dialog id="fbdlg" aria-label="Feedback to train the model">
+  <h3 style="font-size:1rem">Feedback — trains the model</h3>
+  <p style="color:var(--dim);font-size:.8rem;margin-top:4px">Your 👍/👎 and note are saved to this org's training dataset — the model learns from them.</p>
+  <div class="row" style="gap:8px;margin:12px 0">
+    <button class="mini" id="fbup" onclick="fbSetVote(1)">👍 Good</button>
+    <button class="mini" id="fbdown" onclick="fbSetVote(-1)">👎 Needs work</button>
+  </div>
+  <textarea id="fbtext" rows="3" placeholder="What should the model do differently? (color, likeness, pose, lighting, hands…)" style="width:100%;background:#0f0f12;border:1px solid var(--line);border-radius:8px;padding:8px 10px;color:inherit;font:inherit"></textarea>
+  <div class="row" style="justify-content:flex-end;gap:6px;margin-top:12px"><button class="mini" onclick="fbdlg.close()">Cancel</button><button class="mini hot" onclick="saveFeedback()">Save feedback</button></div>
+</dialog>
 <div id="live" class="sr-only" aria-live="polite" role="status"></div>
 <script>
 // ── Template / KIND catalog — everything Studio supports ─────────────────────
@@ -506,6 +523,8 @@ function create(){const p=$('pin').value.trim(); const t=$('tmpl').textContent;
 }
 async function load(){
   const r=await fetch('/v1/library'); DATA=await r.json(); $('org').textContent=DATA.org||'';
+  try{RATINGS=await (await fetch('/v1/library/ratings')).json()||{};}catch(_){}
+  refreshFbCount();
   await loadStacks();
   if(CURSTACK){ const fresh=STACKS.find(s=>s.id===CURSTACK.id); if(fresh){CURSTACK=await fetchStack(CURSTACK.id); svRender();} else closeStack(); }
   $('tcards').innerHTML=TEMPLATES.slice(0,7).map(tcard).join('');
@@ -587,6 +606,11 @@ function render(){
         <span class="t">${(a.path||'').split('/').pop()}</span>
         <span class="sub">${a.design||a.kind||''}${prov}</span>
         <div class="row"><span class="st ${a.status}">${a.status==='deleted'?'archived':a.status}</span></div>
+        ${img&&!SELMODE?`<div class="fbrow" onclick="event.stopPropagation()">
+          <button class="vote up ${(RATINGS[a.path]||{}).vote===1?'on':''}" title="Good result — 👍 teaches the model" onclick="castVote('${pe}',1)">👍</button>
+          <button class="vote down ${(RATINGS[a.path]||{}).vote===-1?'on':''}" title="Wrong result — 👎 teaches the model" onclick="castVote('${pe}',-1)">👎</button>
+          <button class="vote note ${(RATINGS[a.path]||{}).notes?'has':''}" title="Add a written note — trains the model on what to change" onclick="openFeedback('${pe}')">💬</button>
+        </div>`:''}
         ${SELMODE?'':`<div class="row tools">
           ${review?`<button class="mini" onclick="setSt(${i},'draft')">${showDel?'Recover':'Restore'}</button>${showDel?`<button class="mini hot" onclick="purgeOne('${pe}')" title="Permanently delete — cannot be undone">🗑 Delete forever</button>`:''}`:`
           ${a.status!=='approved'?`<button class="mini" onclick="setSt(${i},'approved')">Approve</button>`:''}
@@ -902,6 +926,28 @@ async function runs(){
 async function clearQueue(){if(!await ask('Clear all queued jobs?'))return;await fetch('/queue',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({clear:true})});toast('Queue cleared');runs();}
 async function rate(key,stars){await fetch('/v1/library/rate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({key,stars})});RATINGS[key]={...(RATINGS[key]||{}),stars};runs();}
 async function rateNote(key,notes){await fetch('/v1/library/rate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({key,notes})});toast('Note saved — the AI will use it next time');}
+// ── Train-the-model feedback: a 👍/👎 vote + a written note on any render, logged to
+// the org's append-only training dataset (feedback.jsonl) the model trainer consumes.
+// Keyed by the image path, so a vote persists with the asset (not just the run). ──
+async function castVote(path,v){
+  const cur=RATINGS[path]||{}, nv=cur.vote===v?0:v;               // click the same thumb again = clear
+  RATINGS[path]={...cur,vote:nv}; render();
+  try{await fetch('/v1/library/rate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({key:path,path,vote:nv})});}catch(_){}
+  toast(nv===1?'👍 Thanks — added to the training set':nv===-1?'👎 Noted — add a 💬 note so the model learns why':'Vote cleared');
+  refreshFbCount();
+}
+let FBPATH=null,FBVOTE=0;
+function openFeedback(path){FBPATH=path;const r=RATINGS[path]||{};FBVOTE=r.vote||0;$('fbtext').value=r.notes||'';fbPaintVote();$('fbdlg').showModal();$('fbtext').focus();}
+function fbSetVote(v){FBVOTE=FBVOTE===v?0:v;fbPaintVote();}
+function fbPaintVote(){$('fbup').classList.toggle('brand',FBVOTE===1);$('fbdown').classList.toggle('brand',FBVOTE===-1);}
+async function saveFeedback(){
+  if(!FBPATH)return; const text=($('fbtext').value||'').slice(0,2000);
+  RATINGS[FBPATH]={...(RATINGS[FBPATH]||{}),vote:FBVOTE,notes:text}; $('fbdlg').close(); render();
+  try{await fetch('/v1/library/rate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({key:FBPATH,path:FBPATH,vote:FBVOTE,notes:text})});}catch(_){}
+  toast('Feedback saved — it trains the model'); refreshFbCount();
+}
+async function refreshFbCount(){try{const s=await (await fetch('/v1/feedback/stats')).json();const b=$('fbexport');if(b)b.textContent='⬇ Feedback'+(s.total?' ('+s.total+')':'');}catch(_){}}
+function exportFeedback(){window.open('/v1/feedback/export','_blank');}
 let FAVKEY=null,FAVTITLE=null;
 async function toggleFav(key,title){const nv=!FAVS[key];
   await fetch('/v1/favorites',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({key,favorite:nv})});
