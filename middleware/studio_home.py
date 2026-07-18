@@ -990,6 +990,16 @@ def _finalize_landed(org: str, root: Path | None, rows: list[dict], now: int) ->
             r["status"], r["finished_at"] = "done", mt
 
 
+def _resolve_outputs(org: str, root: Path | None, rows: list[dict], now: int) -> None:
+    """Attach each row's OWN landed output — the ONE resolution every view and
+    lineage walk uses. Runs the terminal-state mechanism first; a row that is not
+    done gets no output, so a pending job can never claim an earlier run's file
+    (a rejected same-stem sibling) as its result or as a lineage version."""
+    _finalize_landed(org, root, rows, now)
+    for r in rows:
+        r["output"] = _row_output(root, r.get("output_prefix")) if r.get("status") == "done" else None
+
+
 _CORRUPT = ("flagged", "deleted")
 
 
@@ -1012,8 +1022,7 @@ def _clean_base(org: str, root: Path | None, rel: str) -> tuple[str, bool]:
     if root is None or _asset_status(root, rel) not in _CORRUPT:
         return rel, False
     rows = worklog.load(org)
-    for r in rows:
-        r["output"] = _row_output(root, r.get("output_prefix"))
+    _resolve_outputs(org, root, rows, int(time.time()))
     ancestors = worklog.build_lineage(rows, rel).get("ancestors") or []
     for anc in reversed(ancestors):  # nearest parent first, walking back to the root
         p = anc.get("path")
@@ -1713,17 +1722,8 @@ def add_studio_home_routes(routes: web.RouteTableDef, server) -> None:
         org = _org_of(request)
         root = _library_root(org)
         rows = worklog.load(org)
-        # Same terminal-state mechanism as the queue poller: done at the output mtime,
-        # or FAILED when it landed implausibly fast. The view reflects it, never
-        # re-derives "done" from a landed file (which would relabel a guarded fail).
-        _finalize_landed(org, root, rows, int(time.time()))
-        out = []
-        for r in reversed(rows):
-            row = dict(r)
-            # Only a DONE row owns a displayable output. A pending row must never
-            # show a prefix-matched file from an earlier run (a rejected sibling).
-            row["output"] = _row_output(root, r.get("output_prefix")) if r.get("status") == "done" else None
-            out.append(row)
+        _resolve_outputs(org, root, rows, int(time.time()))
+        out = [dict(r) for r in reversed(rows)]
         q = (request.query.get("q") or "").lower().strip()
         if q:
             # search prompt + kind + the render's paths (output_prefix/output) + refs, so
@@ -1742,8 +1742,7 @@ def add_studio_home_routes(routes: web.RouteTableDef, server) -> None:
         root = _library_root(org)
         target = request.query.get("path", "")
         rows = worklog.load(org)
-        for r in rows:
-            r["output"] = _landed_output(root, r.get("output_prefix"))
+        _resolve_outputs(org, root, rows, int(time.time()))
         return web.json_response(worklog.build_lineage(rows, target))
 
     @routes.post("/v1/library/fix")
