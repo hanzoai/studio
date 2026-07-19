@@ -2189,6 +2189,24 @@ def add_studio_home_routes(routes: web.RouteTableDef, server) -> None:
                     r.get("output", ""), *(r.get("refs") or [])]).lower()]
         return web.json_response({"org": org, "items": out[:200]})
 
+    @routes.post("/v1/worklog/delete")
+    async def delete_worklog(request: web.Request):
+        """Remove queue/history entries by id — the user clearing render requests they
+        don't want (a cancelled probe, a failed attempt, finished clutter). Deletes ONLY
+        the log rows; output images live in the library and are archived/deleted there.
+        Body: {id} or {ids:[...]}."""
+        try:
+            body = await request.json()
+        except Exception:
+            body = {}
+        ids = body.get("ids")
+        if ids is None:
+            ids = [body.get("id")] if body.get("id") else []
+        org = _org_of(request)
+        removed = worklog.remove(org, ids)
+        return web.json_response({"ok": True, "removed": removed},
+                                 headers={"Cache-Control": "no-store"})
+
     @routes.get("/v1/worklog/lineage")
     async def get_lineage(request: web.Request):
         """The version chain for one library asset — ancestors (what it was derived

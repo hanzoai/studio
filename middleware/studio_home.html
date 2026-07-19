@@ -428,6 +428,7 @@ body.immersive #stage{display:block}
     <button class="mini" id="ctxcancel" onclick="cancelCtx()" style="display:none">✕ Cancel job</button>
     <button class="mini" id="ctxedit" onclick="editCtx()" style="display:none">✎ Edit</button>
     <button class="mini" id="ctxeditor" onclick="editorCtx()" title="Load this graph into the node editor" style="display:none">⇄ Open in Editor</button>
+    <button class="mini" id="ctxdel" onclick="delCtx()" title="Delete this item from the queue" style="color:#f85149">🗑 Delete</button>
     <button class="mini" id="ctxreuse" onclick="reuseCtx()" title="Open Fix primed with this prompt + references">↻ Reuse context</button>
     <button class="mini hot" id="ctxfix" onclick="fixCtx()">Fix this version</button>
   </div>
@@ -907,8 +908,18 @@ function wlRow(it){
       ${active&&e?qmetaHTML(it,e):`<div class="qsub">${when}${it.node?(' · ⚙ '+it.node):''}${it.error?` · <span style="color:#ff8f8f">${it.error.replace(/</g,'&lt;')}</span>`:''}</div>`}</div>
     ${active?`<button class="mini" onclick="event.stopPropagation();openAmend('${it.id}')" title="Amend prompt/refs (re-queues)">Edit</button><button class="mini" onclick="event.stopPropagation();cancelJob('${it.id}')">Cancel</button>`:''}
     <button class="mini" onclick="event.stopPropagation();openContext('${it.id}')">Open</button>
-    ${(!active&&it.output)?`<button class="mini" onclick="event.stopPropagation();archiveFromQueue('${qq(it.output)}')" title="Move this render to Archive (recoverable)">🗄</button>`:''}</div>`;
+    ${(!active&&it.output)?`<button class="mini" onclick="event.stopPropagation();archiveFromQueue('${qq(it.output)}')" title="Move this render to Archive (recoverable)">🗄</button>`:''}
+    ${active?'':`<button class="mini" onclick="event.stopPropagation();delWork('${it.id}')" title="Delete this item from the queue" style="color:#f85149">🗑</button>`}</div>`;
 }
+// Delete a queue/history ENTRY (the render request row) — distinct from archiving the
+// OUTPUT image. Optimistic: drop it locally + re-render, then persist.
+async function delWork(id){
+  if(!id)return;
+  WL=WL.filter(x=>x.id!==id);          // optimistic: drop locally, re-render
+  try{await fetch('/v1/worklog/delete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id})});}catch(_){}
+  toast('Removed from queue'); worklog();
+}
+function delCtx(){ if(!CTX||!CTX.id)return; ctxdlg.close(); delWork(CTX.id); }
 async function archiveFromQueue(path){
   if(!path)return;
   const a=DATA.assets.find(x=>x.path===path);

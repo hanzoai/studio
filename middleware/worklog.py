@@ -106,6 +106,22 @@ def record(org: str, *, kind: str, prompt: str, refs: list, uploads: list,
     return row
 
 
+def remove(org: str, ids) -> int:
+    """Delete work-log rows by id (a queued/cancelled/failed/done entry the user wants
+    out of their queue). Returns how many were removed. The log is just a record of
+    dispatch requests, so dropping a row is safe — it never touches an output image
+    (those live in the library and are archived/deleted there). Idempotent."""
+    want = {str(i) for i in (ids if isinstance(ids, (list, tuple, set)) else [ids]) if i}
+    if not want:
+        return 0
+    rows = load(org)
+    kept = [r for r in rows if str(r.get("id")) not in want]
+    removed = len(rows) - len(kept)
+    if removed:
+        _save(org, kept)
+    return removed
+
+
 def set_status(org: str, pid: str, status: str, note: str | None = None) -> bool:
     """Advance a row's status by prompt_id (running/done/failed/cancelled). Returns
     True if a row was updated. Idempotent-safe; terminal rows are left untouched."""
