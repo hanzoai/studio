@@ -43,9 +43,13 @@ class _FakeServer:
 @pytest.fixture
 def orgaware(tmp_path, monkeypatch):
     def outd(o="default"):
-        d = tmp_path / "orgs" / o / "output"; d.mkdir(parents=True, exist_ok=True); return str(d)
+        d = tmp_path / "orgs" / o / "output"
+        d.mkdir(parents=True, exist_ok=True)
+        return str(d)
     def ind(o="default"):
-        d = tmp_path / "orgs" / o / "input"; d.mkdir(parents=True, exist_ok=True); return str(d)
+        d = tmp_path / "orgs" / o / "input"
+        d.mkdir(parents=True, exist_ok=True)
+        return str(d)
     monkeypatch.setattr(sh.folder_paths, "get_org_output_directory", outd)
     monkeypatch.setattr(sh.folder_paths, "get_org_input_directory", ind)
     monkeypatch.setattr(sh.folder_paths, "get_output_directory", lambda: str(tmp_path))
@@ -94,7 +98,8 @@ async def test_dispatch_model3d_route(orgaware, monkeypatch):
     Image.new("RGB", (8, 8)).save(root / "designs" / "hero.png", "PNG")
     captured = {}
     async def fake_queue(request, server, graph):
-        captured["graph"] = graph; return "pid-3d"
+        captured["graph"] = graph
+        return "pid-3d"
     monkeypatch.setattr(sh, "_queue_prompt", fake_queue)
     model3d = _handler(_FakeServer(), "POST", "/v1/library/model3d", monkeypatch)
 

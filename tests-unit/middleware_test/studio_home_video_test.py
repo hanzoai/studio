@@ -452,7 +452,6 @@ async def test_embedded_and_rerun(orgaware, monkeypatch):
 async def test_template_retag(orgaware, monkeypatch):
     import re
     outd, _ = orgaware
-    root = Path(outd("acme"))
     tdir = Path(outd("acme")).parent / "templates"
     tdir.mkdir(parents=True, exist_ok=True)
     captured = {}
