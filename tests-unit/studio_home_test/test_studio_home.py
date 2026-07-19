@@ -29,16 +29,88 @@ def test_fix_graph_keeps_recipe_invariants():
     assert g["12"]["class_type"] == "CFGNorm"
     # The canonical Qwen edit: NO Flux-Kontext reference-method override (that
     # `index_timestep_zero` graft onto Qwen conditioning was the noise-stipple cause);
-    # the SAME scaled reference feeds conditioning AND the VAEEncode latent at denoise
-    # 1.0 (matched size → no frame-within-frame border).
+    # the SAME scaled reference feeds conditioning AND the VAEEncode latent. It is now a
+    # LOW-denoise edit (default 0.25) — never 1.0 (that is Regenerate).
     assert all(n["class_type"] != "FluxKontextMultiReferenceLatentMethod" for n in g.values())
-    assert ks["denoise"] == 1.0
+    assert ks["denoise"] == sh.EDIT_DENOISE_DEFAULT == 0.25
     assert g[ks["latent_image"][0]]["class_type"] == "VAEEncode"
     assert g["6"]["inputs"]["image1"] == ["2", 0]           # the scaled reference conditions the edit
     assert g["10"]["inputs"]["pixels"] == ["2", 0]          # the SAME scaled reference sizes the latent
     assert g["2"]["class_type"] == "FluxKontextImageScale"
     assert "straps thicker" in g["6"]["inputs"]["prompt"]
     assert g["15"]["inputs"]["filename_prefix"] == "fixes/test"
+
+
+# ── Generated-image Edit path: the spec invariants (edit ≠ regenerate) ───────────
+
+def test_edit_uses_source_latent_never_empty():
+    """Edit encodes the SOURCE (LoadImage → VAEEncode) as the KSampler latent — never
+    an EmptyLatentImage (that would be a text-to-image regenerate)."""
+    g = sh._fix_graph("fix_src.png", "brighten very slightly", "fixes/e")
+    ks = g["13"]["inputs"]
+    assert g["1"]["class_type"] == "LoadImage"
+    assert g[ks["latent_image"][0]]["class_type"] == "VAEEncode"
+    assert not any("Empty" in n.get("class_type", "") for n in g.values())
+    assert sh._assert_edit_graph(g) == ""
+
+
+def test_edit_denoise_defaults_near_025_and_maps_strength():
+    assert sh._edit_denoise(None) == 0.25
+    assert sh._edit_denoise(25) == 0.25          # percent
+    assert sh._edit_denoise(0.4) == 0.4          # fraction
+    assert sh._edit_denoise(10) == 0.1
+    assert sh._edit_denoise(100) == 0.95         # 100% clamps below a true 1.0 regen
+    assert sh._edit_denoise("bad") == 0.25
+    assert sh._fix_graph("s.png", "x", "p", denoise=0.4)["13"]["inputs"]["denoise"] == 0.4
+
+
+def test_regenerate_empty_latent_is_rejected_as_an_edit():
+    """A graph with EmptyLatentImage / denoise 1.0 must be refused by the edit guard —
+    an Edit can NEVER silently become a Regenerate."""
+    regen = {
+        "10": {"class_type": "EmptySD3LatentImage", "inputs": {}},
+        "13": {"class_type": "KSampler", "inputs": {"latent_image": ["10", 0], "denoise": 1.0}},
+        "15": {"class_type": "SaveImage", "inputs": {}},
+    }
+    assert "EmptyLatentImage" in sh._assert_edit_graph(regen)
+    # denoise 1.0 over a real source latent is still refused (that band is Regenerate).
+    hot = sh._fix_graph("s.png", "x", "p")
+    hot["13"]["inputs"]["denoise"] = 1.0
+    assert "denoise" in sh._assert_edit_graph(hot)
+
+
+def test_edit_seed_reuse_is_deterministic_and_varying_still_edits_source():
+    a = sh._fix_graph("s.png", "x", "p", seed=123)
+    b = sh._fix_graph("s.png", "x", "p", seed=123)
+    assert a["13"]["inputs"]["seed"] == b["13"]["inputs"]["seed"] == 123   # locked seed → deterministic
+    c = sh._fix_graph("s.png", "x", "p", seed=999)
+    assert c["13"]["inputs"]["seed"] == 999
+    # a varied seed STILL edits the source: latent is the VAEEncode, not an empty one.
+    assert c[c["13"]["inputs"]["latent_image"][0]]["class_type"] == "VAEEncode"
+
+
+def test_edit_prompt_preserves_and_does_not_expand():
+    """The edit instruction is wrapped with a PRESERVATION directive, not creative
+    scene/style expansion."""
+    g = sh._fix_graph("s.png", "brighten very slightly", "p")
+    pos = g["6"]["inputs"]["prompt"].lower()
+    assert "brighten very slightly" in pos
+    assert "apply only the requested change" in pos and "leave everything else unchanged" in pos
+
+
+def test_masked_edit_inpaints_and_composites_outside_pixels():
+    """Edit selected area: SetLatentNoiseMask restricts sampling, ImageCompositeMasked
+    keeps pixels OUTSIDE the mask (the composite's destination is the original)."""
+    g = sh._inpaint_graph("src.png", "mask.png", "recolor the top", "fixes/m")
+    cts = {n["class_type"] for n in g.values()}
+    assert {"SetLatentNoiseMask", "ImageCompositeMasked", "VAEEncode", "LoadImage"} <= cts
+    ks = g["13"]["inputs"]
+    assert g[ks["latent_image"][0]]["class_type"] == "SetLatentNoiseMask"
+    comp = next(n for n in g.values() if n["class_type"] == "ImageCompositeMasked")
+    assert comp["inputs"]["destination"] == ["2", 0]     # composite OVER the original scaled source
+    save = next(n for n in g.values() if n["class_type"] in sh._SAVERS)
+    assert save["inputs"]["images"][0] == "18"           # the composited image is saved
+    assert sh._assert_edit_graph(g) == ""
 
 
 def test_safe_asset_blocks_traversal(tmp_path):

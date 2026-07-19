@@ -460,41 +460,48 @@ def _repose_size(p: Path) -> tuple[int, int]:
     return to16(w), to16(h)
 
 
-def _fix_graph(ref_name: str, instruction: str, prefix: str, *, size: tuple[int, int] | None = None,
-               lessons: list[str] | None = None) -> dict:
-    """The canonical Qwen-Image-Edit-2511 instruction edit — ComfyUI's OWN
-    image_qwen_image_edit template, node for node. FluxKontextImageScale sizes the
-    reference ONCE; that SAME scaled image feeds both TextEncodeQwenImageEditPlus
-    (the edit conditioning) and VAEEncode (the sampling latent), so reference and
-    generation latents are identical in size. Denoise 1.0 over that latent applies
-    the edit; AuraFlow shift + CFGNorm are the recipe.
+# Edit-strength → denoise. The Edit action is a LOW-denoise img2img over the SOURCE
+# latent — never EmptyLatentImage, never denoise 1.0 (that is Regenerate). 0.25 default
+# preserves composition/palette/lighting/subject and applies only the requested change;
+# the slider lets a bigger edit dial up. Clamped to the edit band [0.05, 0.95] — a true
+# 1.0 is the separate Regenerate action, so an Edit can NEVER silently become a regen.
+EDIT_DENOISE_DEFAULT = 0.25
+EDIT_DENOISE_MIN, EDIT_DENOISE_MAX = 0.05, 0.95
 
-    The prod graph broke it in one place: two FluxKontextMultiReferenceLatentMethod
-    nodes forced a Flux-Kontext `index_timestep_zero` reference method onto Qwen
-    conditioning. That baked latent-grid mosaic + skin speckle — the noise-stipple
-    class — into every edit and compounded on each fix-of-a-fix. Gone here: Qwen's
-    native reference handling (TextEncodeQwenImageEditPlus alone) renders clean.
-    Feeding the SAME scaled image to conditioning and latent is what also keeps the
-    generation from insetting the scene in a frame-within-frame border."""
-    if size is None:
-        prompt = (f"{instruction.strip()}. Photorealistic, keep the same model, "
-                  f"pose, framing, lighting and background; only apply the "
-                  f"requested change.")
-        latent = {"class_type": "VAEEncode", "inputs": {"pixels": ["2", 0], "vae": ["5", 0]}}
-        ref = ["2", 0]          # the scaled image — latent and reference sizes match
-        model = ["12", 0]       # AuraFlow → CFGNorm, the anchored-template recipe
-    else:
-        # A view/pose change must NOT pin pose/framing — and needs a free latent.
-        # This branch mirrors the proven manual family node-for-node: the RAW
-        # reference feeds the encoders (scaling it against a differently-sized
-        # empty latent re-creates the size-mismatch artifact class), no CFGNorm.
-        prompt = (f"{instruction.strip()}. Photorealistic, keep the same model, "
-                  f"outfit, hair, lighting and background; render the requested "
-                  f"view or pose faithfully.")
-        latent = {"class_type": "EmptySD3LatentImage",
-                  "inputs": {"width": size[0], "height": size[1], "batch_size": 1}}
-        ref = ["1", 0]
-        model = ["11", 0]
+
+def _edit_denoise(strength) -> float:
+    """Map an edit-strength input to a KSampler denoise in the edit band. Accepts a
+    fraction (0.25) or a percent (25). None/invalid → the 0.25 default."""
+    try:
+        v = float(strength)
+    except (TypeError, ValueError):
+        return EDIT_DENOISE_DEFAULT
+    if v > 1.0:                      # a percent (25) → fraction
+        v = v / 100.0
+    return max(EDIT_DENOISE_MIN, min(EDIT_DENOISE_MAX, v))
+
+
+def _fix_graph(ref_name: str, instruction: str, prefix: str, *, denoise: float = EDIT_DENOISE_DEFAULT,
+               seed: int | None = None, lessons: list[str] | None = None) -> dict:
+    """LOW-DENOISE Qwen-Image-Edit-2511 instruction edit — the EDIT action.
+
+    The source is LoadImage'd, scaled ONCE (FluxKontextImageScale), and fed to BOTH the
+    edit conditioning (TextEncodeQwenImageEditPlus) AND the sampling latent (VAEEncode) —
+    so KSampler starts from the SOURCE latent, NEVER an empty one. ``denoise`` (default
+    0.25, from the edit-strength slider) is how much may change: at 0.25 the source
+    latent dominates → composition, palette, lighting, framing and subject are preserved
+    and only the requested change is applied. ``seed`` reuses the source's original seed
+    by default (stable iteration; a locked seed + identical input + settings is
+    deterministic); a caller may vary it and STILL edit the source (the latent is the
+    KSampler input regardless of seed). AuraFlow shift + CFGNorm are the Qwen recipe.
+
+    INVARIANTS (see _assert_edit_graph): latent_image is the VAEEncode of the source (no
+    EmptyLatentImage), and denoise is in the edit band (never 1.0). A pose/view change or
+    a fresh interpretation is REGENERATE (a separate action), not this."""
+    prompt = (f"{instruction.strip()}. Photorealistic; keep the same subject, "
+              f"composition, pose, framing, proportions, lighting, materials, colors "
+              f"and background — apply ONLY the requested change, leave everything else "
+              f"unchanged.")
     neg = _NEG
     if lessons:
         prompt += " Known mistakes on earlier versions — do not repeat: " + "; ".join(lessons) + "."
@@ -505,16 +512,83 @@ def _fix_graph(ref_name: str, instruction: str, prefix: str, *, size: tuple[int,
         "3": {"class_type": "CLIPLoader", "inputs": {"clip_name": _QWEN_CLIP, "type": "qwen_image", "device": "default"}},
         "4": {"class_type": "UNETLoader", "inputs": {"unet_name": _QWEN_UNET, "weight_dtype": "default"}},
         "5": {"class_type": "VAELoader", "inputs": {"vae_name": _QWEN_VAE}},
-        "6": {"class_type": "TextEncodeQwenImageEditPlus", "inputs": {"clip": ["3", 0], "vae": ["5", 0], "image1": ref, "prompt": prompt}},
-        "7": {"class_type": "TextEncodeQwenImageEditPlus", "inputs": {"clip": ["3", 0], "vae": ["5", 0], "image1": ref, "prompt": neg}},
-        "10": latent,
+        "6": {"class_type": "TextEncodeQwenImageEditPlus", "inputs": {"clip": ["3", 0], "vae": ["5", 0], "image1": ["2", 0], "prompt": prompt}},
+        "7": {"class_type": "TextEncodeQwenImageEditPlus", "inputs": {"clip": ["3", 0], "vae": ["5", 0], "image1": ["2", 0], "prompt": neg}},
+        "10": {"class_type": "VAEEncode", "inputs": {"pixels": ["2", 0], "vae": ["5", 0]}},
         "11": {"class_type": "ModelSamplingAuraFlow", "inputs": {"model": ["4", 0], "shift": 3.1}},
         "12": {"class_type": "CFGNorm", "inputs": {"model": ["11", 0], "strength": 1.0}},
-        "13": {"class_type": "KSampler", "inputs": {"model": model, "positive": ["6", 0], "negative": ["7", 0], "latent_image": ["10", 0],
-                 "seed": random.randrange(2**31), "steps": 30, "cfg": 4.0, "sampler_name": "euler", "scheduler": "simple", "denoise": 1.0}},
+        "13": {"class_type": "KSampler", "inputs": {"model": ["12", 0], "positive": ["6", 0], "negative": ["7", 0], "latent_image": ["10", 0],
+                 "seed": seed if seed is not None else random.randrange(2**31), "steps": 30, "cfg": 4.0,
+                 "sampler_name": "euler", "scheduler": "simple", "denoise": float(denoise)}},
         "14": {"class_type": "VAEDecode", "inputs": {"samples": ["13", 0], "vae": ["5", 0]}},
         "15": {"class_type": "SaveImage", "inputs": {"images": ["14", 0], "filename_prefix": prefix}},
     }
+
+
+def _inpaint_graph(ref_name: str, mask_name: str, instruction: str, prefix: str, *,
+                   denoise: float = EDIT_DENOISE_DEFAULT, seed: int | None = None,
+                   lessons: list[str] | None = None) -> dict:
+    """MASKED Qwen-Image-Edit — the EDIT-SELECTED-AREA action. Same low-denoise edit as
+    _fix_graph, but SetLatentNoiseMask restricts sampling to the painted region, and
+    ImageCompositeMasked composites the decode back over the ORIGINAL so pixels OUTSIDE
+    the mask stay byte-identical. The mask is a user-painted image (white = edit here),
+    scaled to the source's scaled size so latent + mask align."""
+    prompt = (f"{instruction.strip()}. Photorealistic; change ONLY the masked region to "
+              f"apply the requested edit and blend it seamlessly; keep the subject, "
+              f"lighting, materials and colors consistent with the rest of the image.")
+    neg = _NEG
+    if lessons:
+        prompt += " Known mistakes on earlier versions — do not repeat: " + "; ".join(lessons) + "."
+        neg = _NEG + ", " + ", ".join(lessons)
+    return {
+        "1": {"class_type": "LoadImage", "inputs": {"image": ref_name}},
+        "2": {"class_type": "FluxKontextImageScale", "inputs": {"image": ["1", 0]}},
+        "3": {"class_type": "CLIPLoader", "inputs": {"clip_name": _QWEN_CLIP, "type": "qwen_image", "device": "default"}},
+        "4": {"class_type": "UNETLoader", "inputs": {"unet_name": _QWEN_UNET, "weight_dtype": "default"}},
+        "5": {"class_type": "VAELoader", "inputs": {"vae_name": _QWEN_VAE}},
+        # Mask: load its alpha/luma, resize to the scaled source so the latent noise-mask aligns.
+        "8": {"class_type": "LoadImage", "inputs": {"image": mask_name}},
+        "9": {"class_type": "ImageToMask", "inputs": {"image": ["8", 0], "channel": "red"}},
+        "16": {"class_type": "ResizeMask", "inputs": {"mask": ["9", 0], "width": ["2", 0], "height": ["2", 0]}},
+        "6": {"class_type": "TextEncodeQwenImageEditPlus", "inputs": {"clip": ["3", 0], "vae": ["5", 0], "image1": ["2", 0], "prompt": prompt}},
+        "7": {"class_type": "TextEncodeQwenImageEditPlus", "inputs": {"clip": ["3", 0], "vae": ["5", 0], "image1": ["2", 0], "prompt": neg}},
+        "10": {"class_type": "VAEEncode", "inputs": {"pixels": ["2", 0], "vae": ["5", 0]}},
+        "17": {"class_type": "SetLatentNoiseMask", "inputs": {"samples": ["10", 0], "mask": ["16", 0]}},
+        "11": {"class_type": "ModelSamplingAuraFlow", "inputs": {"model": ["4", 0], "shift": 3.1}},
+        "12": {"class_type": "CFGNorm", "inputs": {"model": ["11", 0], "strength": 1.0}},
+        "13": {"class_type": "KSampler", "inputs": {"model": ["12", 0], "positive": ["6", 0], "negative": ["7", 0], "latent_image": ["17", 0],
+                 "seed": seed if seed is not None else random.randrange(2**31), "steps": 30, "cfg": 4.0,
+                 "sampler_name": "euler", "scheduler": "simple", "denoise": float(denoise)}},
+        "14": {"class_type": "VAEDecode", "inputs": {"samples": ["13", 0], "vae": ["5", 0]}},
+        # Composite the edited decode over the ORIGINAL scaled source, masked — unmasked
+        # pixels are the source's own, so only the painted region ever changes.
+        "18": {"class_type": "ImageCompositeMasked", "inputs": {"destination": ["2", 0], "source": ["14", 0], "mask": ["16", 0], "x": 0, "y": 0, "resize_source": False}},
+        "15": {"class_type": "SaveImage", "inputs": {"images": ["18", 0], "filename_prefix": prefix}},
+    }
+
+
+# Edit-graph invariants — validated before every Edit dispatch so an Edit can NEVER
+# silently become a text-to-image Regenerate. Returns "" if valid, else the reason.
+def _assert_edit_graph(graph: dict) -> str:
+    ks = next((n for n in graph.values() if isinstance(n, dict) and n.get("class_type") == "KSampler"), None)
+    if not ks:
+        return "edit graph has no KSampler"
+    ins = ks.get("inputs", {})
+    lat_ref = ins.get("latent_image")
+    lat_node = graph.get(lat_ref[0]) if isinstance(lat_ref, list) and lat_ref else None
+    lat_ct = (lat_node or {}).get("class_type", "")
+    if "Empty" in lat_ct:
+        return "edit KSampler.latent_image is an EmptyLatentImage (that is Regenerate, not Edit)"
+    if lat_ct not in ("VAEEncode", "SetLatentNoiseMask"):
+        return f"edit latent must be VAEEncode/SetLatentNoiseMask of the source, not {lat_ct or 'nothing'}"
+    dn = ins.get("denoise", 1.0)
+    if not (EDIT_DENOISE_MIN <= float(dn) <= EDIT_DENOISE_MAX):
+        return f"edit denoise {dn} is outside the edit band [{EDIT_DENOISE_MIN},{EDIT_DENOISE_MAX}] (1.0 = Regenerate)"
+    if not any(isinstance(n, dict) and n.get("class_type") == "VAEEncode" for n in graph.values()):
+        return "edit graph is missing VAEEncode of the source"
+    if not any(isinstance(n, dict) and n.get("class_type") in _SAVERS for n in graph.values()):
+        return "edit graph does not save an output"
+    return ""
 
 
 def _video_graph(prompt: str, prefix: str, *, ref_name: str | None = None,
@@ -913,15 +987,23 @@ async def _dispatch(request, server, org: str, graph: dict, *, kind: str, prompt
 
 async def dispatch_fix(request: web.Request, server, org: str, rel: str,
                        instruction: str, upload: str | None = None,
-                       stack: str | None = None) -> dict:
-    """Run the proven Qwen single-image edit. The base image is EITHER a library
-    asset (``rel``, staged into the org input dir) OR an image the caller just
-    uploaded via ``/upload/image`` (``upload``, already resident there) — so a fresh
-    photo can be edited without first landing it in the library. The ONE fix path:
-    the /v1/library/fix route and the chat `create` capability both call this."""
+                       stack: str | None = None, strength=None, seed=None,
+                       mask: str | None = None) -> dict:
+    """The EDIT action — a LOW-denoise Qwen edit of an already-generated gallery asset.
+    The base is EITHER a library asset (``rel``, its stable path — the generated output
+    itself) OR a just-uploaded image (``upload``). The selected generated image is the
+    SOURCE: it is VAEEncode'd and used as the KSampler latent (never EmptyLatentImage),
+    at ``strength``→denoise (default 0.25, edit band [0.05,0.95] — a true 1.0 regenerate
+    is a SEPARATE action). ``seed`` reuses the source's ORIGINAL seed by default (stable
+    iteration); a caller may vary it and still edit the source. ``mask`` (an uploaded
+    painted image, white=edit-here) switches to the masked-inpaint graph that keeps
+    pixels OUTSIDE the mask byte-identical. The output is a CHILD version of the source
+    (parents=[rel]). The ONE edit path: /v1/library/fix + the chat `create` capability."""
     instruction = (instruction or "").strip()
     if not 3 <= len(instruction) <= 500:
         raise DispatchError("instruction required (3-500 chars)")
+    denoise = _edit_denoise(strength)
+    src_seed = None                          # the source's original seed, reused by default
     in_dir = Path(folder_paths.get_org_input_directory(org))
     in_dir.mkdir(parents=True, exist_ok=True)
     note = None
@@ -941,19 +1023,54 @@ async def dispatch_fix(request: web.Request, server, org: str, rel: str,
         p = _safe_asset(root, rel) if root else None
         if p is None or p.suffix.lower() != ".png":
             raise DispatchError(f"unknown asset: {rel}")
+        # FULL-RES source (the real output file, never the .thumbs/ preview), staged with
+        # a collision-safe name. Reuse the source's ORIGINAL seed from its embedded graph.
         ref_name = f"fix_src_{abs(hash((str(p), p.stat().st_mtime))) % 10**10}.png"
         (in_dir / ref_name).write_bytes(p.read_bytes())
         stem = re.sub(r"[^a-zA-Z0-9_-]", "_", p.stem)[:48]
+        try:
+            sp = _provenance(p).get("seed")
+            src_seed = int(sp) if sp is not None else None
+        except (TypeError, ValueError):
+            src_seed = None
+    # Seed: an explicit caller seed wins; else reuse the source's original (stable
+    # iteration); else the graph mints one. A varied seed STILL edits the source (the
+    # VAEEncode latent is the KSampler input regardless of seed).
+    try:
+        eff_seed = int(seed) if seed is not None else src_seed
+    except (TypeError, ValueError):
+        eff_seed = src_seed
+    # Masked edit (Edit selected area): stage the painted mask like the source.
+    mask_name = None
+    if mask:
+        mnames = _resolve_uploads(org, [mask])
+        if not mnames:
+            raise DispatchError(f"unknown mask: {mask}")
+        mask_name = mnames[0]
     stem = f"{stem}_{_job_tag()}"
-    size = _repose_size(in_dir / ref_name) if _REPOSE.search(instruction) else None
     lessons = _lessons(org, _library_root(org), [] if upload else [rel])
-    pid = await _dispatch(request, server, org, _fix_graph(ref_name, instruction, f"fixes/{stem}", size=size, lessons=lessons),
-                          lessons=lessons, kind="fix", prompt=instruction, refs=[ref_name],
-                          uploads=[upload] if upload else [], parents=[] if upload else [rel],
+    if mask_name:
+        graph = _inpaint_graph(ref_name, mask_name, instruction, f"fixes/{stem}",
+                               denoise=denoise, seed=eff_seed, lessons=lessons)
+        kind = "edit_area"
+    else:
+        graph = _fix_graph(ref_name, instruction, f"fixes/{stem}",
+                           denoise=denoise, seed=eff_seed, lessons=lessons)
+        kind = "fix"
+    # INVARIANT: an Edit dispatch can NEVER be a text-to-image regenerate.
+    bad = _assert_edit_graph(graph)
+    if bad:
+        raise DispatchError(f"edit rejected: {bad}")
+    pid = await _dispatch(request, server, org, graph,
+                          lessons=lessons, kind=kind, prompt=instruction,
+                          refs=[ref_name] + ([mask_name] if mask_name else []),
+                          uploads=[x for x in (upload, mask) if x],
+                          parents=[] if upload else [rel],
                           output_prefix=f"fixes/{stem}")
     if stack:
         stacks_store.route_prefix(org, f"fixes/{stem}", stack, added_by=_owner_of(request))
-    out = {"ok": True, "prompt_id": pid, "output_prefix": f"fixes/{stem}"}
+    out = {"ok": True, "prompt_id": pid, "output_prefix": f"fixes/{stem}",
+           "operation": kind, "denoise": denoise, "seed": eff_seed, "parent": None if upload else rel}
     if note:
         out["note"] = note
     return out
@@ -2221,11 +2338,17 @@ def add_studio_home_routes(routes: web.RouteTableDef, server) -> None:
 
     @routes.post("/v1/library/fix")
     async def fix(request: web.Request):
+        """Edit a generated gallery image. Body: {path|upload, instruction, strength?,
+        seed?, mask?, stack?}. `strength` (edit-strength → denoise, default 0.25) is how
+        much may change; `seed` reuses the source's original by default; `mask` (an
+        uploaded painted image) restricts the edit to a region. Always a low-denoise edit
+        of the SOURCE — never a text-to-image regenerate (that is /v1/library/rerun)."""
         body = await request.json()
         try:
             return web.json_response(await dispatch_fix(
                 request, server, _org_of(request), body.get("path", ""),
-                body.get("instruction", ""), body.get("upload"), body.get("stack")))
+                body.get("instruction", ""), body.get("upload"), body.get("stack"),
+                strength=body.get("strength"), seed=body.get("seed"), mask=body.get("mask")))
         except DispatchError as e:
             return web.json_response({"error": str(e)}, status=400)
 

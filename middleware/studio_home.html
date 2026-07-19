@@ -396,18 +396,34 @@ body.immersive #stage{display:block}
   <button class="viewbtn" id="znext" onclick="event.stopPropagation();zStep(1)" style="position:absolute;right:18px;top:50%;transform:translateY(-50%);display:none;font-size:1.4rem" aria-label="Next image">›</button>
 </div>
 <dialog id="fixdlg">
-  <h3 id="fixtitle" style="font-size:1rem">Fix with chat</h3>
-  <p id="fixdesc" style="color:var(--dim);font-size:.83rem;margin-top:6px">Describe the change — a new render is queued from this image. Add reference photos (drag in, or pick from your history) to guide it.</p>
+  <h3 id="fixtitle" style="font-size:1rem">Edit image</h3>
+  <p id="fixdesc" style="color:var(--dim);font-size:.83rem;margin-top:6px">Studio edits <b>this</b> image — same composition, colors, lighting and subject — and applies only your change. Paint an area to edit just that region, or add reference photos to guide it.</p>
+  <!-- base preview + mask-paint canvas (Edit selected area) -->
+  <div id="fixcanvaswrap" style="position:relative;display:none;margin:12px auto 0;max-width:340px;line-height:0">
+    <img id="fixbaseimg" style="width:100%;display:block;border-radius:8px;border:1px solid var(--line)">
+    <canvas id="fixmaskcv" style="position:absolute;inset:0;width:100%;height:100%;cursor:crosshair;border-radius:8px;touch-action:none"></canvas>
+    <div id="fixmaskhint" style="position:absolute;left:8px;top:8px;background:rgba(10,10,11,.75);border:1px solid var(--line);border-radius:6px;padding:2px 8px;font-size:.66rem;color:var(--txt);line-height:1.4">Paint the area to edit</div>
+  </div>
   <div class="row" id="fixrefs" style="margin:12px 0 0;flex-wrap:wrap"></div>
   <div class="drop" id="fixdrop">Drag images here, or <b>click to upload</b> references</div>
   <input id="fixfile" type="file" accept="image/*" multiple hidden>
-  <textarea id="fixtext" placeholder="e.g. make the straps thicker, smooth the skin"></textarea>
+  <textarea id="fixtext" placeholder="e.g. make the straps thicker, brighten very slightly"></textarea>
   <div id="gpuwarn" style="display:none;color:var(--warn);font-size:.78rem;margin:-4px 0 8px"></div>
+  <div class="row" id="fixstrengthrow" style="gap:10px;align-items:center;margin:2px 0 0">
+    <span class="dl" style="min-width:78px">Edit strength</span>
+    <input type="range" id="fixstrength" min="10" max="95" value="25" step="5" oninput="$('fixstrengthval').textContent=this.value+'%'" style="flex:1">
+    <span id="fixstrengthval" style="font-size:.8rem;color:var(--dim);min-width:38px;text-align:right">25%</span>
+  </div>
+  <div style="font-size:.7rem;color:var(--dim);margin:3px 0 8px">Low = tiny correction, preserve closely · higher = bigger change. A full new interpretation is <b>Re-run</b> (Regenerate), not Edit.</div>
   <div class="destrow"><span class="dl">Save outputs to</span><select class="destsel" id="fixdest"></select></div>
   <div id="fixerr" class="dlgerr"></div>
   <div class="row" style="justify-content:space-between">
-    <button class="mini" id="fixhistbtn" onclick="toggleFixHistory()">+ From history</button>
-    <div class="row"><button class="mini" onclick="fixdlg.close()">Cancel</button><button class="mini hot" id="fixgo" onclick="enqueue(this,'Queueing…',sendFix)">Queue fix</button></div>
+    <div class="row" style="gap:6px">
+      <button class="mini" id="fixhistbtn" onclick="toggleFixHistory()">+ Reference</button>
+      <button class="mini" id="fixmaskbtn" onclick="toggleMaskMode()" title="Paint a region — only that area changes">✏️ Edit area</button>
+      <button class="mini" id="fixmaskclear" onclick="clearMask()" style="display:none">Clear area</button>
+    </div>
+    <div class="row"><button class="mini" onclick="fixdlg.close()">Cancel</button><button class="mini hot" id="fixgo" onclick="enqueue(this,'Editing…',sendFix)">Edit</button></div>
   </div>
   <div id="fixhist" style="display:none;max-height:210px;overflow:auto;margin-top:10px;border-top:1px solid var(--line);padding-top:10px"></div>
 </dialog>
@@ -728,7 +744,7 @@ function render(){
           ${a.status!=='approved'?`<button class="mini" onclick="setSt(${i},'approved')">Approve</button>`:''}
           ${a.status!=='published'?`<button class="mini" onclick="setSt(${i},'published')">Publish</button>`:''}
           <button class="mini" onclick="addToStackPrompt('${pe}',event)" title="Add this image to a Stack">🗂 Stack</button>
-          ${media?`<button class="mini" onclick="rerun(${i},this)">Re-run</button><button class="mini" onclick="openLineage('${pe}')" title="Show this item's versions (what it came from + later fixes)">Versions</button>`:''}${img?`<button class="mini hot" onclick="openFix(${i})">Fix</button>`:''}
+          ${media?`<button class="mini" onclick="rerun(${i},this)" title="Regenerate: a fresh interpretation from the same recipe with a new seed (does NOT preserve this image)">Regenerate</button><button class="mini" onclick="openLineage('${pe}')" title="Show this item's versions (what it came from + later edits)">Versions</button>`:''}${img?`<button class="mini hot" onclick="openFix(${i})" title="Edit this image — preserve composition, colors and subject; apply only your change">Edit</button>`:''}
           <button class="mini" onclick="setSt(${i},'deleted')" title="Move to Archive (recoverable)">🗑</button>`}
         </div>`}
       </div></div>`;}).join('');
@@ -1268,8 +1284,11 @@ async function uploadFixFiles(files){
 }
 async function openFixPath(path,prompt){FIXMODE='fix';AMENDID=null;ORIGREFS=[];MAXFIXREFS=4;
   FIXPATH=path;FIXREFS=[];$('fixtext').value=prompt||'';showFixErr('');
-  $('fixtitle').textContent='Fix with chat';
-  $('fixdesc').textContent='Describe the change — a new render is queued from this image. Add reference photos (drag in, or pick from your history) to guide it.';
+  $('fixtitle').textContent='Edit image';
+  $('fixdesc').innerHTML='Studio edits <b>this</b> image — same composition, colors, lighting and subject — and applies only your change. Paint an area to edit just that region, or add reference photos to guide it.';
+  // reset edit-strength + mask each open
+  $('fixstrength').value=25; $('fixstrengthval').textContent='25%';
+  if(MASKMODE)toggleMaskMode();          // collapse the mask canvas
   $('fixhist').style.display='none'; drawFixRefs();
   fillDest($('fixdest'), stackIdOf(path)||'');   // a fix/variation defaults into the source image's Stack
   $('gpuwarn').style.display=(await gpuOnline())?'none':'block';
@@ -1288,21 +1307,52 @@ async function openAmend(id){
   $('fixdlg').showModal();
 }
 async function sendFix(){const t=$('fixtext').value.trim();if(t.length<3){showFixErr('Describe the change (3+ characters).');return;}
-  showFixErr(''); toast(FIXMODE==='amend'?'Amending…':'Queueing fix…');
+  showFixErr(''); toast(FIXMODE==='amend'?'Amending…':'Editing…');
   const paths=FIXREFS.filter(x=>x.kind==='lib').map(x=>x.ref);
   const uploads=FIXREFS.filter(x=>x.kind==='up').map(x=>x.ref);
   const stack=await resolveDest($('fixdest'));
+  const strength=(+$('fixstrength').value||25)/100;      // slider % → denoise fraction
+  let mask=null;
+  if(MASKMODE&&maskPainted()){ mask=await uploadMask(); if(!mask){showFixErr('Couldn’t upload the painted area — try again.');return;} }
   let r;
   if(FIXMODE==='amend'){ // atomic swap: cancel the queued job + re-dispatch amended
     r=await fetch('/v1/queue/amend',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({prompt_id:AMENDID,instruction:t,paths,uploads,stack})});
-  }else if(!FIXREFS.length){ // single base image → the proven edit path
-    r=await fetch('/v1/library/fix',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({path:FIXPATH,instruction:t,stack})});
+  }else if(!FIXREFS.length){ // single base image → the low-denoise edit (optionally masked)
+    r=await fetch('/v1/library/fix',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({path:FIXPATH,instruction:t,stack,strength,mask})});
   }else{               // base + references → multi-reference compose
     r=await fetch('/v1/library/compose',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({paths:[FIXPATH,...paths],instruction:t,uploads,stack})});
   }
   const j=await r.json().catch(()=>({}));
-  if(r.ok){ $('fixdlg').close(); toast(j.note || (FIXMODE==='amend'?'Amended — re-queued (position reset)':'Fix queued → see Queue & History')); track('fix',{mode:FIXMODE}); if(typeof runs==='function')runs(); }
+  if(r.ok){ $('fixdlg').close(); toast(j.note || (FIXMODE==='amend'?'Amended — re-queued (position reset)':(mask?'Area edit queued → see Queue & History':'Edit queued → see Queue & History'))); track('fix',{mode:FIXMODE,masked:!!mask}); if(typeof runs==='function')runs(); }
   else showFixErr('Couldn’t '+(FIXMODE==='amend'?'amend':'queue')+': '+(errMsg(j)||('error '+r.status)));   // stay open so the reason is visible
+}
+// ── Edit selected area: paint a white mask over the base image; only that region is
+// re-sampled (inpaint) and composited back so the rest stays byte-identical. ──
+let MASKMODE=false, MASKDRAW=false, MASKDIRTY=false;
+function toggleMaskMode(){
+  MASKMODE=!MASKMODE;
+  $('fixmaskbtn').classList.toggle('brand',MASKMODE);
+  $('fixmaskclear').style.display=MASKMODE?'':'none';
+  $('fixcanvaswrap').style.display=MASKMODE?'':'none';
+  if(MASKMODE){ if(FIXPATH)$('fixbaseimg').src=imgURL({path:FIXPATH}); setTimeout(sizeMaskCanvas,60); }
+}
+function sizeMaskCanvas(){
+  const img=$('fixbaseimg'),cv=$('fixmaskcv'); if(!img.naturalWidth)return;
+  cv.width=img.clientWidth; cv.height=Math.round(img.clientWidth*img.naturalHeight/img.naturalWidth);
+  const ctx=cv.getContext('2d'); ctx.fillStyle='#000'; ctx.fillRect(0,0,cv.width,cv.height); MASKDIRTY=false;
+}
+function maskXY(e){const cv=$('fixmaskcv'),r=cv.getBoundingClientRect(),tp=(e.touches&&e.touches[0])||e;
+  return [ (tp.clientX-r.left)*cv.width/r.width, (tp.clientY-r.top)*cv.height/r.height ];}
+function maskPaint(e){ if(!MASKDRAW)return; e.preventDefault(); const cv=$('fixmaskcv'),ctx=cv.getContext('2d');
+  const [x,y]=maskXY(e); ctx.fillStyle='#fff'; ctx.beginPath(); ctx.arc(x,y,Math.max(10,cv.width*0.05),0,7); ctx.fill(); MASKDIRTY=true; }
+function clearMask(){const cv=$('fixmaskcv'),ctx=cv.getContext('2d');ctx.fillStyle='#000';ctx.fillRect(0,0,cv.width,cv.height);MASKDIRTY=false;}
+function maskPainted(){return MASKDIRTY;}
+async function uploadMask(){                            // export the canvas (black bg + white paint) as a mask PNG, upload it
+  const cv=$('fixmaskcv');
+  const blob=await new Promise(res=>cv.toBlob(res,'image/png'));
+  if(!blob)return null;
+  const f=new File([blob],'editmask.png',{type:'image/png'});
+  const u=await uploadImage(f); return u.name||null;
 }
 async function cancelJob(id){
   if(!await ask('Cancel this job?'))return;
@@ -1319,6 +1369,16 @@ async function cancelJob(id){
   fdrop.addEventListener('click',()=>ffile.click());
   ffile.addEventListener('change',e=>{uploadFixFiles(e.target.files);e.target.value='';});
   wireDrop($('fixdlg'),uploadFixFiles); wirePaste($('fixdlg'),uploadFixFiles);
+  // mask-paint canvas (Edit selected area)
+  const mcv=$('fixmaskcv');
+  if(mcv){
+    const start=e=>{MASKDRAW=true;maskPaint(e);}, end=()=>{MASKDRAW=false;};
+    mcv.addEventListener('mousedown',start); mcv.addEventListener('mousemove',maskPaint);
+    window.addEventListener('mouseup',end);
+    mcv.addEventListener('touchstart',start,{passive:false}); mcv.addEventListener('touchmove',maskPaint,{passive:false});
+    mcv.addEventListener('touchend',end);
+    $('fixbaseimg').addEventListener('load',()=>{ if(MASKMODE)sizeMaskCanvas(); });
+  }
   const af=$('attachfile');
   af.addEventListener('change',e=>{attachFiles(e.target.files);e.target.value='';});
   const pin=$('pin'); if(pin)pin.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();create();}});
