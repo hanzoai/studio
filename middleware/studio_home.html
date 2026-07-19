@@ -726,7 +726,11 @@ function render(){
           <button class="mini" onclick="setSt(${i},'deleted')" title="Move to Archive (recoverable)">🗑</button>`}
         </div>`}
       </div></div>`;}).join('');
-  $('agrid').innerHTML=(scards+cards)||`<div class="empty">${showDel?'Archive is empty.':showFlag?'Nothing flagged — the quality gate has passed every render.':'No assets in this view yet.'}</div>`;
+  // Org-aware empty state: landing on the wrong workspace (a fresh login resets the
+  // active org) must read as "wrong workspace", not "my work vanished". Name the org
+  // and point at the switcher (the account pill, top-right).
+  const _emptyAll=`No assets in <b>${(DATA.org||'this workspace').replace(/</g,'&lt;')}</b> yet.<br><span style="color:var(--dim);font-size:.85rem">If your work is in another workspace, switch it from the account menu (top-right ●).</span>`;
+  $('agrid').innerHTML=(scards+cards)||`<div class="empty">${showDel?'Archive is empty.':showFlag?'Nothing flagged — the quality gate has passed every render.':(q?'No matches for “'+q.replace(/</g,'&lt;')+'”.':_emptyAll)}</div>`;
   lazyObserve();
 }
 async function bulk(status){
