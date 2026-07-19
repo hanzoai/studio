@@ -619,7 +619,11 @@ async function create(){
   });
 }
 async function load(){
-  const r=await fetch('/v1/library'); DATA=await r.json(); $('org').textContent=DATA.org||'';
+  // The core library fetch: on a transient failure show a clear retry message instead
+  // of a silent blank gallery (which reads as "all my assets vanished").
+  try{ const r=await fetch('/v1/library'); if(!r.ok)throw new Error('HTTP '+r.status); DATA=await r.json(); }
+  catch(e){ $('agrid')&&($('agrid').innerHTML='<div class="empty">Couldn’t load your library — <a href="#" onclick="load();return false" style="color:var(--pub)">retry</a>.</div>'); toast('Library failed to load — tap retry'); return; }
+  $('org').textContent=DATA.org||'';
   try{RATINGS=await (await fetch('/v1/library/ratings')).json()||{};}catch(_){}
   refreshFbCount();
   await loadStacks();
@@ -986,8 +990,10 @@ function reuseCtx(){ if(!CTX)return; const base=CTX.output||(CTX.parents&&CTX.pa
 function fixCtx(){ if(!CTX)return; const base=CTX.output||(CTX.parents&&CTX.parents[0]); if(!base){toast('No result to fix yet');return;} ctxdlg.close(); openFixPath(base,''); }
 async function runs(){
   refreshQueue(); loadNodes();
-  RATINGS=await (await fetch('/v1/library/ratings')).json().catch(()=>({}));
-  FAVS=((await (await fetch('/v1/favorites')).json().catch(()=>({}))).favorites)||{};
+  // A non-critical fetch must NEVER blank the whole queue: guard the fetch itself, not
+  // just .json() (a rejected fetch would throw before .json() and abort the render).
+  try{ RATINGS=await (await fetch('/v1/library/ratings')).json()||{}; }catch(_){ RATINGS=RATINGS||{}; }
+  try{ FAVS=((await (await fetch('/v1/favorites')).json()).favorites)||{}; }catch(_){ FAVS=FAVS||{}; }
   // live queue
   let q={queue_running:[],queue_pending:[]}; try{q=await (await fetch('/queue')).json();}catch(_){}
   const qr=q.queue_running||[], qp=q.queue_pending||[];
