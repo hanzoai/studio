@@ -9,10 +9,13 @@ signing keys are cached. Signature (RS256 by default), ``exp``, ``iss`` and
 tenancy / rate-limit / billing paths.
 
 Browser sessions use the standard OIDC Authorization Code flow: an
-unauthenticated HTML request is redirected to the IAM ``authorize`` endpoint;
-IAM bounces back to ``/callback`` which exchanges the code for a token and sets
-an httpOnly session cookie. No frontend changes are required — the prebuilt SPA
-just rides the cookie.
+unauthenticated browser navigation is redirected (302) to ``/login`` — the one
+server-owned entry point — which starts the flow at the IAM ``authorize``
+endpoint; IAM bounces back to ``/callback`` which exchanges the code for a token
+and sets an httpOnly session cookie. A programmatic API/XHR/JSON request instead
+gets a 401 (it handles its own re-auth), so the SPA's ``fetch`` calls never
+follow a redirect and parse HTML as JSON. No frontend changes are required — the
+prebuilt SPA just rides the cookie.
 
 Localhost connections bypass auth (single-user dev). Static assets, health
 checks and the worker coordinator endpoints are exempt.
@@ -92,6 +95,48 @@ def _is_public_path(path: str) -> bool:
     return any(path.endswith(ext) for ext in (
         ".js", ".css", ".svg", ".png", ".ico", ".woff", ".woff2", ".map", ".webm",
     ))
+
+
+def _is_api_request(request: web.Request) -> bool:
+    """A programmatic API/XHR/JSON caller (answered with 401) as opposed to a
+    top-level browser navigation (answered with a 302 into the login flow).
+
+    A human who types a URL or follows a link must never be shown a raw 401, so
+    an *ambiguous* non-browser client (plain ``curl``, ``Accept: */*``, no
+    fetch-metadata) counts as a navigation and is redirected. Only a request that
+    self-identifies as fetch/XHR/JSON is refused — otherwise the SPA's own
+    ``fetch`` calls would follow the redirect to the IdP and parse HTML as JSON.
+    """
+    # Fetch-metadata (every evergreen browser stamps it): a user navigation is
+    # ``Sec-Fetch-Mode: navigate``; ``fetch()``/XHR carry cors|same-origin|no-cors.
+    mode = request.headers.get("Sec-Fetch-Mode", "").lower()
+    if mode:
+        return mode != "navigate"
+    # Legacy AJAX marker (jQuery / axios / htmx).
+    if request.headers.get("X-Requested-With", "").lower() == "xmlhttprequest":
+        return True
+    # Content negotiation: an explicit JSON preference with no HTML acceptance.
+    accept = request.headers.get("Accept", "")
+    return "application/json" in accept and "text/html" not in accept
+
+
+def _safe_next(raw: str | None) -> str:
+    """A same-origin return path, or ``/``. Rejects absolute URLs, protocol- and
+    backslash-relative forms (open-redirect vectors) and the login route itself
+    (which would loop)."""
+    if not raw or not raw.startswith("/") or raw[:2] in ("//", "/\\"):
+        return "/"
+    if raw == "/login" or raw.startswith(("/login?", "/login/")):
+        return "/"
+    return raw
+
+
+def _login_redirect(request: web.Request) -> web.Response:
+    """Send an unauthenticated browser to the ONE server-owned login entry point
+    (``/login``), preserving where it was headed via ``?next`` so the OIDC round
+    trip returns it there. The authorize-URL construction lives in ``/login``
+    (``handle_login``) alone — this gate only decides *who* is sent there."""
+    return web.HTTPFound("/login?" + urlencode({"next": str(request.rel_url)}))
 
 
 def _cache_key(token: str) -> str:
@@ -339,7 +384,9 @@ def create_iam_auth_middleware(iam_url: str, localhost_bypass: bool = True):
         Authorization Code flow (PKCE + signed state + ``/callback``) is built
         server-side — there is exactly one way to start a login, and the client
         never hand-rolls an authorize URL. Already-authenticated callers skip
-        straight to the app; everyone else is bounced to IAM and returns to ``/``.
+        straight to the app; everyone else is bounced to IAM and returns to the
+        sanitized ``?next`` target (default ``/``) — this is where the auth gate
+        sends an unauthenticated browser navigation, carrying its original path.
         """
         token = None
         auth_header = request.headers.get("Authorization", "")
@@ -353,7 +400,7 @@ def create_iam_auth_middleware(iam_url: str, localhost_bypass: bool = True):
                     return web.HTTPFound("/")
             except Exception:
                 pass  # IAM/JWKS hiccup — fall through and re-authenticate cleanly.
-        return _authorize_redirect(request, target="/")
+        return _authorize_redirect(request, target=_safe_next(request.query.get("next")))
 
     async def handle_callback(request: web.Request) -> web.Response:
         """Exchange the authorization code for a token and set the session cookie."""
@@ -428,12 +475,16 @@ def create_iam_auth_middleware(iam_url: str, localhost_bypass: bool = True):
         if not token and path == "/ws":
             token = request.rel_url.query.get("token")
 
-        wants_html = "text/html" in request.headers.get("Accept", "")
+        # A browser navigation is redirected into the login flow (302 → /login,
+        # carrying ?next); a programmatic API/XHR/JSON caller gets a 401 it can
+        # handle itself. One predicate decides, one way, for both no-token and
+        # bad-token cases below.
+        api = _is_api_request(request)
 
         if not token:
-            if wants_html:
-                return _authorize_redirect(request)
-            return web.json_response({"error": "Authentication required", "iam_url": iam_url}, status=401)
+            if api:
+                return web.json_response({"error": "Authentication required", "iam_url": iam_url}, status=401)
+            return _login_redirect(request)
 
         try:
             user = await _validate(token)
@@ -441,9 +492,9 @@ def create_iam_auth_middleware(iam_url: str, localhost_bypass: bool = True):
             return web.json_response({"error": "Authentication service unavailable"}, status=503)
 
         if user is None:
-            if wants_html:
-                return _authorize_redirect(request)
-            return web.json_response({"error": "Invalid or expired token"}, status=401)
+            if api:
+                return web.json_response({"error": "Invalid or expired token"}, status=401)
+            return _login_redirect(request)
 
         request["iam_user"] = _with_active_org(user, request.cookies.get(_ACTIVE_ORG_COOKIE))
         # The verified raw access token. Studio records a completed render in the

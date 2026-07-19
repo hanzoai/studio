@@ -4,10 +4,14 @@ The JWT path is exercised end to end with a locally generated RSA keypair:
 sign an access token like Hanzo IAM would, then verify it through the same
 code the middleware uses. Covers signature, exp, iss, aud and the org claim.
 """
+import asyncio
 import time
+from urllib.parse import parse_qs, urlencode, urlsplit
 
 import jwt
 import pytest
+from aiohttp import web
+from aiohttp.test_utils import make_mocked_request
 from cryptography.hazmat.primitives.asymmetric import rsa
 
 from middleware import iam_auth_middleware as m
@@ -204,3 +208,124 @@ def test_handle_login_returns_to_app_root_not_the_login_path():
     # State is HMAC-signed with the client_id key (see _sign_state usage).
     payload = m._verify_state(cookie, "hanzo-studio")
     assert payload is not None and payload["t"] == "/"
+
+
+# --- browser-vs-API gate: anon navigation → 302 /login, XHR/JSON → 401 ---
+
+def _gate(headers):
+    """Run the auth middleware for an unauthenticated GET /studio with the given
+    request headers; return the response. localhost_bypass is off so the token
+    gate actually runs (prod sits behind the ingress, never loopback)."""
+    mw = m.create_iam_auth_middleware("https://hanzo.id", localhost_bypass=False)
+
+    async def _ok(_request):
+        return web.Response(text="ok")
+
+    req = make_mocked_request("GET", "/studio", headers=headers)
+    return asyncio.run(mw(req, _ok))
+
+
+def test_anon_browser_navigation_redirects_to_login():
+    """A top-level browser navigation (Accept: text/html) to a protected page is
+    bounced to the server-owned /login entry point, carrying ?next so the OIDC
+    round trip returns to /studio — never a raw 401."""
+    resp = _gate({"Accept": "text/html,application/xhtml+xml"})
+    assert resp.status == 302
+    loc = resp.headers["Location"]
+    assert loc.startswith("/login?")
+    assert parse_qs(urlsplit(loc).query)["next"] == ["/studio"]
+
+
+def test_anon_plain_curl_redirects_to_login():
+    """The confirmed repro: a bare client (Accept: */*, no fetch-metadata) is
+    treated as a navigation and redirected, not 401'd."""
+    resp = _gate({"Accept": "*/*"})
+    assert resp.status == 302
+    assert resp.headers["Location"].startswith("/login?next=")
+
+
+def test_anon_no_accept_header_redirects_to_login():
+    """No Accept header at all is still ambiguous, not an API call → redirect."""
+    resp = _gate({})
+    assert resp.status == 302
+    assert "/login" in resp.headers["Location"]
+
+
+def test_anon_sec_fetch_navigate_redirects():
+    """Modern browsers stamp Sec-Fetch-Mode: navigate on top-level loads."""
+    resp = _gate({"Accept": "*/*", "Sec-Fetch-Mode": "navigate"})
+    assert resp.status == 302
+    assert "/login" in resp.headers["Location"]
+
+
+def test_anon_xhr_gets_401():
+    """An XHR (X-Requested-With) must get a JSON 401 so the SPA can react, not a
+    redirect it would follow into HTML."""
+    resp = _gate({"Accept": "*/*", "X-Requested-With": "XMLHttpRequest"})
+    assert resp.status == 401
+
+
+def test_anon_json_accept_gets_401():
+    """An explicit JSON client (Accept: application/json) is an API caller."""
+    resp = _gate({"Accept": "application/json"})
+    assert resp.status == 401
+
+
+def test_anon_fetch_cors_gets_401():
+    """A programmatic fetch() carries Sec-Fetch-Mode: cors — 401, not redirect."""
+    resp = _gate({"Accept": "*/*", "Sec-Fetch-Mode": "cors"})
+    assert resp.status == 401
+
+
+def test_is_api_request_predicate():
+    def api(headers):
+        return m._is_api_request(make_mocked_request("GET", "/studio", headers=headers))
+
+    assert api({"Accept": "*/*"}) is False                      # plain curl → nav
+    assert api({"Accept": "text/html"}) is False                # browser → nav
+    assert api({}) is False                                     # unknown → nav
+    assert api({"Sec-Fetch-Mode": "navigate"}) is False         # top-level nav
+    assert api({"Sec-Fetch-Mode": "cors"}) is True              # fetch/XHR
+    assert api({"Sec-Fetch-Mode": "same-origin"}) is True       # fetch/XHR
+    assert api({"X-Requested-With": "XMLHttpRequest"}) is True  # legacy AJAX
+    assert api({"Accept": "application/json"}) is True          # JSON client
+
+
+def test_safe_next_predicate():
+    assert m._safe_next("/studio") == "/studio"
+    assert m._safe_next("/studio?org=acme&run=1") == "/studio?org=acme&run=1"
+    assert m._safe_next(None) == "/"
+    assert m._safe_next("") == "/"
+    assert m._safe_next("//evil.example/x") == "/"       # protocol-relative
+    assert m._safe_next("https://evil.example") == "/"   # absolute
+    assert m._safe_next("/\\evil.example") == "/"        # backslash-relative
+    assert m._safe_next("/login") == "/"                 # would loop
+    assert m._safe_next("/login?next=/x") == "/"         # would loop
+
+
+def test_handle_login_honors_next_param():
+    """A redirect from the auth gate carries ?next=/studio; login must return the
+    user there after the OIDC round trip (the signed state proves the target)."""
+    mw = m.create_iam_auth_middleware("https://hanzo.id")
+    req = make_mocked_request(
+        "GET", "/login?" + urlencode({"next": "/studio"}),
+        headers={"X-Forwarded-Proto": "https", "X-Forwarded-Host": "studio.hanzo.ai"},
+    )
+    resp = asyncio.run(mw.handle_login(req))
+    assert resp.status == 302
+    payload = m._verify_state(resp.cookies[m._STATE_COOKIE].value, "hanzo-studio")
+    assert payload["t"] == "/studio"
+
+
+def test_handle_login_rejects_open_redirect_next():
+    """An off-origin, protocol-relative or self-referential next is dropped to
+    '/', closing the open-redirect and login-loop vectors."""
+    mw = m.create_iam_auth_middleware("https://hanzo.id")
+    for bad in ("//evil.example/x", "https://evil.example", "/login"):
+        req = make_mocked_request(
+            "GET", "/login?" + urlencode({"next": bad}),
+            headers={"X-Forwarded-Proto": "https", "X-Forwarded-Host": "studio.hanzo.ai"},
+        )
+        resp = asyncio.run(mw.handle_login(req))
+        payload = m._verify_state(resp.cookies[m._STATE_COOKIE].value, "hanzo-studio")
+        assert payload["t"] == "/", f"next={bad!r} should be rejected"
