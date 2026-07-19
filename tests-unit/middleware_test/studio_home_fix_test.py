@@ -64,7 +64,8 @@ def test_fix_graph_is_the_canonical_qwen_edit():
     assert "FluxKontextMultiReferenceLatentMethod" not in types   # the stipple cause
     assert types.count("TextEncodeQwenImageEditPlus") == 2        # positive + negative
     ks = next(n for n in g.values() if n["class_type"] == "KSampler")
-    assert ks["inputs"]["denoise"] == 1.0
+    # LOW-denoise edit (default 0.25) of the SOURCE latent — never 1.0 (that is Regenerate).
+    assert ks["inputs"]["denoise"] == sh.EDIT_DENOISE_DEFAULT == 0.25
     latent = g[ks["inputs"]["latent_image"][0]]
     assert latent["class_type"] == "VAEEncode"
     scaled = latent["inputs"]["pixels"]                           # the sampling latent's source
@@ -172,18 +173,22 @@ def test_job_tag_is_short_hex_and_unique():
 def test_fix_graph_anchored_default_keeps_pose():
     g = sh._fix_graph("x.png", "fix the coloring", "fixes/x")
     assert g["10"]["class_type"] == "VAEEncode"
-    assert "same model, pose, framing" in g["6"]["inputs"]["prompt"]
-
-
-def test_fix_graph_repose_uses_empty_latent_and_frees_pose():
-    g = sh._fix_graph("x.png", "same outfit but from the side only", "fixes/x", size=(1024, 1536))
-    assert g["10"]["class_type"] == "EmptySD3LatentImage"
-    assert g["6"]["inputs"]["image1"] == ["1", 0]      # RAW reference, no scale mismatch
-    assert g["13"]["inputs"]["model"] == ["11", 0]     # no CFGNorm on the free-latent path
-    assert g["10"]["inputs"]["width"] == 1024 and g["10"]["inputs"]["height"] == 1536
     p = g["6"]["inputs"]["prompt"]
-    assert "pose, framing" not in p          # must not pin the pose it was asked to change
-    assert "view or pose" in p
+    assert "pose, framing" in p                              # preservation directive
+    assert "apply only the requested change" in p.lower()
+
+
+def test_fix_graph_never_uses_empty_latent():
+    """Edit is ALWAYS a low-denoise img2img of the source — a pose/view change is now
+    REGENERATE, not Edit, so the fix graph NEVER falls back to EmptyLatentImage
+    (the old repose auto-switch, which drifted the whole image, is gone)."""
+    for instruction in ("fix the coloring", "same outfit but from the side only",
+                        "make her standing and looking away"):
+        g = sh._fix_graph("x.png", instruction, "fixes/x")
+        assert not any("Empty" in n.get("class_type", "") for n in g.values()), instruction
+        ks = next(n for n in g.values() if n["class_type"] == "KSampler")["inputs"]
+        assert g[ks["latent_image"][0]]["class_type"] == "VAEEncode"
+        assert sh._assert_edit_graph(g) == ""
 
 
 def test_repose_lexicon_matches_view_changes_only():
