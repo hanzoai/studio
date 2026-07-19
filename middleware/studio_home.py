@@ -244,6 +244,58 @@ def _append_feedback(request, root: Path, org: str, key: str, entry: dict) -> No
         pass
 
 
+def _rate_write(root: Path, key: str, patch: dict) -> dict:
+    """The ONE atomic writer for the current-state rating store (ratings.json) — the
+    append-only training log is _append_feedback. Merges ``patch`` into the entry and
+    replaces the file via a UNIQUE temp, so two concurrent writers (a manual rate and an
+    archive hook) can never clobber each other on a shared temp name — the hazard already
+    fixed for library.json."""
+    rf = root / "ratings.json"
+    try:
+        data = json.loads(rf.read_text())
+    except Exception:
+        data = {}
+    entry = {**data.get(key, {}), **patch, "updatedAt": int(time.time())}
+    data[key] = entry
+    fd, tmp = tempfile.mkstemp(dir=str(root), prefix=".ratings.", suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=1)
+        os.replace(tmp, rf)
+    except Exception:
+        with contextlib.suppress(OSError):
+            os.unlink(tmp)
+        raise
+    return entry
+
+
+def _train_on_status(request, root: Path, org: str, rel: str, status: str) -> None:
+    """Curation IS training signal: archiving or flagging an output records it as a
+    NEGATIVE example — the user threw it away, so it is a bad response — and restoring it
+    clears that auto-negative. The vote is NOTE-LESS on purpose: it trains the
+    reward/preference dataset (feedback.jsonl, where the deleted/flagged status rides
+    along as negative-only signal) WITHOUT injecting a generic 'lesson' into future
+    prompts (_mistakes gates on note text, so a bare downvote never pollutes a prompt).
+    A judgement the user typed themselves (a manual vote/note) is respected — never
+    overwritten by, or cleared with, the automatic archive-negative. Automatic dedup does
+    NOT pass through here, so byte-identical twins are never mislabelled bad."""
+    try:
+        try:
+            cur = json.loads((root / "ratings.json").read_text()).get(rel, {})
+        except Exception:
+            cur = {}
+        user_owned = bool(cur.get("notes")) or ("vote" in cur and not cur.get("archived"))
+        if status in _CORRUPT:                       # archived / flagged → negative exemplar
+            if not user_owned:
+                cur = _rate_write(root, rel, {"vote": -1, "archived": True, "path": rel})
+            _append_feedback(request, root, org, rel, {**cur, "path": rel})
+        elif cur.get("archived"):                    # restored → clear ONLY our auto-negative
+            cur = _rate_write(root, rel, {"vote": 0, "archived": False, "path": rel})
+            _append_feedback(request, root, org, rel, {**cur, "path": rel})
+    except Exception:
+        log.debug("train-on-status skipped for %s", rel, exc_info=True)
+
+
 try:
     import fcntl as _fcntl
 except ImportError:  # non-POSIX; never the studio image
@@ -2080,9 +2132,15 @@ def add_studio_home_routes(routes: web.RouteTableDef, server) -> None:
         lib = _load_library(root)
         for a in lib.get("assets", []):
             if a.get("path") == rel:
+                old = a.get("status")
                 a["status"] = status
                 a["updatedAt"] = int(time.time())
                 _save_library(root, lib)
+                # Curation feeds the flywheel: archiving/flagging an output records it as
+                # a bad response for training; restoring clears that auto-negative. Only
+                # on a real change, so a no-op re-set never double-logs.
+                if status != old:
+                    _train_on_status(request, root, org, rel, status)
                 return web.json_response({"ok": True, "path": rel, "status": status})
         return web.json_response({"error": "asset not in library"}, status=404)
 
@@ -2454,28 +2512,21 @@ def add_studio_home_routes(routes: web.RouteTableDef, server) -> None:
         root = _library_root(org)
         if root is None:
             return web.json_response({"error": "no library for org"}, status=404)
-        rf = root / "ratings.json"
-        try:
-            data = json.loads(rf.read_text())
-        except Exception:
-            data = {}
-        entry = data.get(key, {})
+        patch: dict = {}
         if stars is not None:
-            entry["stars"] = stars
+            patch["stars"] = stars
         if "vote" in body:
-            entry["vote"] = _norm_vote(body.get("vote"))   # 👍 1 · 👎 -1 · cleared 0
+            patch["vote"] = _norm_vote(body.get("vote"))   # 👍 1 · 👎 -1 · cleared 0
         if "notes" in body:
-            entry["notes"] = str(body.get("notes") or "")[:2000]
+            patch["notes"] = str(body.get("notes") or "")[:2000]
         if "path" in body:
             # The run's landed output, stored beside the rating so the flywheel row
             # carries {path, stars, note, ts} keyed by run id — the AI can load the
             # image it's being told to do differently next time.
-            entry["path"] = str(body.get("path") or "")[:512]
-        entry["updatedAt"] = int(time.time())
-        data[key] = entry
-        tmp = root / "ratings.json.tmp"
-        tmp.write_text(json.dumps(data, indent=1))
-        tmp.replace(rf)
+            patch["path"] = str(body.get("path") or "")[:512]
+        if ("vote" in body) or ("notes" in body):
+            patch["archived"] = False   # an explicit judgement is user-owned, not the auto archive-negative
+        entry = _rate_write(root, key, patch)   # ONE atomic writer, shared with the archive hook
         # Every judgement (vote / stars / text) is also logged, immutable, to the
         # training-feedback dataset the model trainer consumes.
         if ("vote" in body) or ("notes" in body) or (stars is not None):

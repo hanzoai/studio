@@ -119,6 +119,10 @@ dialog::backdrop{background:rgba(0,0,0,.6)} dialog textarea{width:100%;backgroun
 .vote.up.on{border-color:#3fb950;color:#3fb950;background:rgba(63,185,80,.12)}
 .vote.down.on{border-color:#f85149;color:#f85149;background:rgba(248,81,73,.12)}
 .vote.note.has{border-color:#4a9eff;color:#8fc3ff}
+/* Rating bar on the full-image (zoom) view — same vote semantics as the cards, bigger tap targets for mobile. */
+#zrate{position:absolute;bottom:max(22px,calc(env(safe-area-inset-bottom) + 14px));left:50%;transform:translateX(-50%);z-index:2;display:none;gap:8px;align-items:center;background:rgba(12,12,14,.82);border:1px solid var(--line);border-radius:14px;padding:8px 12px;backdrop-filter:blur(7px);-webkit-backdrop-filter:blur(7px)}
+#zrate .vote{font-size:1.05rem;padding:8px 15px;color:#cdd;min-height:44px;display:inline-flex;align-items:center}
+#zrate .vote.note{font-size:.9rem;white-space:nowrap}
 .card.rejected{opacity:.55} .card.rejected .im{outline:2px solid #f85149;outline-offset:-2px}
 .notebox{width:100%;background:#0f0f12;color:var(--txt);border:1px solid var(--line);border-radius:7px;padding:6px 9px;font:inherit;font-size:.76rem;margin-top:6px;min-height:34px;resize:vertical}
 .fav{cursor:pointer;font-size:1rem;color:#3a3a44} .fav.on{color:#ffcf4a}
@@ -394,6 +398,12 @@ body.immersive #stage{display:block}
   <video id="zoomvid" controls playsinline style="display:none;max-width:92vw;max-height:88vh" onclick="event.stopPropagation()"></video>
   <model-viewer id="zoom3d" camera-controls auto-rotate touch-action="pan-y" shadow-intensity="1" exposure="1.1" style="display:none;width:min(88vw,720px);height:min(84vh,720px);background:radial-gradient(circle at 50% 40%,#25272e,#111116)" onclick="event.stopPropagation()"></model-viewer>
   <button class="viewbtn" id="znext" onclick="event.stopPropagation();zStep(1)" style="position:absolute;right:18px;top:50%;transform:translateY(-50%);display:none;font-size:1.4rem" aria-label="Next image">›</button>
+  <!-- Rate/critique the asset you're looking at — 👍/👎 train the model, 💬 opens the critique chat. Bound to the zoomed asset's path (ZPATH); hidden when the path is unknown. -->
+  <div id="zrate" onclick="event.stopPropagation()" role="group" aria-label="Rate this image">
+    <button class="vote up" id="zrup" title="Good result — 👍 teaches the model" aria-label="Upvote" onclick="zVote(1)">👍</button>
+    <button class="vote down" id="zrdown" title="Wrong result — 👎 teaches the model" aria-label="Downvote" onclick="zVote(-1)">👎</button>
+    <button class="vote note" id="zrnote" title="Critique this — the AI sees it, replies, and learns" aria-label="Add a comment" onclick="if(ZPATH)openFeedback(ZPATH)">💬 Comment</button>
+  </div>
 </div>
 <dialog id="fixdlg">
   <h3 id="fixtitle" style="font-size:1rem">Edit image</h3>
@@ -726,9 +736,9 @@ function render(){
       <div class="pick" role="checkbox" aria-checked="${picked}" aria-label="Select image" onclick="pickToggle(event,'${pe}')">${picked?'✓':''}</div>
       ${img&&!SELMODE?`<button class="addref ${inTray?'on':''}" title="Add to next generation" onclick="event.stopPropagation();addRef('${pe}')">${inTray?'✓':'+'}</button>`:''}
       ${media&&!SELMODE&&!review?`<button class="delx" title="Move to Archive (recoverable)" onclick="event.stopPropagation();quickDel('${pe}')">🗑</button>`:''}
-      ${img?`<div class="im" data-bg="${thumbURL(a)}" ${SELMODE?'':`onclick="zoom('${imgURL(a)}')"`}></div>`
-        :vid?`<div class="im" style="position:relative"><video src="${imgURL(a)}" poster="${thumbURL(a)}" preload="none" muted playsinline style="width:100%;height:100%;object-fit:cover;display:block" ${SELMODE?'':`onclick="zoom('${imgURL(a)}',true)"`}></video><span style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);font-size:1.7rem;color:#fff;text-shadow:0 2px 10px #000c;pointer-events:none">▶</span></div>`
-        :m3d?`<div class="im" style="position:relative;display:flex;align-items:center;justify-content:center;background:radial-gradient(circle at 50% 40%,#2a2c34,#141419)" ${SELMODE?'':`onclick="zoom('${imgURL(a)}','3d')"`}><span style="font-size:2.6rem">🧊</span><span style="position:absolute;bottom:8px;right:9px;background:rgba(10,10,11,.8);border:1px solid var(--line);border-radius:6px;padding:1px 7px;font-size:.62rem;letter-spacing:.04em">3D · rotate</span></div>`
+      ${img?`<div class="im" data-bg="${thumbURL(a)}" ${SELMODE?'':`onclick="zoom('${imgURL(a)}',null,'${pe}')"`}></div>`
+        :vid?`<div class="im" style="position:relative"><video src="${imgURL(a)}" poster="${thumbURL(a)}" preload="none" muted playsinline style="width:100%;height:100%;object-fit:cover;display:block" ${SELMODE?'':`onclick="zoom('${imgURL(a)}',true,'${pe}')"`}></video><span style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);font-size:1.7rem;color:#fff;text-shadow:0 2px 10px #000c;pointer-events:none">▶</span></div>`
+        :m3d?`<div class="im" style="position:relative;display:flex;align-items:center;justify-content:center;background:radial-gradient(circle at 50% 40%,#2a2c34,#141419)" ${SELMODE?'':`onclick="zoom('${imgURL(a)}','3d','${pe}')"`}><span style="font-size:2.6rem">🧊</span><span style="position:absolute;bottom:8px;right:9px;background:rgba(10,10,11,.8);border:1px solid var(--line);border-radius:6px;padding:1px 7px;font-size:.62rem;letter-spacing:.04em">3D · rotate</span></div>`
         :`<div class="doc">${esc((a.path||'').split('/').pop())}</div>`}
       <div class="meta">
         <span class="t">${esc((a.path||'').split('/').pop())}</span>
@@ -1018,7 +1028,7 @@ async function openLineage(path){
   $('ctxtitle').textContent='Versions'; $('ctxbody').innerHTML=ctxHTML(CTX, await lineageFor(path));
   $('ctxreuse').style.display='none'; $('ctxfix').style.display=''; $('ctxeditor').style.display='none'; $('ctxdlg').showModal();
 }
-function openLibItem(path){ ctxdlg.close(); zoom(imgURL({path})); }
+function openLibItem(path){ ctxdlg.close(); zoom(imgURL({path}),null,path); }
 async function primeFix(base,prompt,libRefs,upRefs){
   await openFixPath(base,prompt);
   (libRefs||[]).filter(p=>p&&p!==base).forEach(p=>{ if(FIXREFS.length<MAXFIXREFS)FIXREFS.push({kind:'lib',ref:p,thumb:thumbURL({path:p})}); });
@@ -1070,7 +1080,7 @@ async function runs(){
     return {id,ok:(v.status||{}).status_str||'?',im:ims[0],title:promptTitle(v)};});
   // Lightbox nav list (outputs in order) so ←/→ walk the queue; _ni maps an item to its slot.
   RUNIMGS=[]; const _ni={};
-  items.forEach((r,i)=>{ if(r.im){ _ni[i]=RUNIMGS.length; RUNIMGS.push({u:vURL(r.im),video:isVideo(r.im.filename)}); } });
+  items.forEach((r,i)=>{ if(r.im){ _ni[i]=RUNIMGS.length; RUNIMGS.push({u:vURL(r.im),video:isVideo(r.im.filename),path:(r.im.subfolder?r.im.subfolder+'/':'')+r.im.filename}); } });
   $('rgrid').innerHTML=items.map((r,i)=>{
     const op = r.im ? ((r.im.subfolder?r.im.subfolder+'/':'')+r.im.filename) : '';   // its library path
     const oe = op.replace(/'/g,"\\'");
@@ -1088,7 +1098,7 @@ async function runs(){
           <button class="vote up ${rt.vote===1?'on':''}" title="Good output — rates it 👍 for training" onclick="qVote('${oe}',1)">👍</button>
           <button class="vote down ${rt.vote===-1?'on':''}" title="Bad output — rates it 👎 for training" onclick="qVote('${oe}',-1)">👎</button>
           <button class="vote note ${rt.notes?'has':''}" title="Written feedback" onclick="openFeedback('${oe}')">💬</button>
-          <button class="mini" title="Reject this output → Archive (⌘Z to undo)" onclick="qReject('${oe}')">${rej?'✓ Rejected':'🗑 Reject'}</button>
+          <button class="mini" title="Archive this output — also teaches the model it was a bad result (⌘Z to undo)" onclick="qReject('${oe}')">${rej?'✓ Archived':'🗑 Archive'}</button>
         </div>`:''}
         <div class="row" style="justify-content:space-between">
           <span class="stars">${stars}</span>
@@ -1106,7 +1116,7 @@ async function rateNote(key,notes){await fetch('/v1/library/rate',{method:'POST'
 // Keyed by the image path, so a vote persists with the asset (not just the run). ──
 async function castVote(path,v){
   const cur=RATINGS[path]||{}, nv=cur.vote===v?0:v;               // click the same thumb again = clear
-  RATINGS[path]={...cur,vote:nv}; render();
+  RATINGS[path]={...cur,vote:nv}; render(); zPaintRate();
   try{await fetch('/v1/library/rate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({key:path,path,vote:nv})});}catch(_){}
   toast(nv===1?'👍 Thanks — added to the training set':nv===-1?'👎 Noted — add a 💬 note so the model learns why':'Vote cleared'); track('rate',{score:nv});
   refreshFbCount();
@@ -1126,13 +1136,13 @@ async function sendCritique(e){e.preventDefault();const t=($('fbtext').value||''
   try{const r=await fetch('/v1/library/critique',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({path:FBPATH,message:t})});
     const j=await r.json();pend.remove();
     el.insertAdjacentHTML('beforeend',fbBubble('ai',j.reply||'Noted — the next render will avoid it.'));el.scrollTop=el.scrollHeight;
-    RATINGS[FBPATH]={...(RATINGS[FBPATH]||{}),notes:t};track('rate',{score:FBVOTE,noted:true});refreshFbCount();
+    RATINGS[FBPATH]={...(RATINGS[FBPATH]||{}),notes:t};track('rate',{score:FBVOTE,noted:true});refreshFbCount();zPaintRate();
   }catch(_){pend.textContent='(couldn’t reach the critique model — your note was still saved)';}
   return false;}
 function fbSetVote(v){FBVOTE=FBVOTE===v?0:v;fbPaintVote();
   if(FBPATH){RATINGS[FBPATH]={...(RATINGS[FBPATH]||{}),vote:FBVOTE};
     fetch('/v1/library/rate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({key:FBPATH,path:FBPATH,vote:FBVOTE})}).catch(()=>{});
-    track('rate',{score:FBVOTE});refreshFbCount();}}
+    track('rate',{score:FBVOTE});refreshFbCount();zPaintRate();}}
 function fbPaintVote(){$('fbup').classList.toggle('brand',FBVOTE===1);$('fbdown').classList.toggle('brand',FBVOTE===-1);}
 async function refreshFbCount(){try{const s=await (await fetch('/v1/feedback/stats')).json();const b=$('fbexport');if(b)b.textContent='⬇ Feedback'+(s.total?' ('+s.total+')':'');}catch(_){}}
 function exportFeedback(){window.open('/v1/feedback/export','_blank');}
@@ -1152,7 +1162,7 @@ async function qReject(path){
   const a=DATA.assets.find(x=>x.path===path); pushUndo([{path,prev:(a||{}).status||'draft'}]);
   if(a)a.status='deleted';
   try{await fetch('/v1/library/status',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({path,status:'deleted'})});}catch(_){}
-  toast('Rejected → Archive — ⌘Z to undo'); paintChips();
+  toast('Archived — the model will learn it was a bad result (⌘Z to undo)'); paintChips();
   if(typeof runs==='function')runs();
 }
 let FAVKEY=null,FAVTITLE=null;
@@ -1394,15 +1404,24 @@ function setZoomMedia(u,mode){const im=$('zoomimg'),vd=$('zoomvid'),md=$('zoom3d
   else{im.src=u;im.style.display='';}}
 // Lightbox nav: a zoom opened from a grid (queue, gallery) carries that grid's media
 // list so ← / → (and the on-screen ‹ ›) step through them; a bare zoom() shows one.
-let ZL=[], ZLI=-1;
-function zoom(u,video){ZL=[];ZLI=-1;const z=$('zoom');z.classList.remove('stackctx');$('zprev').style.display='none';$('znext').style.display='none';setZoomMedia(u,video);z.style.display='flex';}
-function zoomList(list,i){ZL=list||[];ZLI=i|0;const z=$('zoom');z.classList.remove('stackctx');const many=ZL.length>1;$('zprev').style.display=many?'':'none';$('znext').style.display=many?'':'none';const it=ZL[ZLI]||{};setZoomMedia(it.u,it.video);z.style.display='flex';}
-function zoomStep(d){if(!ZL.length)return;ZLI=(ZLI+d+ZL.length)%ZL.length;const it=ZL[ZLI]||{};setZoomMedia(it.u,it.video);}
+let ZL=[], ZLI=-1, ZPATH=null;        // ZPATH: the library path of the asset in view, for the rating bar
+function zoom(u,video,path){ZL=[];ZLI=-1;ZPATH=path||null;const z=$('zoom');z.classList.remove('stackctx');$('zprev').style.display='none';$('znext').style.display='none';setZoomMedia(u,video);z.style.display='flex';zPaintRate();}
+function zoomList(list,i){ZL=list||[];ZLI=i|0;const z=$('zoom');z.classList.remove('stackctx');const many=ZL.length>1;$('zprev').style.display=many?'':'none';$('znext').style.display=many?'':'none';const it=ZL[ZLI]||{};ZPATH=it.path||null;setZoomMedia(it.u,it.video);z.style.display='flex';zPaintRate();}
+function zoomStep(d){if(!ZL.length)return;ZLI=(ZLI+d+ZL.length)%ZL.length;const it=ZL[ZLI]||{};ZPATH=it.path||null;setZoomMedia(it.u,it.video);zPaintRate();}
+// The full-image view's rating bar: same 👍/👎/💬 as the cards, bound to the asset in view.
+// Reads the single RATINGS store; only paints while the zoom is open (safe to call anytime).
+function zPaintRate(){const z=$('zoom'),bar=$('zrate');if(!bar)return;
+  if(z.style.display==='none'||!ZPATH){bar.style.display='none';return;}
+  const r=RATINGS[ZPATH]||{};bar.style.display='flex';
+  $('zrup').classList.toggle('on',r.vote===1);
+  $('zrdown').classList.toggle('on',r.vote===-1);
+  $('zrnote').classList.toggle('has',!!r.notes);}
+function zVote(v){if(ZPATH)castVote(ZPATH,v);}   // castVote toggles + persists + repaints this bar
 function zStep(d){if(SVI>=0&&CURSTACK)svStep(d);else zoomStep(d);}   // stack view uses svStep; grids use zoomStep
 function zoomBg(){closeZoom();}
 function closeZoom(){const z=$('zoom');z.style.display='none';z.classList.remove('stackctx');$('zprev').style.display='none';$('znext').style.display='none';
   const vd=$('zoomvid');if(vd){vd.pause&&vd.pause();vd.removeAttribute('src');vd.style.display='none';}
-  const md=$('zoom3d');if(md){md.removeAttribute('src');md.style.display='none';}$('zoomimg').style.display='';SVI=-1;ZL=[];ZLI=-1;}
+  const md=$('zoom3d');if(md){md.removeAttribute('src');md.style.display='none';}$('zoomimg').style.display='';SVI=-1;ZL=[];ZLI=-1;ZPATH=null;$('zrate').style.display='none';}
 const ta=$('pin'); ta.addEventListener('input',()=>{ta.style.height='auto';ta.style.height=Math.min(ta.scrollHeight,180)+'px';});
 async function loadSession(){
   let s={}; try{ s=await (await fetch('/v1/session')).json(); }catch(e){ return; }
@@ -1637,9 +1656,9 @@ async function svDrop(e,idx){e.preventDefault();e.currentTarget.classList.remove
   else{CURSTACK=await r.json();svRender();announce('Order saved');}
 }
 // ── In-Stack image viewer with previous / next (preserves Stack context) ───────
-function svOpen(i){if(!CURSTACK||!CURSTACK.assets[i])return;SVI=i;const path=CURSTACK.assets[i].assetId;
+function svOpen(i){if(!CURSTACK||!CURSTACK.assets[i])return;SVI=i;const path=CURSTACK.assets[i].assetId;ZPATH=path||null;
   setZoomMedia(imgURL({path}),isVideo(path));const z=$('zoom');z.classList.add('stackctx');
-  $('zprev').style.display=$('znext').style.display=CURSTACK.assets.length>1?'block':'none';z.style.display='flex';
+  $('zprev').style.display=$('znext').style.display=CURSTACK.assets.length>1?'block':'none';z.style.display='flex';zPaintRate();
   announce('Image '+(i+1)+' of '+CURSTACK.assets.length);}
 function svStep(d){if(SVI<0||!CURSTACK)return;const n=CURSTACK.assets.length;SVI=(SVI+d+n)%n;svOpen(SVI);}
 // ── Header actions: rename / describe / add images / share / settings ─────────

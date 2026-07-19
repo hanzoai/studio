@@ -707,6 +707,56 @@ async def test_status_route_accepts_flagged_and_restores(tmp_path, monkeypatch):
     await client.close()
 
 
+@pytest.mark.asyncio
+async def test_archive_records_negative_training_signal(tmp_path, monkeypatch):
+    """Curation IS training signal: archiving (status=deleted) or flagging an output
+    records it as a bad response — vote -1 in ratings.json AND an event in feedback.jsonl
+    carrying the deleted/flagged status — and restoring clears that AUTO-negative. The
+    downvote is note-less, so it trains the reward dataset WITHOUT polluting prompt
+    lessons (_mistakes needs note text)."""
+    _orgaware(tmp_path, monkeypatch)
+    root = Path(sh.folder_paths.get_org_output_directory("acme"))
+    (root / "a.png").write_bytes(b"\x89PNG")
+    (root / "library.json").write_text(json.dumps({"assets": [{"path": "a.png", "status": "draft"}]}))
+    client = await _client(_FakeServer())
+
+    r = await client.post("/v1/library/status", json={"path": "a.png", "status": "deleted"}, headers={"X-Org": "acme"})
+    assert r.status == 200
+    ratings = json.loads((root / "ratings.json").read_text())
+    assert ratings["a.png"]["vote"] == -1 and ratings["a.png"]["archived"] is True
+    assert not ratings["a.png"].get("notes")                       # note-less: trains, never injects a lesson
+    fb = [json.loads(x) for x in (root / "feedback.jsonl").read_text().splitlines() if x.strip()]
+    ev = [e for e in fb if e.get("output") == "a.png"][-1]
+    assert ev["vote"] == -1 and ev["status"] == "deleted"          # deleted status rides along → negative-only
+    assert sh._mistakes(ratings, {"a.png"}) == []                  # a bare downvote never becomes a prompt lesson
+
+    r2 = await client.post("/v1/library/status", json={"path": "a.png", "status": "draft"}, headers={"X-Org": "acme"})
+    assert r2.status == 200
+    ratings2 = json.loads((root / "ratings.json").read_text())
+    assert ratings2["a.png"]["vote"] == 0 and ratings2["a.png"]["archived"] is False   # restore clears the auto-negative
+    await client.close()
+
+
+@pytest.mark.asyncio
+async def test_archive_respects_a_user_judgement(tmp_path, monkeypatch):
+    """A downvote + note the user typed is user-owned: archiving never overwrites it and
+    restoring never clears it (only the AUTO archive-negative is reversible). Their note
+    stays an injected lesson."""
+    _orgaware(tmp_path, monkeypatch)
+    root = Path(sh.folder_paths.get_org_output_directory("acme"))
+    (root / "b.png").write_bytes(b"\x89PNG")
+    (root / "library.json").write_text(json.dumps({"assets": [{"path": "b.png", "status": "draft"}]}))
+    client = await _client(_FakeServer())
+    await client.post("/v1/library/rate", json={"key": "b.png", "path": "b.png", "vote": -1, "notes": "left strap missing"}, headers={"X-Org": "acme"})
+    await client.post("/v1/library/status", json={"path": "b.png", "status": "deleted"}, headers={"X-Org": "acme"})
+    await client.post("/v1/library/status", json={"path": "b.png", "status": "draft"}, headers={"X-Org": "acme"})
+    ratings = json.loads((root / "ratings.json").read_text())
+    assert ratings["b.png"]["vote"] == -1                          # survives archive+restore
+    assert ratings["b.png"]["notes"] == "left strap missing"
+    assert sh._mistakes(ratings, {"b.png"}) == ["left strap missing"]   # still a real lesson
+    await client.close()
+
+
 def test_studio_home_hides_flagged_and_offers_review():
     """UI contract: flagged is hidden from the normal grid exactly like deleted, and
     reachable for review + restore. /v1/library returns all statuses, so the grid is
