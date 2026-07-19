@@ -36,6 +36,7 @@ Env:
 from __future__ import annotations
 
 import contextlib
+import hashlib
 import json
 import logging
 import os
@@ -421,6 +422,46 @@ def _job_tag() -> str:
     UNIQUE output namespace — a re-fix of the same source can never prefix-match an
     earlier run's (possibly rejected) file as its own result."""
     return uuid.uuid4().hex[:6]
+
+
+def _stage_source(in_dir: Path, p: Path, kind: str, *, max_px: int | None = None) -> str:
+    """Stage a library asset into the org input dir under a CONTENT-ADDRESSED name — the
+    ONE way an Edit/Compose/Video/3D source reaches the worker's LoadImage. The name is
+    the sha256 of the source bytes, which makes the source binding self-verifying and
+    concurrency-safe:
+      * the name IS a checksum of the exact selected image, so the bytes the worker loads
+        can never silently drift to another asset (a mismatch would be a different name);
+      * two jobs editing DIFFERENT sources can never collide on a shared worker input dir
+        (different bytes -> different name, cryptographically) — the cross-contamination
+        that a process-salted hash could, rarely, produce for concurrent edits;
+      * two jobs on the SAME source share one identical file (idempotent, dedup-friendly).
+    ``max_px`` downsizes the STAGED copy (Hunyuan3D encodes small; keeps the enqueue under
+    the inline cap) — the content-address still keys on the ORIGINAL asset, so distinct
+    sources stay distinct regardless of the resample."""
+    data = p.read_bytes()
+    ref_name = f"{kind}_src_{hashlib.sha256(data).hexdigest()[:16]}.png"
+    dst = in_dir / ref_name
+    if max_px:
+        try:
+            from PIL import Image
+            im = Image.open(p)
+            if max(im.size) > max_px:
+                im.thumbnail((max_px, max_px))
+                im.save(dst)
+                return ref_name
+        except Exception:
+            pass
+    dst.write_bytes(data)
+    return ref_name
+
+
+def _trace(stage: str, **fields) -> None:
+    """One structured render-lifecycle line, correlated by job id, at each hop
+    (build -> queue -> worker-publish) so a wrong asset/prompt is pinpointed to the
+    FIRST stage it appears. NEVER logs signed URLs, tokens, cookies or image bytes —
+    only ids, content-address checksums, counts and lane/node labels."""
+    kv = " ".join(f"{k}={v}" for k, v in fields.items() if v is not None)
+    log.info("studio.trace %s %s", stage, kv)
 
 
 _TAG_RE = re.compile(r"_[0-9a-f]{6}$")
@@ -982,6 +1023,8 @@ async def _dispatch(request, server, org: str, graph: dict, *, kind: str, prompt
     lane = "gpu" if _in_render_jobs(org, pid) else "local"
     node = _render_job_node(org, pid) if lane == "gpu" else "studio pod"
     worklog.record(org, pid=pid, status="queued", lane=lane, node=node, **common)
+    _trace("dispatch.queued", org=org, pid=pid, kind=kind, lane=lane, node=node,
+           refs=len(refs), parents=",".join(parents) or None, prefix=output_prefix)
     return pid
 
 
@@ -1023,10 +1066,9 @@ async def dispatch_fix(request: web.Request, server, org: str, rel: str,
         p = _safe_asset(root, rel) if root else None
         if p is None or p.suffix.lower() != ".png":
             raise DispatchError(f"unknown asset: {rel}")
-        # FULL-RES source (the real output file, never the .thumbs/ preview), staged with
-        # a collision-safe name. Reuse the source's ORIGINAL seed from its embedded graph.
-        ref_name = f"fix_src_{abs(hash((str(p), p.stat().st_mtime))) % 10**10}.png"
-        (in_dir / ref_name).write_bytes(p.read_bytes())
+        # FULL-RES source (the real output file, never the .thumbs/ preview), staged under
+        # a content-addressed name. Reuse the source's ORIGINAL seed from its embedded graph.
+        ref_name = _stage_source(in_dir, p, "fix")
         stem = re.sub(r"[^a-zA-Z0-9_-]", "_", p.stem)[:48]
         try:
             sp = _provenance(p).get("seed")
@@ -1061,6 +1103,9 @@ async def dispatch_fix(request: web.Request, server, org: str, rel: str,
     bad = _assert_edit_graph(graph)
     if bad:
         raise DispatchError(f"edit rejected: {bad}")
+    _trace("edit.build", org=org, op=kind, source=(None if upload else rel),
+           ref=ref_name, denoise=denoise, seed=eff_seed,
+           prefix=f"fixes/{stem}", lessons=len(lessons))
     pid = await _dispatch(request, server, org, graph,
                           lessons=lessons, kind=kind, prompt=instruction,
                           refs=[ref_name] + ([mask_name] if mask_name else []),
@@ -1112,8 +1157,7 @@ async def dispatch_video(request: web.Request, server, org: str, prompt: str,
         p = _safe_asset(root, rel) if root else None
         if p is None or p.suffix.lower() != ".png":
             raise DispatchError(f"unknown asset: {rel}")
-        ref_name = f"video_src_{abs(hash((str(p), p.stat().st_mtime))) % 10**10}.png"
-        (in_dir / ref_name).write_bytes(p.read_bytes())
+        ref_name = _stage_source(in_dir, p, "video")
         staged = True
     base = Path(ref_name).stem if ref_name else " ".join(prompt.split()[:8])
     stem = re.sub(r"[^a-zA-Z0-9_-]", "_", base)[:48] + f"_{_job_tag()}"
@@ -1156,21 +1200,11 @@ async def dispatch_model3d(request: web.Request, server, org: str,
         p = _safe_asset(root, rel) if root else None
         if p is None or p.suffix.lower() != ".png":
             raise DispatchError(f"unknown asset: {rel}")
-        ref_name = f"model3d_src_{abs(hash((str(p), p.stat().st_mtime))) % 10**10}.png"
         # Hunyuan3D encodes the image at ~518px internally, so a 4k catalog master is
         # pure waste — and inlining a ~20MB PNG to the worker overruns the gpu-jobs
         # enqueue (the "GPU worker momentarily unavailable" fall-through). Cap the
         # staged copy at 1536px; the mesh is identical, the dispatch is reliable.
-        try:
-            from PIL import Image
-            im = Image.open(p)
-            if max(im.size) > 1536:
-                im.thumbnail((1536, 1536))
-                im.save(in_dir / ref_name)
-            else:
-                (in_dir / ref_name).write_bytes(p.read_bytes())
-        except Exception:
-            (in_dir / ref_name).write_bytes(p.read_bytes())
+        ref_name = _stage_source(in_dir, p, "model3d", max_px=1536)
         staged = True
     stem = re.sub(r"[^a-zA-Z0-9_-]", "_", Path(ref_name).stem)[:48] + f"_{_job_tag()}"
     pid = await _dispatch(
@@ -1206,8 +1240,7 @@ async def dispatch_compose(request: web.Request, server, org: str, paths: list,
         p = _safe_asset(root, rel) if root else None
         if p is None or p.suffix.lower() != ".png":
             raise DispatchError(f"unknown asset: {rel}")
-        nm = f"compose_src_{abs(hash((str(p), p.stat().st_mtime))) % 10**10}.png"
-        (in_dir / nm).write_bytes(p.read_bytes())
+        nm = _stage_source(in_dir, p, "compose")
         ref_names.append(nm)
     ref_names.extend(uploaded)
     labels = [Path(x).stem for x in paths] + [Path(u).stem for u in uploaded]
@@ -1254,8 +1287,7 @@ async def dispatch_amend(request: web.Request, server, org: str, prompt_id: str,
         p = _safe_asset(root, rel) if root else None
         if p is None or p.suffix.lower() != ".png":
             raise DispatchError(f"unknown asset: {rel}")
-        nm = f"amend_src_{abs(hash((str(p), p.stat().st_mtime))) % 10**10}.png"
-        (in_dir / nm).write_bytes(p.read_bytes())
+        nm = _stage_source(in_dir, p, "amend")
         ref_names.append(nm)
     # de-dupe, keep order, cap at the graph's 5
     seen: set = set()

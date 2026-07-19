@@ -8,11 +8,14 @@ shared keys. Falls back to the in-pod queue when there is no live worker.
 """
 import base64
 import json
+import logging
 import os
 import time
 import urllib.request
 
 import folder_paths
+
+log = logging.getLogger("studio.gpu_dispatch")
 
 CLOUD = os.environ.get("STUDIO_CLOUD_API_URL", "https://api.hanzo.ai").rstrip("/")
 JOBS_NS = os.environ.get("STUDIO_GPU_JOBS_NS", "gpu-jobs")
@@ -230,6 +233,7 @@ def dispatch_if_worker(request, org_id: str, prompt_id: str, prompt: dict) -> bo
         # Which node runs it: a single visible GPU is definitive; with several — or an
         # org-blind read that saw none — the claimer is decided at pick-up: "gpu".
         node = _node_label(online[0]) if len(online) == 1 else "gpu"
+        staged = _collect_input_images(prompt, org_id)
         body = json.dumps({
             "activityId": prompt_id,
             "runId": prompt_id,
@@ -261,7 +265,7 @@ def dispatch_if_worker(request, org_id: str, prompt_id: str, prompt: dict) -> bo
                 # Uploaded inputs live in orgs/{org}/input on THIS pod; the worker
                 # renders on its own disk and cannot read them — ship them along so
                 # LoadImage resolves there.
-                "inputs": _collect_input_images(prompt, org_id),
+                "inputs": staged,
             },
         }).encode()
         req = urllib.request.Request(
@@ -275,6 +279,12 @@ def dispatch_if_worker(request, org_id: str, prompt_id: str, prompt: dict) -> bo
         # perfectly good render. The enqueue itself is quick; this only covers upload.
         urllib.request.urlopen(req, timeout=90).read()
         _track_dispatched(org_id, prompt_id, prompt, node=node)
+        # Correlated by pid (the job id) with studio.home's build/queue lines; names are
+        # content-addressed checksums, so this pins the exact source bytes shipped — no
+        # signed URLs, tokens or image data are logged.
+        log.info("studio.trace gpu.publish org=%s pid=%s node=%s inputs=%s refs=%s",
+                 org_id, prompt_id, node, len(staged),
+                 ",".join(sorted(s["name"] for s in staged)) or None)
         return True
     except Exception:
         return False

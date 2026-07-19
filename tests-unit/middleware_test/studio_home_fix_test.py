@@ -7,6 +7,8 @@
 
 Pure/filesystem only — no torch, no GPU, no network.
 """
+import base64
+import hashlib
 import json
 import os
 import sys
@@ -255,3 +257,105 @@ def test_retag_points_every_saveimage_at_unique_prefix():
     # a re-run graph never keeps the source's SaveImage prefix (that was the collision)
     assert all(n.get("inputs", {}).get("filename_prefix") != "fixes/original"
                for n in g.values() if n.get("class_type") == "SaveImage")
+
+
+# ── State isolation & job construction ────────────────────────────────────────────
+#    An Edit is built from the SELECTED source alone; two concurrent edits of DIFFERENT
+#    sources can never share a staged file, a LoadImage ref, a positive prompt, a
+#    sampling latent or a parent. Content-addressed staging (name == sha256 of the
+#    bytes) is the binding proof: the worker's LoadImage resolves the exact selected
+#    image, and different sources are cryptographically un-collidable on a shared
+#    worker input dir — the "unrelated random picture / wrong image" class of bug.
+from middleware import gpu_dispatch as gd
+
+
+def _pos_prompt(g):
+    """The positive prompt actually wired into KSampler (not read by node id)."""
+    ks = next(n for n in g.values() if n["class_type"] == "KSampler")
+    return g[ks["inputs"]["positive"][0]]["inputs"]["prompt"]
+
+
+def _load_ref(g):
+    return next(n for n in g.values() if n["class_type"] == "LoadImage")["inputs"]["image"]
+
+
+def _save_prefix(g):
+    return next(n for n in g.values() if n["class_type"] in sh._SAVERS)["inputs"]["filename_prefix"]
+
+
+@pytest.fixture
+def in_dir(tmp_path, monkeypatch):
+    """Per-org input dir (orgs/<org>/input) where sources are staged for the worker —
+    patched on BOTH modules that touch it: studio_home stages, gpu_dispatch inlines."""
+    def _d(o=None):
+        d = tmp_path / "orgs" / (o or "default") / "input"
+        d.mkdir(parents=True, exist_ok=True)
+        return str(d)
+    monkeypatch.setattr(sh.folder_paths, "get_org_input_directory", _d)
+    monkeypatch.setattr(gd.folder_paths, "get_org_input_directory", _d)
+    return _d
+
+
+def test_stage_source_is_content_addressed(in_dir, tmp_path):
+    d = Path(in_dir("acme"))
+    a = tmp_path / "a.png"; a.write_bytes(b"AAAA-dress-bytes")
+    b = tmp_path / "b.png"; b.write_bytes(b"BBBB-clasp-bytes")
+    na, nb = sh._stage_source(d, a, "fix"), sh._stage_source(d, b, "fix")
+    # different bytes -> different name (cryptographic, not a salted-hash coincidence)
+    assert na != nb
+    # the name IS the sha256 of the bytes: a verifiable binding to the EXACT source
+    assert na == f"fix_src_{hashlib.sha256(a.read_bytes()).hexdigest()[:16]}.png"
+    assert (d / na).read_bytes() == a.read_bytes()          # staged bytes are the source
+    assert sh._stage_source(d, a, "fix") == na              # idempotent: same source, same name
+    a.write_bytes(b"AAAA-dress-bytez")                      # one byte changes the address
+    assert sh._stage_source(d, a, "fix") != na
+
+
+def test_two_concurrent_edits_are_isolated(in_dir, tmp_path):
+    """The reported scenario: Job A (design A, 'make the dress red') and Job B
+    (design B, 'add a silver clasp') constructed back-to-back share NOTHING."""
+    d = Path(in_dir("acme"))
+    srcA = tmp_path / "A.png"; srcA.write_bytes(b"\x89PNG-design-A" + b"\x00" * 64)
+    srcB = tmp_path / "B.png"; srcB.write_bytes(b"\x89PNG-design-B" + b"\x00" * 64)
+    refA, refB = sh._stage_source(d, srcA, "fix"), sh._stage_source(d, srcB, "fix")
+    gA = sh._fix_graph(refA, "make the dress red", "fixes/A_" + sh._job_tag())
+    gB = sh._fix_graph(refB, "add a silver clasp", "fixes/B_" + sh._job_tag())
+    # 1) distinct staged sources, each graph LoadImages its OWN source
+    assert refA != refB
+    assert _load_ref(gA) == refA and _load_ref(gB) == refB
+    # 2) prompts do not bleed across jobs
+    assert "make the dress red" in _pos_prompt(gA) and "clasp" not in _pos_prompt(gA)
+    assert "add a silver clasp" in _pos_prompt(gB) and "dress red" not in _pos_prompt(gB)
+    # 3) both are true low-denoise edits of their own source — no text-to-image fallback
+    assert sh._assert_edit_graph(gA) == "" and sh._assert_edit_graph(gB) == ""
+    for g in (gA, gB):
+        ks = next(n for n in g.values() if n["class_type"] == "KSampler")
+        assert g[ks["inputs"]["latent_image"][0]]["class_type"] == "VAEEncode"
+    # 4) distinct output namespaces (no phantom-image cross-claim)
+    assert _save_prefix(gA) != _save_prefix(gB)
+
+
+def test_collect_input_images_ships_exact_source_and_is_org_scoped(in_dir, tmp_path):
+    """gpu_dispatch inlines the bytes the worker will LoadImage. It must ship the
+    SELECTED org's copy exactly — never a same-named file from another org."""
+    dA, dB = Path(in_dir("acme")), Path(in_dir("other"))
+    src = tmp_path / "s.png"; src.write_bytes(b"\x89PNG-real-source" + b"\x01" * 40)
+    ref = sh._stage_source(dA, src, "fix")
+    (dB / ref).write_bytes(b"\x89PNG-WRONG-org" + b"\x02" * 40)   # decoy, same basename
+    shipped = gd._collect_input_images(sh._fix_graph(ref, "brighten", "fixes/x"), "acme")
+    got = {s["name"]: base64.b64decode(s["data"]) for s in shipped}
+    assert ref in got and got[ref] == src.read_bytes()           # acme's exact bytes
+    assert b"WRONG-org" not in got[ref]
+
+
+def test_assert_edit_graph_rejects_text_to_image_fallback():
+    """The hard invariant: an Edit can NEVER be silently served by a text-to-image
+    (EmptyLatentImage) graph. If source resolution ever produced one, the assert
+    REJECTS it — dispatch raises, never renders an unrelated picture."""
+    t2i = {
+        "1": {"class_type": "EmptySD3LatentImage", "inputs": {"width": 1024, "height": 1024}},
+        "2": {"class_type": "KSampler", "inputs": {"latent_image": ["1", 0], "denoise": 1.0}},
+        "3": {"class_type": "SaveImage", "inputs": {"images": ["2", 0], "filename_prefix": "x"}},
+    }
+    reason = sh._assert_edit_graph(t2i)
+    assert reason and "EmptyLatentImage" in reason                # rejected with a clear cause
