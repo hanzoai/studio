@@ -639,9 +639,11 @@ function paintChips(){
   const groups=[...new Set(DATA.assets.map(a=>a.design).filter(Boolean))].sort();
   const delN=DATA.assets.filter(a=>a.status==='deleted').length;
   const flagN=DATA.assets.filter(a=>a.status==='flagged').length;
+  const draftN=DATA.assets.filter(a=>a.status!=='published'&&a.status!=='deleted'&&a.status!=='flagged').length;
   const chips=['all','marketing',...groups];
   $('filters').innerHTML=chips.map(g=>`<span class="chip ${g===FILTER?'on':''}" onclick="FILTER='${g}';paintChips();render()">${g}</span>`).join('')
-    +`<span class="chip ${FILTER==='flagged'?'on':''}" onclick="FILTER='flagged';paintChips();render()" style="margin-left:auto" title="Renders the quality gate flagged — review and restore">⚑ Flagged${flagN?' ('+flagN+')':''}</span>`;
+    +`<span class="chip ${FILTER==='drafts'?'on':''}" onclick="FILTER='drafts';paintChips();render()" style="margin-left:auto" title="Unpublished renders — review and Publish to show them in the gallery">✎ Drafts${draftN?' ('+draftN+')':''}</span>`
+    +`<span class="chip ${FILTER==='flagged'?'on':''}" onclick="FILTER='flagged';paintChips();render()" title="Renders the quality gate flagged — review and restore">⚑ Flagged${flagN?' ('+flagN+')':''}</span>`;
   const dt=document.querySelector('[data-tab="deleted"]'); if(dt)dt.textContent='🗄 Archive'+(delN?' ('+delN+')':'');
 }
 let SELMODE=false; const SEL=new Set();
@@ -667,13 +669,14 @@ function render(){
   const q=($('q').value||'').toLowerCase();
   const showDel=FILTER==='deleted';
   const showFlag=FILTER==='flagged';
+  const showDraft=FILTER==='drafts';                     // the unpublished-review view (normal tools, incl. Publish)
   const review=showDel||showFlag;                       // a status-review view (archive / quality gate)
   $('archivebar').hidden=!showDel;                       // Empty-Archive bar shows only in the Archive
-  $('stackbar').hidden=review;                           // New-Stack / auto-stack are gallery tools, not review views
-  // Stacks (Procreate folders) lead the gallery in the "all" view; a member asset
-  // lives INSIDE its Stack, so it's hidden from the loose grid (never in a review view).
+  $('stackbar').hidden=review||showDraft;               // New-Stack / auto-stack are gallery tools, not review views
+  // Stacks (Procreate folders) lead the gallery in the published "all" view; a member
+  // asset lives INSIDE its Stack, so it's hidden from the loose grid (never in a review view).
   let scards='';
-  if(!review&&FILTER==='all'){
+  if(!review&&!showDraft&&FILTER==='all'){
     let sview=activeStacks();
     if(q)sview=sview.filter(s=>(s.name||'').toLowerCase().includes(q));
     scards=sview.map(stackCard).join('');
@@ -683,6 +686,8 @@ function render(){
     if(showFlag)return a.status==='flagged';
     if(a.status==='deleted'||a.status==='flagged')return false;  // hide trashed + gate-flagged from normal views
     if(STACKSET.has(a.path))return false;               // stacked → shown inside its Stack
+    if(showDraft)return a.status!=='published';          // Drafts view: everything NOT yet published
+    if(a.status!=='published')return false;              // the gallery shows ONLY published (curated)
     return FILTER==='all'?true:FILTER==='marketing'?(a.path||'').startsWith('marketing/'):a.design===FILTER;
   });
   if(q)rows=rows.filter(a=>(a.path||'').toLowerCase().includes(q));
@@ -729,8 +734,11 @@ function render(){
   // Org-aware empty state: landing on the wrong workspace (a fresh login resets the
   // active org) must read as "wrong workspace", not "my work vanished". Name the org
   // and point at the switcher (the account pill, top-right).
-  const _emptyAll=`No assets in <b>${(DATA.org||'this workspace').replace(/</g,'&lt;')}</b> yet.<br><span style="color:var(--dim);font-size:.85rem">If your work is in another workspace, switch it from the account menu (top-right ●).</span>`;
-  $('agrid').innerHTML=(scards+cards)||`<div class="empty">${showDel?'Archive is empty.':showFlag?'Nothing flagged — the quality gate has passed every render.':(q?'No matches for “'+q.replace(/</g,'&lt;')+'”.':_emptyAll)}</div>`;
+  const _hasUnpub=DATA.assets.some(a=>a.status!=='published'&&a.status!=='deleted'&&a.status!=='flagged');
+  const _emptyAll=_hasUnpub
+    ? `Nothing published yet.<br><span style="color:var(--dim);font-size:.85rem">The gallery shows only published work. Open <b>✎ Drafts</b> to review your renders and Publish the ones you want here.</span>`
+    : `No assets in <b>${(DATA.org||'this workspace').replace(/</g,'&lt;')}</b> yet.<br><span style="color:var(--dim);font-size:.85rem">If your work is in another workspace, switch it from the account menu (top-right ●).</span>`;
+  $('agrid').innerHTML=(scards+cards)||`<div class="empty">${showDel?'Archive is empty.':showFlag?'Nothing flagged — the quality gate has passed every render.':showDraft?'No drafts — everything is published or archived.':(q?'No matches for “'+q.replace(/</g,'&lt;')+'”.':_emptyAll)}</div>`;
   lazyObserve();
 }
 async function bulk(status){
