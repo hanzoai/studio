@@ -791,3 +791,22 @@ async def test_upload_name_sanitized_against_html_injection(tmp_path, monkeypatc
     assert "<" not in path and ">" not in path and '"' not in path and "'" not in path
     assert path.endswith(".png")
     await client.close()
+
+
+@pytest.mark.asyncio
+async def test_thumbnail_serves_image_content_type(tmp_path, monkeypatch):
+    """The grid thumbnail MUST carry an image Content-Type. aiohttp's FileResponse
+    guesses from the extension via mimetypes, which does not know .webp, so it served
+    application/octet-stream — which the browser refuses to render (blank grid,
+    'assets won't load'). Pin it."""
+    from PIL import Image
+    _orgaware(tmp_path, monkeypatch)
+    root = Path(sh.folder_paths.get_org_output_directory("acme"))
+    (root / "library.json").write_text('{"assets":[]}')
+    (root / "renders").mkdir(parents=True, exist_ok=True)
+    Image.new("RGB", (64, 96)).save(root / "renders" / "shot.png", "PNG")
+    client = await _client(_FakeServer())
+    r = await client.get("/v1/library/file?thumb=1&path=renders/shot.png", headers={"X-Org": "acme"})
+    assert r.status == 200
+    assert r.headers.get("Content-Type") == "image/webp"   # NOT application/octet-stream
+    await client.close()

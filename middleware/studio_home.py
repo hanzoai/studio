@@ -1734,11 +1734,16 @@ def add_studio_home_routes(routes: web.RouteTableDef, server) -> None:
                     im.thumbnail((480, 720))  # grid-sized; keeps aspect
                     # WEBP is ~30% smaller than JPEG at the same quality → less bandwidth.
                     im.convert("RGB").save(tp, "WEBP", quality=80, method=4)
+                # Content-Type MUST be set explicitly: aiohttp's FileResponse guesses
+                # from the extension via Python's mimetypes, which does NOT know .webp,
+                # so it fell back to application/octet-stream — which the browser refuses
+                # to render as an <img> (blank grid, "assets won't load").
                 # Long cache (the ?v=sha URL busts on change) but REVALIDATABLE — not
                 # `immutable`, which would lock a single bad response in the browser for a
                 # year with no way out but a hard-refresh. A week + revalidate keeps the
                 # repeat-load speed without the poisoned-cache trap.
-                return web.FileResponse(tp, headers={"Cache-Control": "public, max-age=604800, stale-while-revalidate=86400"})
+                return web.FileResponse(tp, headers={"Content-Type": "image/webp",
+                    "Cache-Control": "public, max-age=604800, stale-while-revalidate=86400"})
             except Exception:
                 pass  # fall through to full-res on any thumbnail failure
         elif request.query.get("thumb") and suf in _VIDEO_EXT:
@@ -1756,7 +1761,8 @@ def add_studio_home_routes(routes: web.RouteTableDef, server) -> None:
                     im = _poster(p)
                     im.thumbnail((480, 720))
                     im.convert("RGB").save(tp, "JPEG", quality=82)
-                return web.FileResponse(tp, headers={"Cache-Control": "public, max-age=86400"})
+                return web.FileResponse(tp, headers={"Content-Type": "image/jpeg",
+                    "Cache-Control": "public, max-age=86400"})
             except Exception:
                 return web.Response(status=404)
         elif request.query.get("thumb") and suf in _MODEL3D_EXT:
