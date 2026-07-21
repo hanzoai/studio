@@ -251,3 +251,65 @@ def test_track_savevideo(tmp_path, monkeypatch):
     assert jobs[-1]["outPrefix"] == "video/beach_ab12cd"      # the video prefix, not "render"
     assert jobs[-1]["prefix"] == "beach_ab12cd"
     assert jobs[-1]["refs"] == ["ref.png"] and jobs[-1]["node"] == "spark"
+
+
+# --- enqueue retry across the cloud tasks-backend deploy gap ---
+import urllib.error  # noqa: E402
+
+
+class _FakeResp:
+    def read(self):
+        return b"{}"
+
+
+def test_enqueue_retries_through_503_deploy_gap(monkeypatch):
+    """A 503 'no available server' (cloud Recreate deploy gap) is retried; the
+    enqueue succeeds once the pod is back — no user-visible failure."""
+    monkeypatch.setattr(g.time, "sleep", lambda *_: None)  # no real backoff wait
+    calls = {"n": 0}
+
+    def fake_urlopen(req, timeout=90):
+        calls["n"] += 1
+        if calls["n"] < 3:  # first two attempts hit the empty-pool 503
+            raise urllib.error.HTTPError("u", 503, "no available server", {}, None)
+        return _FakeResp()
+
+    monkeypatch.setattr(g.urllib.request, "urlopen", fake_urlopen)
+    g._enqueue_with_retry(object())          # must NOT raise
+    assert calls["n"] == 3                    # retried twice, succeeded on the 3rd
+
+
+def test_enqueue_does_not_retry_4xx(monkeypatch):
+    """A 4xx (auth/validation) is not a deploy gap — raise immediately, no retry."""
+    monkeypatch.setattr(g.time, "sleep", lambda *_: None)
+    calls = {"n": 0}
+
+    def fake_urlopen(req, timeout=90):
+        calls["n"] += 1
+        raise urllib.error.HTTPError("u", 403, "forbidden", {}, None)
+
+    monkeypatch.setattr(g.urllib.request, "urlopen", fake_urlopen)
+    try:
+        g._enqueue_with_retry(object())
+        raised = False
+    except urllib.error.HTTPError:
+        raised = True
+    assert raised and calls["n"] == 1         # one shot, no retry
+
+
+def test_enqueue_does_not_retry_timeout(monkeypatch):
+    """A timeout may have been processed server-side — never retry (no double render)."""
+    monkeypatch.setattr(g.time, "sleep", lambda *_: None)
+    calls = {"n": 0}
+
+    def fake_urlopen(req, timeout=90):
+        calls["n"] += 1
+        raise urllib.error.URLError(TimeoutError("timed out"))
+
+    monkeypatch.setattr(g.urllib.request, "urlopen", fake_urlopen)
+    try:
+        g._enqueue_with_retry(object())
+        raised = False
+    except urllib.error.URLError:
+        raised = True
+    assert raised and calls["n"] == 1

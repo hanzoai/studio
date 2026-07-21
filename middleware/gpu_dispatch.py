@@ -11,6 +11,7 @@ import json
 import logging
 import os
 import time
+import urllib.error
 import urllib.request
 
 import folder_paths
@@ -205,6 +206,44 @@ def has_models_for(prompt: dict) -> bool:
         return False
 
 
+# Retry ladder across the cloud tasks backend's deploy gap. `/v1/tasks/*` is served
+# by the single-pod `cloud` binary (strategy Recreate on an RWO SQLite volume), so
+# every cloud deploy leaves a ~30s window where the ingress (Traefik) has zero Ready
+# endpoints and returns 503 "no available server" for the enqueue. With CI shipping
+# cloud continuously, an enqueue can land in that gap and instant-fail the render with
+# "GPU render worker is momentarily unavailable". The gap is transient and the request
+# never reached the tasks engine (empty backend pool → Traefik rejects it), so we
+# retry across it. ~32s total covers a same-node Recreate.
+_ENQUEUE_RETRY_DELAYS = (2, 4, 6, 8, 12)
+
+
+def _enqueue_with_retry(req) -> None:
+    """PUT the enqueue, retrying ONLY on 503 / connection-refused — both mean the
+    request never reached the backend, so re-sending the same idempotent activityId
+    (== prompt_id) cannot double-enqueue. Any other outcome (4xx auth/validation, a
+    timeout that may have been processed) raises to the caller's normal fallback, so
+    we never risk a double render on an ambiguous failure."""
+    last: Exception | None = None
+    for i in range(len(_ENQUEUE_RETRY_DELAYS) + 1):
+        try:
+            urllib.request.urlopen(req, timeout=90).read()
+            return
+        except urllib.error.HTTPError as e:
+            if e.code != 503:
+                raise            # 4xx/other: retrying won't help — fall back
+            last = e             # 503 empty-pool: deploy gap, retriable
+        except urllib.error.URLError as e:
+            # Connection refused/reset to the backend during the gap is retriable;
+            # a genuine timeout (request may have been served) is NOT — don't double-send.
+            if isinstance(e.reason, TimeoutError):
+                raise
+            last = e
+        if i < len(_ENQUEUE_RETRY_DELAYS):
+            time.sleep(_ENQUEUE_RETRY_DELAYS[i])
+    if last:
+        raise last
+
+
 def dispatch_if_worker(request, org_id: str, prompt_id: str, prompt: dict) -> bool:
     """Enqueue this render to the shared GPU lane (gpu-jobs) and return True; return
     False only to run it in-pod.
@@ -295,7 +334,8 @@ def dispatch_if_worker(request, org_id: str, prompt_id: str, prompt: dict) -> bo
         # MB, and 15s wasn't enough to PUT the enqueue body — it timed out, dispatch
         # fell back, and the model-less pod returned "GPU worker unavailable" on a
         # perfectly good render. The enqueue itself is quick; this only covers upload.
-        urllib.request.urlopen(req, timeout=90).read()
+        # Retry across the cloud tasks backend's deploy gap (see _enqueue_with_retry).
+        _enqueue_with_retry(req)
         _track_dispatched(org_id, prompt_id, prompt, node=node)
         # Correlated by pid (the job id) with studio.home's build/queue lines; names are
         # content-addressed checksums, so this pins the exact source bytes shipped — no
