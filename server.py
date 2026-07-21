@@ -1043,6 +1043,15 @@ class PromptServer():
         async def post_prompt(request):
             logging.info("got prompt")
 
+            # Execution-engine (worker) mode: this process IS a BYO-GPU render backend,
+            # not a front. A direct /prompt POST without the coordinator token is refused
+            # so no render reaches a GPU without appearing in the org's visible queue.
+            # One way onto a GPU: enqueue -> claim -> execute. (Policy: worker_client.)
+            from middleware.worker_client import reject_untrusted_worker_submit
+            _gate = reject_untrusted_worker_submit(request, args.worker_mode)
+            if _gate is not None:
+                return _gate
+
             # Billing: check balance before accepting prompt
             if args.enable_billing and args.billing_check_balance:
                 iam_user = request.get("iam_user")
@@ -1062,7 +1071,11 @@ class PromptServer():
             json_data = self.trigger_on_prompt(json_data)
 
             # --- Prompt routing: check if this should go to a GPU worker ---
-            if not args.worker_mode:
+            # Legacy in-cluster PUSH federation (prompt_router -> compute_config
+            # workers) is OFF by default: the gpu-jobs enqueue below (dispatch_if_worker)
+            # is the ONE submit path. Set STUDIO_LEGACY_PUSH_ROUTER=1 only to resurrect
+            # the old push seam. Keeps exactly one way onto a GPU in prod.
+            if not args.worker_mode and os.environ.get("STUDIO_LEGACY_PUSH_ROUTER") == "1":
                 org_id = self._get_org_id(request)
                 try:
                     route_result = await prompt_router.route_prompt(org_id, json_data)

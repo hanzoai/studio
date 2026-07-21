@@ -7,6 +7,7 @@ When Studio runs with --worker-mode, this module handles:
 3. Reporting device capabilities (GPU model, VRAM, etc.)
 """
 import asyncio
+import hmac
 import logging
 import os
 import time as _time
@@ -17,6 +18,7 @@ import aiohttp
 from aiohttp import web
 
 import execution
+from studio.cli_args import args
 
 logger = logging.getLogger(__name__)
 
@@ -31,10 +33,31 @@ WORKER_TOKEN = os.environ.get("STUDIO_WORKER_TOKEN", "")
 
 
 def verify_worker_token(request) -> bool:
-    """True if the request carries the coordinator shared secret (or none is set)."""
+    """True iff the request carries the coordinator shared secret. FAILS CLOSED: in
+    worker mode the secret is MANDATORY (main.py refuses to boot without it, and the
+    KMS /v1 migration has emptied that secret before), so an empty/unset token is a
+    valid single-trust-domain dev signal ONLY when NOT in worker mode — never a bypass
+    that reopens the hidden-run hole on a worker box. Constant-time comparison."""
     if not WORKER_TOKEN:
-        return True
-    return request.headers.get("X-Worker-Token", "") == WORKER_TOKEN
+        return not args.worker_mode
+    return hmac.compare_digest(request.headers.get("X-Worker-Token", ""), WORKER_TOKEN)
+
+
+def reject_untrusted_worker_submit(request, worker_mode: bool):
+    """The ONE policy gate for worker-mode /prompt (decomplected: one function, one
+    place). In worker mode this process is a render BACKEND, not a front — the only
+    accepted submit is a job claimed off the org's gpu-jobs queue and handed in over the
+    coordinator seam (POST /v1/worker/execute with X-Worker-Token). A direct /prompt POST
+    without a valid token is refused (403), so no render can reach a GPU without appearing
+    in the org's visible queue. Returns an aiohttp Response to send, or None to allow.
+    Not worker mode → always allowed (returns None)."""
+    if worker_mode and not verify_worker_token(request):
+        return web.json_response({"error": {
+            "type": "worker_mode_forbidden",
+            "message": "worker-mode renders run only from the gpu-jobs queue "
+                       "(POST /v1/worker/execute); direct /prompt is disabled.",
+            "details": "", "extra_info": {}}, "node_errors": {}}, status=403)
+    return None
 
 
 def _worker_headers() -> dict:
@@ -172,6 +195,8 @@ def add_worker_routes(routes: web.RouteTableDef, prompt_server):
             return web.json_response({"error": "No prompt provided"}, status=400)
 
         prompt = json_data["prompt"]
+        if not isinstance(prompt, dict):
+            return web.json_response({"error": "prompt must be an object"}, status=400)
         prompt_id = str(json_data.get("prompt_id", uuid.uuid4()))
 
         partial_execution_targets = json_data.get("partial_execution_targets")
@@ -197,8 +222,19 @@ def add_worker_routes(routes: web.RouteTableDef, prompt_server):
             if sensitive_val in extra_data:
                 sensitive[sensitive_val] = extra_data.pop(sensitive_val)
 
-        number = float(json_data.get("number", 0))
+        try:
+            number = float(json_data.get("number", 0))
+        except (TypeError, ValueError):
+            return web.json_response({"error": "number must be numeric"}, status=400)
         extra_data["create_time"] = int(_time.time() * 1000)
+        # `org` scopes outputs on THIS worker's LOCAL disk only — a worker-LOCAL label,
+        # never a gallery destination. The durable upload path re-derives the gallery org
+        # from the user's IAM token (not this body field), so a forged body `org` can at
+        # most mislabel a local temp dir, never write into another tenant's gallery. The
+        # prompt worker binds folder_paths.set_execution_org from extra_data["org_id"].
+        org = json_data.get("org") or extra_data.get("org_id")
+        if org:
+            extra_data["org_id"] = org
 
         # Queue locally — the worker's prompt_worker thread will pick it up
         prompt_server.prompt_queue.put(

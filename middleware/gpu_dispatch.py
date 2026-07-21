@@ -224,21 +224,39 @@ def dispatch_if_worker(request, org_id: str, prompt_id: str, prompt: dict) -> bo
         tok = _bearer(request)
         if not tok:
             return False
+        # Per-GPU targeting: the UI's "Run on <gpu>" affordance sets X-Target-GPU to a
+        # machine identity. A targeted render is enqueued on THAT machine's own lane
+        # ("gpu:<identity>") which only that worker claims; an untargeted render rides
+        # the shared "gpu-jobs" lane any worker drains. The NAMESPACE is "gpu-jobs"
+        # either way — targeting is a taskQueue, not a second queue. One enqueue path.
+        target = (request.headers.get("X-Target-GPU") or "").strip()
         online = _online_gpu_nodes(tok)
+        # Honor a target ONLY if it is one of the caller-org's OWN online GPUs. This
+        # blocks a forged lane AND sanitizes the value before it becomes a taskQueue
+        # (and later a queue-row label): an unknown/offline target falls back to the
+        # shared lane rather than enqueuing onto a "gpu:<bogus>" lane no worker will
+        # ever claim (a 30-min schedule-to-start hang) — and a "<img onerror>" target
+        # never reaches the queue. Cross-org is already impossible (per-org shard); this
+        # is defense in depth.
+        if target and target not in {_node_label(m) for m in online}:
+            target = ""
+        task_queue = f"gpu:{target}" if target else JOBS_NS
         # No visible worker AND this box can load THIS graph → render locally. No
         # visible worker on a box that lacks the graph's models → still enqueue and
         # wait (never a doomed local validation), even with a stray unrelated model.
-        if not online and has_models_for(prompt):
+        # A validated target ALWAYS enqueues (the user asked for that online GPU).
+        if not target and not online and has_models_for(prompt):
             return False
-        # Which node runs it: a single visible GPU is definitive; with several — or an
-        # org-blind read that saw none — the claimer is decided at pick-up: "gpu".
-        node = _node_label(online[0]) if len(online) == 1 else "gpu"
+        # Which node runs it: the explicit target; else a single visible GPU is
+        # definitive; with several — or an org-blind read that saw none — the claimer
+        # is decided at pick-up: "gpu".
+        node = target or (_node_label(online[0]) if len(online) == 1 else "gpu")
         staged = _collect_input_images(prompt, org_id)
         body = json.dumps({
             "activityId": prompt_id,
             "runId": prompt_id,
             "activityType": {"name": "studio.render"},
-            "taskQueue": JOBS_NS,
+            "taskQueue": task_queue,
             # 1200s: a heavy Qwen edit on a cold GB10 (model reload + full 30-step
             # sample) can exceed 600s; the worker heartbeats each step, so this is
             # the ceiling for a genuinely long single render, not idle slack.

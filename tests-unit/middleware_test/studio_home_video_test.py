@@ -254,21 +254,33 @@ def test_landed_video(orgaware):
 # ── 4. the live BYO-GPU queue drops a video job when its mp4 lands ─────────────────
 @pytest.mark.asyncio
 async def test_render_queue_video(orgaware, monkeypatch):
+    """The render-queue is AUTHORITATIVE: it reads the org's gpu-jobs activities from the
+    tasks engine and shows the REAL claiming GPU (activity.identity), dropping terminal
+    jobs. A STARTED studio.render is live; a COMPLETED one falls off."""
     outd, _ = orgaware
     root = Path(outd("acme"))
     _lib(root, [])
-    now = int(time.time())
-    (root / "render_jobs.json").write_text(json.dumps(
-        [{"id": "p", "outPrefix": "video/x", "ts": now - 40, "node": "spark"}]))
     render_queue = _handler(_FakeServer(), "GET", "/v1/render-queue", monkeypatch)
+    base = {
+        "execution": {"runId": "p", "workflowId": "p"},
+        "type": {"name": "studio.render"},
+        "taskQueue": "gpu:spark", "identity": "spark",
+        "input": {"prompt": {"12": {"class_type": "SaveVideo",
+                                    "inputs": {"filename_prefix": "video/x"}}}},
+    }
 
+    async def _started(_req):
+        return [{**base, "status": "STARTED"}]
+    monkeypatch.setattr(sh, "_list_gpu_jobs", _started)
     resp = await render_queue(_Req(org="acme"))
-    assert len(json.loads(resp.text)["jobs"]) == 1              # not landed yet → live
+    jobs = json.loads(resp.text)["jobs"]
+    assert len(jobs) == 1 and jobs[0]["node"] == "spark"       # real claimer shown
 
-    (root / "video").mkdir(parents=True, exist_ok=True)
-    (root / "video" / "x_00001_.mp4").write_bytes(b"\x00\x00\x00 ftyp")
+    async def _completed(_req):
+        return [{**base, "status": "COMPLETED"}]
+    monkeypatch.setattr(sh, "_list_gpu_jobs", _completed)
     resp = await render_queue(_Req(org="acme"))
-    assert json.loads(resp.text)["jobs"] == []                 # mp4 landed → dropped
+    assert json.loads(resp.text)["jobs"] == []                 # engine says done → dropped
 
 
 # ── 5. worklog params + per-kind ETA bucketing ────────────────────────────────────

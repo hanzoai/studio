@@ -97,6 +97,24 @@ shared Hanzo IAM (standard OIDC code flow). No embedding.
   visor_client}.py`): `/v1/workers/register` (heartbeat), `/v1/workers` (list),
   `/v1/worker/execute` (in-cluster push fast path). Worker↔coordinator trust via
   `X-Worker-Token` (`STUDIO_WORKER_TOKEN`, KMS-sourced).
+- **Per-GPU gpu-jobs queue** (`middleware/{gpu_dispatch,studio_home}.py`, `server.py`) —
+  the ONE submit path onto a GPU. A model-less coordinator's `POST /prompt` enqueues to
+  the cloud tasks engine (`POST {STUDIO_CLOUD_API_URL}/v1/tasks/namespaces/gpu-jobs/activities`,
+  user bearer → org-scoped); a BYO worker (`hanzo gpu connect`) claims + runs it.
+  **Targeting**: the Home "Run on <gpu>" chip sets `X-Target-GPU: <identity>`;
+  `dispatch_if_worker` enqueues on that machine's own lane `taskQueue="gpu:<identity>"`
+  (namespace stays `gpu-jobs`), else the shared `gpu-jobs` lane any worker drains —
+  `X-Target-GPU` rides through `_queue_prompt` so fix/compose/video/rerun all honor it.
+  **Authoritative visible queue**: `/v1/render-queue` + `/v1/nodes` read the tasks
+  engine's activity list — REAL claiming `identity`, status
+  SCHEDULED/STARTED/COMPLETED/FAILED → queued/running/done/failed, `lastHeartbeatTime`
+  liveness, per-node depth — not a local shadow; `render_jobs.json` survives only as a
+  ~2s pre-claim placeholder. **No hidden runs**: in `--worker-mode` a direct `/prompt`
+  POST is refused 403 unless it carries `X-Worker-Token` — the only accepted execution is
+  a claimed job handed in over `POST /v1/worker/execute`
+  (`worker_client.reject_untrusted_worker_submit`, one policy gate). Legacy push
+  (`prompt_router`) is OFF unless `STUDIO_LEGACY_PUSH_ROUTER=1`. Tests:
+  `middleware_test/{gpu_dispatch_test,worker_seam_test}.py`.
 - **Durable render queue** (`middleware/tasks_queue.py`, `docs/federation.md`):
   `SqlitePromptQueue` — crash-durable render queue in a single SQLite file
   (stdlib `sqlite3`, WAL, **zero external processes**). `STUDIO_QUEUE_DB=<path>`

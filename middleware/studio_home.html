@@ -136,7 +136,9 @@ dialog .drop{border:1.5px dashed var(--line);border-radius:9px;padding:14px;text
 .wmeta{font-size:.72rem;color:var(--dim);margin-top:3px;display:flex;gap:8px;flex-wrap:wrap;align-items:center}
 .wnode{border:1px solid var(--line);border-radius:6px;padding:0 6px;color:var(--txt)}
 .qhead{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:0 0 14px;font-size:.8rem;color:var(--dim)}
-.nodebadge{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);border-radius:99px;padding:3px 11px;background:var(--panel)}
+.nodebadge{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);border-radius:99px;padding:3px 11px;background:var(--panel);cursor:pointer;user-select:none}
+.nodebadge:hover{border-color:var(--dim)}
+.nodebadge.sel{border-color:var(--ok);box-shadow:0 0 0 1px var(--ok) inset}
 .nodebadge .dot{width:7px;height:7px;border-radius:50%;background:#555}
 .nodebadge.on .dot{background:var(--ok)} .nodebadge.off{opacity:.6}
 .qhead .mstat{margin-left:auto;color:var(--dim)}
@@ -573,7 +575,7 @@ let TEMPLATE_NAMES={};
 async function renderTemplate(slug){
   const name=TEMPLATE_NAMES[slug]||slug;
   toast('Queueing '+name+'…');
-  const r=await fetch('/v1/templates/render',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:slug})});
+  const r=await fetch('/v1/templates/render',{method:'POST',headers:genHeaders(),body:JSON.stringify({name:slug})});
   const j=await r.json().catch(()=>({}));
   toast(r.ok?'Render queued → see Queue & History':'Failed: '+(errMsg(j)||('error '+r.status)));
 }
@@ -606,7 +608,7 @@ async function create(){
     await enqueue(m3btn,'…',async()=>{
       if(!(await gpuOnline()))toast('⚠ No GPU online — queues until a BYO-GPU connects');
       const body=libs.length?{path:libs[0]}:{upload:ups[0]};
-      const r=await fetch('/v1/library/model3d',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+      const r=await fetch('/v1/library/model3d',{method:'POST',headers:genHeaders(),body:JSON.stringify(body)});
       const j=await r.json().catch(()=>({}));
       if(r.ok){ toast('3D queued → see Queue & History'); track('model3d',{from:'composer'}); $('pin').value=''; clearTray(); clearLane(); }
       else if(!(await healStale(j))) toast('Failed: '+(errMsg(j)||('error '+r.status)));
@@ -622,7 +624,7 @@ async function create(){
     await enqueue(vbtn,'…',async()=>{
       if(!(await gpuOnline()))toast('⚠ No GPU online — queues until a BYO-GPU connects');
       const body={prompt:t}; if(libs.length)body.path=libs[0]; else if(ups.length)body.upload=ups[0];
-      const r=await fetch('/v1/library/video',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+      const r=await fetch('/v1/library/video',{method:'POST',headers:genHeaders(),body:JSON.stringify(body)});
       const j=await r.json().catch(()=>({}));
       if(r.ok){ toast('Video queued → see Queue & History'); track('video',{from:'composer'}); $('pin').value=''; clearTray(); clearLane(); }
       else if(!(await healStale(j))) toast('Failed: '+(errMsg(j)||('error '+r.status)));
@@ -637,9 +639,9 @@ async function create(){
   await enqueue(btn,'…',async()=>{
     if(!(await gpuOnline()))toast('⚠ No GPU online — queues until a BYO-GPU connects');
     let r;
-    if(n===1){ r=await fetch('/v1/library/fix',{method:'POST',headers:{'Content-Type':'application/json'},
+    if(n===1){ r=await fetch('/v1/library/fix',{method:'POST',headers:genHeaders(),
         body:JSON.stringify(libs.length?{path:libs[0],instruction:t}:{upload:ups[0],instruction:t})}); }
-    else{ r=await fetch('/v1/library/compose',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({paths:libs,uploads:ups,instruction:t})}); }
+    else{ r=await fetch('/v1/library/compose',{method:'POST',headers:genHeaders(),body:JSON.stringify({paths:libs,uploads:ups,instruction:t})}); }
     const j=await r.json().catch(()=>({}));
     if(r.ok){ toast('Queued → see Queue & History'); track(n===1?'fix':'compose',{from:'composer'}); $('pin').value=''; clearTray(); }
     else if(!(await healStale(j))) toast('Failed: '+(errMsg(j)||('error '+r.status)));
@@ -772,7 +774,7 @@ async function bulk(status){
   if(!SEL.size)return;
   const paths=[...SEL];
   pushUndo(paths.map(p=>({path:p,prev:(DATA.assets.find(x=>x.path===p)||{}).status})));
-  for(const p of paths){await fetch('/v1/library/status',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({path:p,status})});
+  for(const p of paths){await fetch('/v1/library/status',{method:'POST',headers:genHeaders(),body:JSON.stringify({path:p,status})});
     const a=DATA.assets.find(x=>x.path===p);if(a)a.status=status;}
   toast(paths.length+(status==='deleted'?' archived — ⌘Z to undo':status==='draft'?' recovered':' → '+status)); clearSel(); paintChips();
 }
@@ -782,7 +784,7 @@ const UNDO=[];
 function pushUndo(items){items=(items||[]).filter(it=>it&&it.path);if(items.length){UNDO.push(items);if(UNDO.length>100)UNDO.shift();}}
 async function undoLast(){
   const e=UNDO.pop(); if(!e){toast('Nothing to undo');return;}
-  await Promise.all(e.map(it=>fetch('/v1/library/status',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({path:it.path,status:it.prev})})));
+  await Promise.all(e.map(it=>fetch('/v1/library/status',{method:'POST',headers:genHeaders(),body:JSON.stringify({path:it.path,status:it.prev})})));
   e.forEach(it=>{const a=DATA.assets.find(x=>x.path===it.path);if(a)a.status=it.prev;});
   render(); paintChips();
   toast('Restored '+e.length+(e.length>1?' items':' item')+' — ⌘Z');
@@ -886,7 +888,7 @@ async function sendCompose(){
   const t=$('comptext').value.trim(); if(t.length<3){toast('Describe how to combine them');return;}
   const paths=[...SEL]; toast('Composing from '+paths.length+' assets…');
   const stack=await resolveDest($('compdest'));
-  const r=await fetch('/v1/library/compose',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({paths,instruction:t,stack})});
+  const r=await fetch('/v1/library/compose',{method:'POST',headers:genHeaders(),body:JSON.stringify({paths,instruction:t,stack})});
   const j=await r.json().catch(()=>({}));
   if(r.ok){ $('compdlg').close(); toast(`Compose queued (${j.refs} refs) → see Queue & History`); track('compose',{refs:j.refs}); clearSel(); }
   else if(!(await healStale(j))){ $('gpuwarn2').style.display='block'; $('gpuwarn2').textContent='Couldn’t queue: '+(errMsg(j)||('error '+r.status)); }
@@ -906,6 +908,11 @@ let WL=[], CTX=null;
 // live queue status (positions/ETAs/node) computed SERVER-SIDE; QLOCAL seeds the
 // client-side elapsed tick between polls. NODES = the org's GPU nodes for badges.
 let QST={items:{},medians:{},lanes:{},now:0}, QLOCAL=Date.now(), NODES=[];
+let TARGET_GPU=null;        // null = any GPU (shared "gpu-jobs" lane); else a machine id
+// ONE header factory for every generation POST: forwards the picked GPU so the render
+// lands on THAT machine (dispatch → taskQueue "gpu:<id>"). Harmless on non-render routes.
+function genHeaders(){const h={'Content-Type':'application/json'};if(TARGET_GPU)h['X-Target-GPU']=TARGET_GPU;return h;}
+function pickGPU(name){TARGET_GPU=name||null;toast(TARGET_GPU?('Next render → '+TARGET_GPU):'Next render → any available GPU');renderQhead();}
 const WSTATUS={queued:['⏳','queued'],running:['●','running'],done:['✓','done'],failed:['⚠','failed'],cancelled:['✕','cancelled']};
 const fmtDur=s=>{ s=Math.max(0,Math.round(s)); if(s<60)return s+'s'; const m=Math.floor(s/60),r=s%60; if(s<3600)return m+'m'+(r?(' '+r+'s'):''); return Math.floor(s/3600)+'h '+Math.floor((s%3600)/60)+'m'; };
 const fmtEta=s=>{ s=Math.max(0,Math.round(s)); return s<60?('~'+s+'s est'):('~'+Math.round(s/60)+' min est'); };
@@ -914,10 +921,10 @@ function wlThumb(it){ if(it.output)return thumbURL({path:it.output});
   if(it.parents&&it.parents[0])return thumbURL({path:it.parents[0]}); return ''; }
 function qmetaHTML(it,e){
   if(!e)return '';
-  const node=`<span class="wnode">⚙ ${(e.node||it.node||'gpu')}</span>`;
+  const node=`<span class="wnode">⚙ ${esc(e.node||it.node||'gpu')}</span>`;
   if(e.status==='running'){
     const el=(e.elapsed_seconds||0)+(Date.now()-QLOCAL)/1000;
-    return `<div class="wmeta">${node} · #${e.position}/${e.of} · running <span id="el-${it.id}">${fmtDur(el)}</span>${e.eta_seconds!=null?(' · ~'+fmtDur(e.eta_seconds)+' left'):''}</div>`;
+    return `<div class="wmeta">${node} · #${e.position}/${e.of} · running <span id="el-${esc(it.id)}">${fmtDur(el)}</span>${e.eta_seconds!=null?(' · ~'+fmtDur(e.eta_seconds)+' left'):''}</div>`;
   }
   return `<div class="wmeta">${node} · #${e.position}/${e.of} in line · ${fmtEta(e.eta_seconds||0)}</div>`;
 }
@@ -927,22 +934,22 @@ function wlRow(it){
   const [ic,lbl]=WSTATUS[status]||['·',status||''];
   const th=wlThumb(it), when=it.ts?new Date(it.ts*1000).toLocaleString():'';
   const active=status==='queued'||status==='running';
-  return `<div class="qrow" style="cursor:pointer" onclick="openContext('${it.id}')">
+  return `<div class="qrow" style="cursor:pointer" data-open="${esc(it.id)}">
     <div class="qthumb" style="${th?`background-image:url('${th}');background-size:cover;background-position:center`:'display:flex;align-items:center;justify-content:center;color:var(--dim)'}">${th?'':'🗂'}</div>
-    <div class="qtitle">${it.kind} · <span class="wst ${status}">${ic} ${lbl}</span>
-      <div class="qdesc">${(it.prompt||'(no prompt)').replace(/</g,'&lt;')}</div>
-      ${active&&e?qmetaHTML(it,e):`<div class="qsub">${when}${it.node?(' · ⚙ '+it.node):''}${it.error?` · <span style="color:#ff8f8f">${it.error.replace(/</g,'&lt;')}</span>`:''}</div>`}</div>
-    ${active?`<button class="mini" onclick="event.stopPropagation();openAmend('${it.id}')" title="Amend prompt/refs (re-queues)">Edit</button><button class="mini" onclick="event.stopPropagation();cancelJob('${it.id}')">Cancel</button>`:''}
-    <button class="mini" onclick="event.stopPropagation();openContext('${it.id}')">Open</button>
-    ${(!active&&it.output)?`<button class="mini" onclick="event.stopPropagation();archiveFromQueue('${qq(it.output)}')" title="Move this render to Archive (recoverable)">🗄</button>`:''}
-    ${active?'':`<button class="mini" onclick="event.stopPropagation();delWork('${it.id}')" title="Delete this item from the queue" style="color:#f85149">🗑</button>`}</div>`;
+    <div class="qtitle">${esc(it.kind)} · <span class="wst ${status}">${ic} ${lbl}</span>
+      <div class="qdesc">${esc(it.prompt||'(no prompt)')}</div>
+      ${active&&e?qmetaHTML(it,e):`<div class="qsub">${when}${it.node?(' · ⚙ '+esc(it.node)):''}${it.error?` · <span style="color:#ff8f8f">${esc(it.error)}</span>`:''}</div>`}</div>
+    ${active?`<button class="mini" data-amend="${esc(it.id)}" title="Amend prompt/refs (re-queues)">Edit</button><button class="mini" data-cancel="${esc(it.id)}">Cancel</button>`:''}
+    <button class="mini" data-open="${esc(it.id)}">Open</button>
+    ${(!active&&it.output)?`<button class="mini" data-arch="${esc(it.output)}" title="Move this render to Archive (recoverable)">🗄</button>`:''}
+    ${active?'':`<button class="mini" data-del="${esc(it.id)}" title="Delete this item from the queue" style="color:#f85149">🗑</button>`}</div>`;
 }
 // Delete a queue/history ENTRY (the render request row) — distinct from archiving the
 // OUTPUT image. Optimistic: drop it locally + re-render, then persist.
 async function delWork(id){
   if(!id)return;
   WL=WL.filter(x=>x.id!==id);          // optimistic: drop locally, re-render
-  try{await fetch('/v1/worklog/delete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id})});}catch(_){}
+  try{await fetch('/v1/worklog/delete',{method:'POST',headers:genHeaders(),body:JSON.stringify({id})});}catch(_){}
   toast('Removed from queue'); worklog();
 }
 function delCtx(){ if(!CTX||!CTX.id)return; ctxdlg.close(); delWork(CTX.id); }
@@ -950,7 +957,7 @@ async function archiveFromQueue(path){
   if(!path)return;
   const a=DATA.assets.find(x=>x.path===path);
   pushUndo([{path,prev:(a||{}).status||'draft'}]);
-  try{const r=await fetch('/v1/library/status',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({path,status:'deleted'})});
+  try{const r=await fetch('/v1/library/status',{method:'POST',headers:genHeaders(),body:JSON.stringify({path,status:'deleted'})});
     if(!r.ok)throw 0; if(a)a.status='deleted';
     toast('Archived — in 🗄 Archive · ⌘Z to undo'); worklog(); render(); paintChips();
   }catch(_){toast('Couldn’t archive');}
@@ -960,8 +967,12 @@ async function loadQueueStatus(){ let d; try{d=await (await fetch('/v1/queue/sta
 async function loadNodes(){ try{const d=await (await fetch('/v1/nodes')).json(); NODES=d.nodes||[];}catch(_){NODES=[];} renderQhead(); }
 function renderQhead(){
   if(!$('qhead'))return;
-  const badges=(NODES||[]).map(n=>`<span class="nodebadge ${n.online?'on':'off'}"><span class="dot"></span>${n.name}${n.online?'':' · offline'}</span>`).join('')
-    +`<span class="nodebadge on"><span class="dot"></span>studio pod</span>`;
+  // Clickable chips: "Any GPU" (shared lane) + one per node — click to aim your NEXT
+  // render at that machine. Selected chip carries a ✓; each shows its live queue depth.
+  const chip=(arg,label,online,sel,depth)=>`<span class="nodebadge ${online?'on':'off'}${sel?' sel':''}" role="button" tabindex="0" onclick="pickGPU(${arg})" title="${arg==='null'?'Run on any available GPU':'Run my next render on '+label}"><span class="dot"></span>${label}${online===false?' · offline':''}${depth?` · ${depth} in queue`:''}${sel?' ✓':''}</span>`;
+  const badges=chip("null","Any GPU",true,!TARGET_GPU,0)
+    +(NODES||[]).map(n=>chip("'"+String(n.name).replace(/'/g,"\\'")+"'",n.name,n.online,TARGET_GPU===n.name,(n.depth||0))).join('')
+    +`<span class="nodebadge on" title="This studio pod coordinates; renders run on the GPU nodes"><span class="dot"></span>studio pod</span>`;
   const m=QST.medians||{}, ks=Object.keys(m);
   const ms=ks.length?('median '+ks.map(k=>k+' ~'+fmtDur(m[k])).join(' · ')):'';
   $('qhead').innerHTML=badges+(ms?`<span class="mstat">${ms}</span>`:'');
@@ -1062,15 +1073,20 @@ async function runs(){
     const eta=running?'rendering now':(pos!=null?`~${(pos+1)*ETA_MIN} min · #${pos+1} in line`:'queued');
     return `<div class="qrow">
       <div class="qthumb" style="${thumb?`background-image:url('${thumb}');background-size:cover;background-position:center`:'display:flex;align-items:center;justify-content:center;color:var(--dim)'}">${thumb?'':(running?'▶':'⏳')}</div>
-      <div class="qtitle">${title}<div class="qdesc">${desc||'(no description)'}</div><div class="qsub">${running?'<span style=color:var(--ok)>● </span>':''}${eta}${refs.length>1?` · ${refs.length} refs`:''}</div></div>
-      ${running?'':`<button class="mini" onclick="cancelJob('${id}')">Remove</button>`}</div>`;};
+      <div class="qtitle">${esc(title)}<div class="qdesc">${esc(desc)||'(no description)'}</div><div class="qsub">${running?'<span style=color:var(--ok)>● </span>':''}${eta}${refs.length>1?` · ${refs.length} refs`:''}</div></div>
+      ${running?'':`<button class="mini" data-cancel="${esc(id)}">Remove</button>`}</div>`;};
   // BYO-GPU renders (fix/compose on a connected GPU) — rendered on the worker,
   // shown here so a dispatched fix is visible (was invisible before).
   let gjobs=[]; try{gjobs=(await (await fetch('/v1/render-queue')).json()).jobs||[];}catch(_){}
-  const gjRow=j=>`<div class="qrow">
-    <div class="qthumb" style="${j.refs&&j.refs[0]?`background-image:url('/v1/library/file?thumb=1&input=1&path=${encodeURIComponent(j.refs[0])}');background-size:cover;background-position:center`:'display:flex;align-items:center;justify-content:center;color:var(--ok)'}">${j.refs&&j.refs[0]?'':'▶'}</div>
-    <div class="qtitle">${j.prefix||'render'}<div class="qsub"><span style=color:var(--ok)>● </span>rendering on ${j.node||'your GPU'} · ${Math.max(0,Math.round((j.age||0)/60))}m elapsed${QST.items[j.id]&&QST.items[j.id].eta_seconds!=null?(' · ~'+fmtDur(QST.items[j.id].eta_seconds)+' left'):''}</div></div>
-    ${j.id?`<button class="mini" onclick="cancelJob('${j.id}')">Cancel</button>`:''}</div>`;
+  const gjRow=j=>{const running=(j.status||'running')==='running';
+    const where=esc((j.node&&j.node!=='queued')?j.node:'your GPU');
+    const sub=running
+      ?`<span style=color:var(--ok)>● </span>rendering on ${where} · ${Math.max(0,Math.round((j.age||0)/60))}m${QST.items[j.id]&&QST.items[j.id].eta_seconds!=null?(' · ~'+fmtDur(QST.items[j.id].eta_seconds)+' left'):''}`
+      :`⏳ queued${(j.node&&j.node!=='queued')?(' → '+esc(j.node)):''}`;
+    return `<div class="qrow">
+    <div class="qthumb" style="${j.refs&&j.refs[0]?`background-image:url('/v1/library/file?thumb=1&input=1&path=${encodeURIComponent(j.refs[0])}');background-size:cover;background-position:center`:'display:flex;align-items:center;justify-content:center;color:var(--ok)'}">${j.refs&&j.refs[0]?'':(running?'▶':'⏳')}</div>
+    <div class="qtitle">${esc(j.prefix||'render')}<div class="qsub">${sub}</div></div>
+    ${j.id?`<button class="mini" data-cancel="${esc(j.id)}">Cancel</button>`:''}</div>`;};
   const gjHtml=gjobs.map(gjRow).join('');
   $('qrun').innerHTML=gjHtml + qr.map(it=>qitem(it,true,null)).join('') || '<div class="qsub" style="padding:6px 2px">Idle — nothing rendering.</div>';
   $('qpend').innerHTML=qp.map((it,i)=>qitem(it,false,i)).join('')||'<div class="qsub" style="padding:6px 2px">Nothing queued.</div>';
@@ -1108,16 +1124,16 @@ async function runs(){
       </div></div>`;}).join('')||'<div class="empty">No runs yet.</div>';
   lazyObserve();
 }
-async function clearQueue(){if(!await ask('Clear all queued jobs?'))return;await fetch('/queue',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({clear:true})});toast('Queue cleared');runs();}
-async function rate(key,stars){await fetch('/v1/library/rate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({key,stars})});RATINGS[key]={...(RATINGS[key]||{}),stars};runs();}
-async function rateNote(key,notes){await fetch('/v1/library/rate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({key,notes})});toast('Note saved — the AI will use it next time');}
+async function clearQueue(){if(!await ask('Clear all queued jobs?'))return;await fetch('/queue',{method:'POST',headers:genHeaders(),body:JSON.stringify({clear:true})});toast('Queue cleared');runs();}
+async function rate(key,stars){await fetch('/v1/library/rate',{method:'POST',headers:genHeaders(),body:JSON.stringify({key,stars})});RATINGS[key]={...(RATINGS[key]||{}),stars};runs();}
+async function rateNote(key,notes){await fetch('/v1/library/rate',{method:'POST',headers:genHeaders(),body:JSON.stringify({key,notes})});toast('Note saved — the AI will use it next time');}
 // ── Train-the-model feedback: a 👍/👎 vote + a written note on any render, logged to
 // the org's append-only training dataset (feedback.jsonl) the model trainer consumes.
 // Keyed by the image path, so a vote persists with the asset (not just the run). ──
 async function castVote(path,v){
   const cur=RATINGS[path]||{}, nv=cur.vote===v?0:v;               // click the same thumb again = clear
   RATINGS[path]={...cur,vote:nv}; render(); zPaintRate();
-  try{await fetch('/v1/library/rate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({key:path,path,vote:nv})});}catch(_){}
+  try{await fetch('/v1/library/rate',{method:'POST',headers:genHeaders(),body:JSON.stringify({key:path,path,vote:nv})});}catch(_){}
   toast(nv===1?'👍 Thanks — added to the training set':nv===-1?'👎 Noted — add a 💬 note so the model learns why':'Vote cleared'); track('rate',{score:nv});
   refreshFbCount();
 }
@@ -1133,7 +1149,7 @@ async function sendCritique(e){e.preventDefault();const t=($('fbtext').value||''
   const el=$('fbthread');const empty=el.querySelector('.empty');if(empty)el.innerHTML='';
   el.insertAdjacentHTML('beforeend',fbBubble('user',t));
   const pend=document.createElement('div');pend.style.cssText='align-self:flex-start;color:var(--dim);font-size:.84rem;padding:4px 8px';pend.textContent='…';el.appendChild(pend);el.scrollTop=el.scrollHeight;
-  try{const r=await fetch('/v1/library/critique',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({path:FBPATH,message:t})});
+  try{const r=await fetch('/v1/library/critique',{method:'POST',headers:genHeaders(),body:JSON.stringify({path:FBPATH,message:t})});
     const j=await r.json();pend.remove();
     el.insertAdjacentHTML('beforeend',fbBubble('ai',j.reply||'Noted — the next render will avoid it.'));el.scrollTop=el.scrollHeight;
     RATINGS[FBPATH]={...(RATINGS[FBPATH]||{}),notes:t};track('rate',{score:FBVOTE,noted:true});refreshFbCount();zPaintRate();
@@ -1141,7 +1157,7 @@ async function sendCritique(e){e.preventDefault();const t=($('fbtext').value||''
   return false;}
 function fbSetVote(v){FBVOTE=FBVOTE===v?0:v;fbPaintVote();
   if(FBPATH){RATINGS[FBPATH]={...(RATINGS[FBPATH]||{}),vote:FBVOTE};
-    fetch('/v1/library/rate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({key:FBPATH,path:FBPATH,vote:FBVOTE})}).catch(()=>{});
+    fetch('/v1/library/rate',{method:'POST',headers:genHeaders(),body:JSON.stringify({key:FBPATH,path:FBPATH,vote:FBVOTE})}).catch(()=>{});
     track('rate',{score:FBVOTE});refreshFbCount();zPaintRate();}}
 function fbPaintVote(){$('fbup').classList.toggle('brand',FBVOTE===1);$('fbdown').classList.toggle('brand',FBVOTE===-1);}
 async function refreshFbCount(){try{const s=await (await fetch('/v1/feedback/stats')).json();const b=$('fbexport');if(b)b.textContent='⬇ Feedback'+(s.total?' ('+s.total+')':'');}catch(_){}}
@@ -1154,20 +1170,20 @@ function qVote(path,v){
   const sel=(window.CSS&&CSS.escape)?CSS.escape(path):path;
   const fb=document.querySelector('.fb[data-op="'+sel+'"]');
   if(fb){fb.querySelector('.vote.up').classList.toggle('on',nv===1);fb.querySelector('.vote.down').classList.toggle('on',nv===-1);}
-  try{fetch('/v1/library/rate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({key:path,path,vote:nv})});}catch(_){}
+  try{fetch('/v1/library/rate',{method:'POST',headers:genHeaders(),body:JSON.stringify({key:path,path,vote:nv})});}catch(_){}
   toast(nv===1?'👍 Thanks — rated for training':nv===-1?'👎 Noted — add a 💬 note so the model learns why':'Vote cleared'); refreshFbCount();
 }
 async function qReject(path){
   REJECTED.add(path);
   const a=DATA.assets.find(x=>x.path===path); pushUndo([{path,prev:(a||{}).status||'draft'}]);
   if(a)a.status='deleted';
-  try{await fetch('/v1/library/status',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({path,status:'deleted'})});}catch(_){}
+  try{await fetch('/v1/library/status',{method:'POST',headers:genHeaders(),body:JSON.stringify({path,status:'deleted'})});}catch(_){}
   toast('Archived — the model will learn it was a bad result (⌘Z to undo)'); paintChips();
   if(typeof runs==='function')runs();
 }
 let FAVKEY=null,FAVTITLE=null;
 async function toggleFav(key,title){const nv=!FAVS[key];
-  await fetch('/v1/favorites',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({key,favorite:nv})});
+  await fetch('/v1/favorites',{method:'POST',headers:genHeaders(),body:JSON.stringify({key,favorite:nv})});
   if(nv)FAVS[key]={ts:Math.floor(Date.now()/1000)};else delete FAVS[key];
   if(nv){FAVKEY=key;FAVTITLE=title;$('tmplname').value=title;$('tmpldesc').value='';
     $('tmplsteps').innerHTML='This favorited run has an embedded workflow. Saving turns it into a reusable KIND:<br>1 · name it &amp; describe what it makes<br>2 · it appears under Templates for your org<br>3 · run it anytime with new inputs';
@@ -1180,21 +1196,21 @@ async function saveTemplate(){const nm=$('tmplname').value.trim();if(!nm){toast(
   // Editor's ★ Template also writes to.
   let g=null; try{const wr=await fetch('/v1/workflow?id='+encodeURIComponent(FAVKEY)); if(wr.ok)g=(await wr.json()).graph;}catch(_){}
   if(!g){$('tmpldlg').close();toast('No graph on this run — open it in the Editor and use ★ Template');return;}
-  const r=await fetch('/v1/templates',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:nm,graph:g})});
+  const r=await fetch('/v1/templates',{method:'POST',headers:genHeaders(),body:JSON.stringify({name:nm,graph:g})});
   const j=await r.json().catch(()=>({}));
   $('tmpldlg').close();toast(r.ok?('★ Saved "'+nm+'" — see Templates'):('Failed: '+(errMsg(j)||('error '+r.status))));
   if(r.ok&&!$('templates').hidden)loadOrgTemplates();
 }
-async function setSt(i,status){const a=DATA.assets[i];const prev=a.status;const r=await fetch('/v1/library/status',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({path:a.path,status})});if(r.ok){pushUndo([{path:a.path,prev}]);a.status=status;render();paintChips();toast(`${a.path.split('/').pop()} → ${status} — ⌘Z`);}else toast('Failed');}
+async function setSt(i,status){const a=DATA.assets[i];const prev=a.status;const r=await fetch('/v1/library/status',{method:'POST',headers:genHeaders(),body:JSON.stringify({path:a.path,status})});if(r.ok){pushUndo([{path:a.path,prev}]);a.status=status;render();paintChips();toast(`${a.path.split('/').pop()} → ${status} — ⌘Z`);}else toast('Failed');}
 // Optimistic trash: mark deleted locally + re-render immediately (feels instant),
 // then persist. On failure, revert. This is the always-visible 🗑 on each card.
 async function quickDel(path){
   const a=DATA.assets.find(x=>x.path===path); if(!a)return;
   const prev=a.status; pushUndo([{path,prev}]); a.status='deleted'; render(); paintChips(); toast('Moved to Archive — ⌘Z to undo');
-  try{const r=await fetch('/v1/library/status',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({path,status:'deleted'})});
+  try{const r=await fetch('/v1/library/status',{method:'POST',headers:genHeaders(),body:JSON.stringify({path,status:'deleted'})});
     if(!r.ok)throw 0;}catch(_){a.status=prev;UNDO.pop();render();paintChips();toast('Delete failed — restored');}
 }
-async function rerun(i,btn){const a=DATA.assets[i];await enqueue(btn,'Queueing…',async()=>{toast('Queueing re-run…');const r=await fetch('/v1/library/rerun',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({path:a.path})});await r.json().catch(()=>({}));toast(r.ok?`Re-run queued — see Runs`:'Failed');});}
+async function rerun(i,btn){const a=DATA.assets[i];await enqueue(btn,'Queueing…',async()=>{toast('Queueing re-run…');const r=await fetch('/v1/library/rerun',{method:'POST',headers:genHeaders(),body:JSON.stringify({path:a.path})});await r.json().catch(()=>({}));toast(r.ok?`Re-run queued — see Runs`:'Failed');});}
 // Dedupe: server hashes visible assets, soft-deletes exact byte-identical copies
 // (keeps one), returns the moved paths so ⌘Z undoes the whole sweep at once.
 async function dedup(){
@@ -1212,7 +1228,7 @@ async function dedup(){
 // server enforces archive-only, so this can never destroy a live gallery image. ──
 async function purgePaths(paths){
   if(!paths.length)return;
-  let r; try{ r=await fetch('/v1/library/purge',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({paths})}); }
+  let r; try{ r=await fetch('/v1/library/purge',{method:'POST',headers:genHeaders(),body:JSON.stringify({paths})}); }
   catch(_){ toast('Delete failed'); return; }
   if(!r.ok){ toast('Delete failed'); return; }
   const j=await r.json().catch(()=>({removed:paths}));
@@ -1234,7 +1250,7 @@ async function emptyArchive(){
   const n=DATA.assets.filter(a=>a.status==='deleted').length;
   if(!n){ toast('Archive is empty'); return; }
   if(!await ask('Permanently delete all '+n+' archived item'+(n>1?'s':'')+'? This cannot be undone.'))return;
-  let r; try{ r=await fetch('/v1/library/purge',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({all:true})}); }
+  let r; try{ r=await fetch('/v1/library/purge',{method:'POST',headers:genHeaders(),body:JSON.stringify({all:true})}); }
   catch(_){ toast('Empty Archive failed'); return; }
   if(!r.ok){ toast('Empty Archive failed'); return; }
   const j=await r.json().catch(()=>({removed:[]}));
@@ -1326,11 +1342,11 @@ async function sendFix(){const t=$('fixtext').value.trim();if(t.length<3){showFi
   if(MASKMODE&&maskPainted()){ mask=await uploadMask(); if(!mask){showFixErr('Couldn’t upload the painted area — try again.');return;} }
   let r;
   if(FIXMODE==='amend'){ // atomic swap: cancel the queued job + re-dispatch amended
-    r=await fetch('/v1/queue/amend',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({prompt_id:AMENDID,instruction:t,paths,uploads,stack})});
+    r=await fetch('/v1/queue/amend',{method:'POST',headers:genHeaders(),body:JSON.stringify({prompt_id:AMENDID,instruction:t,paths,uploads,stack})});
   }else if(!FIXREFS.length){ // single base image → the low-denoise edit (optionally masked)
-    r=await fetch('/v1/library/fix',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({path:FIXPATH,instruction:t,stack,strength,mask})});
+    r=await fetch('/v1/library/fix',{method:'POST',headers:genHeaders(),body:JSON.stringify({path:FIXPATH,instruction:t,stack,strength,mask})});
   }else{               // base + references → multi-reference compose
-    r=await fetch('/v1/library/compose',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({paths:[FIXPATH,...paths],instruction:t,uploads,stack})});
+    r=await fetch('/v1/library/compose',{method:'POST',headers:genHeaders(),body:JSON.stringify({paths:[FIXPATH,...paths],instruction:t,uploads,stack})});
   }
   const j=await r.json().catch(()=>({}));
   if(r.ok){ $('fixdlg').close(); toast(j.note || (FIXMODE==='amend'?'Amended — re-queued (position reset)':(mask?'Area edit queued → see Queue & History':'Edit queued → see Queue & History'))); track('fix',{mode:FIXMODE,masked:!!mask}); if(typeof runs==='function')runs(); }
@@ -1366,7 +1382,7 @@ async function uploadMask(){                            // export the canvas (bl
 }
 async function cancelJob(id){
   if(!await ask('Cancel this job?'))return;
-  const r=await fetch('/v1/queue/cancel',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({prompt_id:id})});
+  const r=await fetch('/v1/queue/cancel',{method:'POST',headers:genHeaders(),body:JSON.stringify({prompt_id:id})});
   const j=await r.json().catch(()=>({}));
   if(r.ok)toast('Cancelled'+(j.canceled==='gpu'?' — if it was already rendering on your GPU it may still finish':''));
   else toast('Cancel failed: '+(errMsg(j)||('error '+r.status)));
@@ -1433,7 +1449,7 @@ async function loadSession(){
     m.innerHTML=orgs.map(o=>`<div class="omi" data-o="${o}" style="padding:8px 11px;border-radius:8px;cursor:pointer;font-size:.85rem;color:${o===s.org?'var(--txt)':'var(--dim)'}">${o===s.org?'● ':'○ '}${o}</div>`).join('')
       +`<div style="height:1px;background:var(--line);margin:5px 4px"></div>`+(s.console_url?`<a href="${s.console_url}" style="display:block;padding:8px 11px;color:var(--dim);text-decoration:none;font-size:.85rem">Console ↗</a>`:'')+`<a href="/logout" style="display:block;padding:8px 11px;color:var(--dim);text-decoration:none;font-size:.85rem">Sign out</a>`;
     document.body.appendChild(m);
-    m.querySelectorAll('.omi').forEach(el=>el.onclick=async()=>{try{await fetch('/v1/session/org',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({org:el.dataset.o})});}catch(e){} location.reload();});
+    m.querySelectorAll('.omi').forEach(el=>el.onclick=async()=>{try{await fetch('/v1/session/org',{method:'POST',headers:genHeaders(),body:JSON.stringify({org:el.dataset.o})});}catch(e){} location.reload();});
     setTimeout(()=>document.addEventListener('click',function h(e){if(!m.contains(e.target)&&!$('user').contains(e.target)){m.remove();document.removeEventListener('click',h);}}),0);
   };
 }
@@ -1478,6 +1494,18 @@ async function updateLivebar(){
 let STACKS=[], STACKSET=new Set(), CURSTACK=null, DRAG=null, SVDRAG=null, SVI=-1, DELSTACK=null;
 const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const qq=s=>String(s==null?'':s).replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+// One delegated handler for every queue/worklog row action. Job ids and output paths
+// are client/worker-controlled data (prompt_id, X-Target-GPU, filenames), so they ride
+// esc'd data-* attributes and are NEVER raw-concatenated into an onclick — closing the
+// stored-XSS class at the sink. Most-specific action wins; a bare row click opens it.
+document.addEventListener('click',ev=>{
+  const t=ev.target; if(!t||!t.closest)return; let el;
+  if(el=t.closest('[data-cancel]')){ev.stopPropagation();cancelJob(el.getAttribute('data-cancel'));}
+  else if(el=t.closest('[data-amend]')){ev.stopPropagation();openAmend(el.getAttribute('data-amend'));}
+  else if(el=t.closest('[data-del]')){ev.stopPropagation();delWork(el.getAttribute('data-del'));}
+  else if(el=t.closest('[data-arch]')){ev.stopPropagation();archiveFromQueue(el.getAttribute('data-arch'));}
+  else if(el=t.closest('[data-open]')){ev.stopPropagation();openContext(el.getAttribute('data-open'));}
+});
 const assetByPath=p=>DATA.assets.find(a=>a.path===p);
 const stackIdOf=p=>{for(const s of STACKS)if((s.assetIds||[]).includes(p))return s.id;return null;};
 // Archived Stacks stay OUT of the gallery/pickers, but their members stay hidden
@@ -1535,14 +1563,14 @@ function dragOverStack(e){if(!DRAG)return;e.preventDefault();e.currentTarget.cla
 async function dropOnStack(e,id){e.preventDefault();e.currentTarget.classList.remove('drop-target');const src=DRAG;DRAG=null;if(!src)return;await addAssetsToStack(id,[src]);}
 // ── Create / add ────────────────────────────────────────────────────────────────
 async function createStack(name,ids){
-  const r=await fetch('/v1/stacks',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,assetIds:ids})});
+  const r=await fetch('/v1/stacks',{method:'POST',headers:genHeaders(),body:JSON.stringify({name,assetIds:ids})});
   if(!r.ok){toast('Couldn’t create Stack');return null;}
   const s=await r.json();await load();toast('Stack created: '+(s.name||'Untitled Stack'));announce('Stack created');track('stack_create',{n:(ids||[]).length});return s;
 }
 async function createStackFromDrag(a,b){const name=await ask('Name this Stack','Untitled Stack');if(name===null)return;await createStack(name||'Untitled Stack',[a,b]);}
 async function newStackPrompt(){const name=await ask('Name this Stack','Untitled Stack');if(name===null)return;const s=await createStack(name||'Untitled Stack',[]);if(s)openStack(s.id);}
 async function addAssetsToStack(id,ids){
-  const r=await fetch('/v1/stacks/'+encodeURIComponent(id)+'/assets',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({assetIds:ids})});
+  const r=await fetch('/v1/stacks/'+encodeURIComponent(id)+'/assets',{method:'POST',headers:genHeaders(),body:JSON.stringify({assetIds:ids})});
   if(!r.ok){toast('Couldn’t add to Stack');return null;}
   const s=await r.json();await load();if(CURSTACK&&CURSTACK.id===id){CURSTACK=s;svRender();}toast('Added to Stack');announce('Added to Stack');return s;
 }
@@ -1563,12 +1591,12 @@ function moveSelTo(ev){if(!SEL.size)return;const ids=[...SEL];
 }
 async function returnToGallery(ids){
   const by={};for(const p of ids){const sid=stackIdOf(p);if(sid)(by[sid]=by[sid]||[]).push(p);}
-  for(const sid in by)await fetch('/v1/stacks/'+encodeURIComponent(sid)+'/assets',{method:'DELETE',headers:{'Content-Type':'application/json'},body:JSON.stringify({assetIds:by[sid]})});
+  for(const sid in by)await fetch('/v1/stacks/'+encodeURIComponent(sid)+'/assets',{method:'DELETE',headers:genHeaders(),body:JSON.stringify({assetIds:by[sid]})});
   await load();toast('Returned to gallery');
 }
 function downloadSel(){if(!SEL.size)return;for(const p of [...SEL])dl(imgURL({path:p}),p.split('/').pop());toast('Downloading '+SEL.size);}
 async function tagSel(){if(!SEL.size)return;const t=await ask('Add tags (comma-separated)','');if(t===null)return;const tags=t.split(',').map(x=>x.trim()).filter(Boolean);if(!tags.length)return;
-  const r=await fetch('/v1/library/tags',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({paths:[...SEL],tags})});toast(r.ok?('Tagged '+SEL.size):'Tag failed');clearSel();await load();}
+  const r=await fetch('/v1/library/tags',{method:'POST',headers:genHeaders(),body:JSON.stringify({paths:[...SEL],tags})});toast(r.ok?('Tagged '+SEL.size):'Tag failed');clearSel();await load();}
 // ── Stack detail view ─────────────────────────────────────────────────────────
 async function openStack(id){
   const s=await fetchStack(id);if(!s){toast('Stack not found');await load();return;}
@@ -1628,18 +1656,18 @@ function svImgMenu(path,idx,ev){ev&&ev.stopPropagation();
     {label:'🗑 Delete image',danger:true,on:()=>svDeleteImg(path)},
   ],ev);
 }
-async function setCover(path){const r=await fetch('/v1/stacks/'+encodeURIComponent(CURSTACK.id),{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({cover:path})});if(r.ok){CURSTACK=await r.json();svRender();await loadStacks();toast('Cover updated');}else toast('Couldn’t set cover');}
-async function svRemove(paths){const r=await fetch('/v1/stacks/'+encodeURIComponent(CURSTACK.id)+'/assets',{method:'DELETE',headers:{'Content-Type':'application/json'},body:JSON.stringify({assetIds:paths})});if(r.ok){CURSTACK=await r.json();svRender();await loadStacks();toast('Removed — back in gallery');announce('Removed from Stack');}else toast('Couldn’t remove');}
+async function setCover(path){const r=await fetch('/v1/stacks/'+encodeURIComponent(CURSTACK.id),{method:'PATCH',headers:genHeaders(),body:JSON.stringify({cover:path})});if(r.ok){CURSTACK=await r.json();svRender();await loadStacks();toast('Cover updated');}else toast('Couldn’t set cover');}
+async function svRemove(paths){const r=await fetch('/v1/stacks/'+encodeURIComponent(CURSTACK.id)+'/assets',{method:'DELETE',headers:genHeaders(),body:JSON.stringify({assetIds:paths})});if(r.ok){CURSTACK=await r.json();svRender();await loadStacks();toast('Removed — back in gallery');announce('Removed from Stack');}else toast('Couldn’t remove');}
 function svRemoveSel(){if(!SEL.size)return;const ids=[...SEL];SEL.clear();SELMODE=false;updateBulk();svRemove(ids);}
 function svFix(path){if(!assetByPath(path)){toast('Image unavailable');return;}openFixPath(path,'');}
-async function rerunInStack(path){await enqueue(null,'',async()=>{toast('Queueing into this Stack…');const r=await fetch('/v1/library/rerun',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({path,stack:CURSTACK.id})});toast(r.ok?'Queued → lands in this Stack':'Failed');});}
+async function rerunInStack(path){await enqueue(null,'',async()=>{toast('Queueing into this Stack…');const r=await fetch('/v1/library/rerun',{method:'POST',headers:genHeaders(),body:JSON.stringify({path,stack:CURSTACK.id})});toast(r.ok?'Queued → lands in this Stack':'Failed');});}
 async function svDeleteImg(path){if(!await ask('Delete this image? (recoverable in Archive)'))return;
-  await fetch('/v1/library/status',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({path,status:'deleted'})});
-  await fetch('/v1/stacks/'+encodeURIComponent(CURSTACK.id)+'/assets',{method:'DELETE',headers:{'Content-Type':'application/json'},body:JSON.stringify({assetIds:[path]})});
+  await fetch('/v1/library/status',{method:'POST',headers:genHeaders(),body:JSON.stringify({path,status:'deleted'})});
+  await fetch('/v1/stacks/'+encodeURIComponent(CURSTACK.id)+'/assets',{method:'DELETE',headers:genHeaders(),body:JSON.stringify({assetIds:[path]})});
   CURSTACK=await fetchStack(CURSTACK.id);await load();svRender();toast('Archived');}
 async function svDeleteSel(){if(!SEL.size)return;if(!await ask('Delete '+SEL.size+' image(s)? (recoverable)'))return;const ids=[...SEL];SEL.clear();SELMODE=false;updateBulk();
-  (async()=>{for(const p of ids)await fetch('/v1/library/status',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({path:p,status:'deleted'})});
-    await fetch('/v1/stacks/'+encodeURIComponent(CURSTACK.id)+'/assets',{method:'DELETE',headers:{'Content-Type':'application/json'},body:JSON.stringify({assetIds:ids})});
+  (async()=>{for(const p of ids)await fetch('/v1/library/status',{method:'POST',headers:genHeaders(),body:JSON.stringify({path:p,status:'deleted'})});
+    await fetch('/v1/stacks/'+encodeURIComponent(CURSTACK.id)+'/assets',{method:'DELETE',headers:genHeaders(),body:JSON.stringify({assetIds:ids})});
     CURSTACK=await fetchStack(CURSTACK.id);await load();svRender();toast('Archived');})();}
 function svDownload(){if(!SEL.size)return;for(const p of [...SEL])dl(imgURL({path:p}),p.split('/').pop());toast('Downloading '+SEL.size);}
 function svMoveTo(){if(!SEL.size)return;moveSelTo({clientX:innerWidth/2,clientY:130,stopPropagation(){}});}
@@ -1651,7 +1679,7 @@ function svDragOver(e,idx){if(SVDRAG===null)return;e.preventDefault();e.currentT
 async function svDrop(e,idx){e.preventDefault();e.currentTarget.classList.remove('drop-target');if(SVDRAG===null||SVDRAG===idx){SVDRAG=null;return;}
   const before=CURSTACK.assets,arr=before.slice(),[m]=arr.splice(SVDRAG,1);arr.splice(idx,0,m);SVDRAG=null;
   CURSTACK.assets=arr;svRender();                                    // optimistic
-  const r=await fetch('/v1/stacks/'+encodeURIComponent(CURSTACK.id)+'/order',{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({assetIds:arr.map(x=>x.assetId)})});
+  const r=await fetch('/v1/stacks/'+encodeURIComponent(CURSTACK.id)+'/order',{method:'PATCH',headers:genHeaders(),body:JSON.stringify({assetIds:arr.map(x=>x.assetId)})});
   if(!r.ok){CURSTACK.assets=before;svRender();toast('Couldn’t save order — reverted');}
   else{CURSTACK=await r.json();svRender();announce('Order saved');}
 }
@@ -1662,7 +1690,7 @@ function svOpen(i){if(!CURSTACK||!CURSTACK.assets[i])return;SVI=i;const path=CUR
   announce('Image '+(i+1)+' of '+CURSTACK.assets.length);}
 function svStep(d){if(SVI<0||!CURSTACK)return;const n=CURSTACK.assets.length;SVI=(SVI+d+n)%n;svOpen(SVI);}
 // ── Header actions: rename / describe / add images / share / settings ─────────
-async function patchStack(id,fields){const r=await fetch('/v1/stacks/'+encodeURIComponent(id),{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify(fields)});if(!r.ok){toast('Update failed');return null;}const s=await r.json();if(CURSTACK&&CURSTACK.id===id){CURSTACK=s;$('svname').value=s.name;}await loadStacks();if(!CURSTACK)render();return s;}
+async function patchStack(id,fields){const r=await fetch('/v1/stacks/'+encodeURIComponent(id),{method:'PATCH',headers:genHeaders(),body:JSON.stringify(fields)});if(!r.ok){toast('Update failed');return null;}const s=await r.json();if(CURSTACK&&CURSTACK.id===id){CURSTACK=s;$('svname').value=s.name;}await loadStacks();if(!CURSTACK)render();return s;}
 async function renameCurStack(v){if(!CURSTACK)return;await patchStack(CURSTACK.id,{name:(v||'').trim()||'Untitled Stack'});toast('Renamed');}
 async function renameStack(id){const s=STACKS.find(x=>x.id===id);const n=await ask('Rename Stack',(s&&s.name)||'');if(n===null)return;await patchStack(id,{name:n.trim()||'Untitled Stack'});toast('Renamed');}
 async function describeCurStack(v){if(!CURSTACK)return;await patchStack(CURSTACK.id,{description:v||''});}
@@ -1670,12 +1698,12 @@ function shareLink(url){if(navigator.clipboard&&navigator.clipboard.writeText)na
 function shareStack(id){shareLink(location.origin+location.pathname+'#stack='+id);}
 function shareCurStack(){if(CURSTACK)shareStack(CURSTACK.id);}
 function downloadStack(id){(async()=>{const st=(CURSTACK&&CURSTACK.id===id)?CURSTACK:await fetchStack(id);if(!st)return;for(const m of st.assets)dl(imgURL({path:m.assetId}),m.assetId.split('/').pop());toast('Downloading '+st.assets.length);})();}
-async function archiveStack(id){const r=await fetch('/v1/stacks/'+encodeURIComponent(id),{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({archived:true})});if(r.ok){if(CURSTACK&&CURSTACK.id===id)closeStack();await load();toast('Archived');}else toast('Couldn’t archive');}
+async function archiveStack(id){const r=await fetch('/v1/stacks/'+encodeURIComponent(id),{method:'PATCH',headers:genHeaders(),body:JSON.stringify({archived:true})});if(r.ok){if(CURSTACK&&CURSTACK.id===id)closeStack();await load();toast('Archived');}else toast('Couldn’t archive');}
 async function unstackStack(id){if(!await ask('Unstack? The container is removed and every image returns to the gallery.'))return;const r=await fetch('/v1/stacks/'+encodeURIComponent(id)+'/unstack',{method:'POST'});if(r.ok){if(CURSTACK&&CURSTACK.id===id)closeStack();await load();toast('Unstacked — images preserved');announce('Unstacked');}else toast('Couldn’t unstack');}
 function pickAddImages(){if(!CURSTACK)return;const f=$('svaddfile');f.onchange=async e=>{const files=e.target.files;if(!files||!files.length)return;toast('Adding '+files.length+' image(s)…');const added=[];
   for(const file of files){const fd=new FormData();fd.append('image',file,file.name||'upload.png');try{const r=await fetch('/v1/library/upload',{method:'POST',body:fd});const j=await r.json().catch(()=>({}));if(r.ok&&j.path)added.push(j.path);}catch(_){}}
   if(added.length)await addAssetsToStack(CURSTACK.id,added);else toast('No images added');e.target.value='';};f.click();}
-function setAutoStack(on){fetch('/v1/stacks/settings',{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({autoStack:!!on})}).then(()=>toast(on?'Batch generations will auto-stack':'Auto-stack off'),()=>toast('Couldn’t save setting'));}
+function setAutoStack(on){fetch('/v1/stacks/settings',{method:'PATCH',headers:genHeaders(),body:JSON.stringify({autoStack:!!on})}).then(()=>toast(on?'Batch generations will auto-stack':'Auto-stack off'),()=>toast('Couldn’t save setting'));}
 // ── Delete-Stack confirmation ─────────────────────────────────────────────────
 function deleteStackPrompt(id){DELSTACK=id;const r=document.querySelector('input[name=delmode][value=only]');if(r)r.checked=true;$('delstackdlg').showModal();}
 async function confirmDeleteStack(){const id=DELSTACK;if(!id)return;const mode=(document.querySelector('input[name=delmode]:checked')||{}).value||'only';

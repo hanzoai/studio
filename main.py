@@ -456,7 +456,13 @@ def start_studio(asyncio_loop=None):
 
     # In worker mode, add worker execution routes and register with coordinator
     if args.worker_mode:
-        from middleware.worker_client import add_worker_routes
+        from middleware.worker_client import add_worker_routes, WORKER_TOKEN
+        # FAIL CLOSED: a worker box executes jobs the coordinator hands it over a
+        # secret-authenticated seam. Without STUDIO_WORKER_TOKEN that seam (and the
+        # worker-mode /prompt gate) would accept un-tokened callers — silently
+        # reopening the hidden-run hole. Refuse to start rather than run wide open.
+        if not WORKER_TOKEN:
+            sys.exit("worker-mode requires STUDIO_WORKER_TOKEN (coordinator shared secret) — refusing to start")
         add_worker_routes(prompt_server.routes, prompt_server)
         logging.info("Worker mode enabled — worker_id=%s coordinator=%s",
                       args.worker_id, args.coordinator_url)

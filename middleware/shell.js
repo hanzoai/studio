@@ -144,9 +144,12 @@
     gpus.classList.toggle("on", online > 0);
     $("hznodes").innerHTML = nodes.length ? nodes.map(function (n) {
       var s = byNode[n.name] || { running: null, depth: 0 };
+      // Authoritative depth from /v1/nodes (gpu-jobs activities) when present; the
+      // running-render label still comes from the org's live queue/status.
+      var depth = (typeof n.depth === "number") ? n.depth : s.depth;
       var sub = (n.online ? "online" : "offline") +
         (s.running ? " · running: " + esc(String(s.running).slice(0, 40)) : (n.online ? " · idle" : "")) +
-        " · queue " + s.depth;
+        " · queue " + depth;
       return '<div class="hz-node ' + (n.online ? "on" : "") + '"><span class="hz-dot"></span>' +
         '<div class="hz-nn"><b>' + esc(n.name) + '</b><div class="hz-nsub">' + sub + "</div></div></div>";
     }).join("") : '<div class="hz-nsub">No GPU nodes connected. Run <b>hanzo gpu connect</b> on a box to add one.</div>';

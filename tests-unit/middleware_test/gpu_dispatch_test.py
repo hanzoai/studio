@@ -162,6 +162,84 @@ def test_advisory_gate_false_when_nothing_online(monkeypatch):
     assert g.has_online_gpu_advisory("Bearer user") is False
 
 
+# ── Per-GPU targeting: X-Target-GPU → taskQueue "gpu:<identity>" ──────────────────
+
+class _ReqH(_Req):
+    """_Req plus an arbitrary header map (so a test can set X-Target-GPU)."""
+    def __init__(self, auth="Bearer u", headers=None):
+        super().__init__(auth)
+        if headers:
+            self.headers.update(headers)
+
+
+def _capture_body(monkeypatch):
+    """Capture the enqueue POST body so a test can assert taskQueue + the URL namespace."""
+    import json as _json
+    sent: dict = {}
+
+    def fake_urlopen(req, timeout=0):
+        sent["url"] = req.full_url
+        sent["body"] = _json.loads(req.data.decode()) if req.data else {}
+        return _Resp()
+
+    monkeypatch.setattr(g.urllib.request, "urlopen", fake_urlopen)
+    monkeypatch.setattr(g, "_collect_input_images", lambda prompt, org: [])
+    monkeypatch.setattr(g, "_track_dispatched",
+                        lambda org, pid, prompt, node="gpu": sent.update(node=node))
+    return sent
+
+
+def test_untargeted_uses_shared_gpu_jobs_lane(monkeypatch):
+    """No X-Target-GPU → the shared 'gpu-jobs' lane any worker drains; namespace unchanged."""
+    monkeypatch.setattr(g, "_online_gpu_nodes", lambda tok: [])
+    monkeypatch.setattr(g, "has_models_for", lambda prompt: False)
+    sent = _capture_body(monkeypatch)
+    assert g.dispatch_if_worker(_Req("Bearer acme"), "acme", "pid", {}) is True
+    assert sent["body"]["taskQueue"] == "gpu-jobs"            # shared lane
+    assert "namespaces/gpu-jobs/activities" in sent["url"]    # namespace is always gpu-jobs
+    assert sent["node"] == "gpu"
+
+
+def test_x_target_gpu_routes_to_that_machine_lane(monkeypatch):
+    """A targeted render — where the target IS one of the caller-org's own online GPUs —
+    enqueues on the machine's OWN lane 'gpu:<identity>' (namespace still gpu-jobs) and is
+    tracked to that node, so only spark claims it. An in-fleet target ALWAYS enqueues,
+    even on a box that could render the graph locally."""
+    monkeypatch.setattr(g, "_online_gpu_nodes",
+                        lambda tok: [{"name": "spark", "status": "online", "gpu": True}])
+    monkeypatch.setattr(g, "has_models_for", lambda prompt: True)   # would render local…
+    sent = _capture_body(monkeypatch)
+    ok = g.dispatch_if_worker(_ReqH("Bearer acme", {"X-Target-GPU": "spark"}), "acme", "pid", {})
+    assert ok is True                                        # …but an in-fleet target forces the queue
+    assert sent["body"]["taskQueue"] == "gpu:spark"          # the machine's own lane
+    assert "namespaces/gpu-jobs/activities" in sent["url"]   # namespace unchanged
+    assert sent["node"] == "spark"                           # tracked to the targeted GPU
+
+
+def test_out_of_fleet_target_falls_back_to_shared(monkeypatch):
+    """A target that is NOT one of the caller-org's own online GPUs is ignored — the job
+    rides the shared lane, never a 'gpu:<bogus>' lane no worker claims (a 30-min hang),
+    and an injected label (XSS payload) never becomes a taskQueue / queue-row node."""
+    monkeypatch.setattr(g, "_online_gpu_nodes",
+                        lambda tok: [{"name": "spark", "status": "online", "gpu": True}])
+    monkeypatch.setattr(g, "has_models_for", lambda prompt: False)
+    sent = _capture_body(monkeypatch)
+    ok = g.dispatch_if_worker(
+        _ReqH("Bearer acme", {"X-Target-GPU": "<img src=x onerror=alert(1)>"}), "acme", "pid", {})
+    assert ok is True
+    assert sent["body"]["taskQueue"] == "gpu-jobs"           # bogus target → shared lane, not gpu:<payload>
+    assert sent["node"] == "spark"                           # node decided by the real fleet, not the header
+
+
+def test_blank_target_header_falls_back_to_shared(monkeypatch):
+    """An empty/whitespace X-Target-GPU is not a target — shared lane."""
+    monkeypatch.setattr(g, "_online_gpu_nodes", lambda tok: [])
+    monkeypatch.setattr(g, "has_models_for", lambda prompt: False)
+    sent = _capture_body(monkeypatch)
+    assert g.dispatch_if_worker(_ReqH("Bearer acme", {"X-Target-GPU": "  "}), "acme", "pid", {}) is True
+    assert sent["body"]["taskQueue"] == "gpu-jobs"
+
+
 # ── A BYO-GPU video job records its REAL prefix, not the "render" fallback ─────────
 def test_track_savevideo(tmp_path, monkeypatch):
     import json

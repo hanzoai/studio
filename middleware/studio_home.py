@@ -830,7 +830,10 @@ async def _queue_prompt(request: web.Request, server, graph: dict) -> str:
     nothing queued' — the error was swallowed)."""
     port = getattr(server, "port", None) or int(os.environ.get("PORT", "8188"))
     headers = {"Content-Type": "application/json"}
-    for h in ("Authorization", "Cookie"):
+    # Forward the caller's identity AND their per-GPU target (X-Target-GPU) so a fix/
+    # compose/video/rerun dispatched server-side lands on the machine the user picked —
+    # one targeting path, honored by dispatch_if_worker for every generation surface.
+    for h in ("Authorization", "Cookie", "X-Target-GPU"):
         if request.headers.get(h):
             headers[h] = request.headers[h]
     try:
@@ -893,6 +896,123 @@ def _render_job_node(org: str, pid: str) -> str:
     """The node label the gpu-jobs lane recorded for this dispatch (spark/dbc/…)."""
     j = _render_job(org, pid)
     return (j.get("node") if j else None) or "gpu"
+
+
+# ── Authoritative gpu-jobs queue (the tasks engine is the source of truth) ───────────
+# The visible queue reads the org's activities STRAIGHT from the cloud tasks engine
+# (GET /v1/tasks/namespaces/gpu-jobs/activities, org-scoped by the caller's bearer via
+# the tasks gate) — not a local shadow. So every row shows the REAL worker that claimed
+# it (activity.identity) and its REAL status, and nothing renders on a GPU without
+# appearing here (a claimed job IS an activity). render_jobs.json survives ONLY as an
+# optimistic placeholder for the ~2s between enqueue and first claim.
+_JOBS_NS = os.environ.get("STUDIO_GPU_JOBS_NS", "gpu-jobs")
+_PHASE = {"SCHEDULED": "queued", "PENDING": "queued", "STARTED": "running",
+          "RUNNING": "running", "COMPLETED": "done", "SUCCEEDED": "done",
+          "FAILED": "failed", "CANCELED": "cancelled", "CANCELLED": "cancelled"}
+
+
+def _epoch(ts) -> int | None:
+    """Best-effort seconds-since-epoch from a tasks timestamp (RFC3339 string or a
+    number in s/ms). None for empty/unset so age math can skip it."""
+    if not ts:
+        return None
+    if isinstance(ts, (int, float)):
+        return int(ts if ts < 1e12 else ts / 1000)
+    if isinstance(ts, str):
+        try:
+            from datetime import datetime
+            return int(datetime.fromisoformat(ts.strip().replace("Z", "+00:00")).timestamp())
+        except Exception:
+            return None
+    return None
+
+
+def _act_type_name(a: dict) -> str:
+    t = a.get("type") or a.get("activityType") or {}
+    return t.get("name", "") if isinstance(t, dict) else ""
+
+
+def _activity_phase(a: dict) -> str:
+    return _PHASE.get(str(a.get("status", "")).upper(), "queued")
+
+
+def _prompt_title_refs(prompt: dict) -> tuple:
+    """A human title (SaveImage/SaveVideo prefix) + first LoadImage ref for a thumbnail,
+    derived from the activity's OWN input so a row is self-describing without the shadow."""
+    from middleware.gpu_dispatch import SAVE_NODES
+    title, refs = "render", []
+    for n in (prompt or {}).values():
+        if not isinstance(n, dict):
+            continue
+        ct = n.get("class_type", "")
+        if ct in SAVE_NODES:
+            title = (n.get("inputs", {}) or {}).get("filename_prefix") or title
+        elif "LoadImage" in ct:
+            im = (n.get("inputs", {}) or {}).get("image")
+            if im:
+                refs.append(im)
+    return title.split("/")[-1], refs[:1]
+
+
+def _job_from_activity(a: dict, now: int) -> dict:
+    """Map a StandaloneActivity → the UI's job row: REAL claimer + REAL status."""
+    ex = a.get("execution") or {}
+    pid = ex.get("runId") or ex.get("workflowId") or a.get("activityId") or ""
+    inp = a.get("input") if isinstance(a.get("input"), dict) else {}
+    title, refs = _prompt_title_refs(inp.get("prompt") or {})
+    tq = str(a.get("taskQueue") or "")
+    # identity is the machine that CLAIMED it; before pick-up the "gpu:<name>" lane
+    # still names the targeted machine so a queued targeted job shows where it's headed.
+    node = a.get("identity") or (tq[4:] if tq.startswith("gpu:") else None) or "queued"
+    start = _epoch(a.get("startTime")) or _epoch(a.get("scheduleTime"))
+    beat = _epoch(a.get("lastHeartbeatTime"))
+    return {"id": pid, "node": node, "status": _activity_phase(a),
+            "prefix": title, "refs": refs,
+            "age": max(0, now - start) if start else 0,
+            "beat_age": (now - beat) if beat else None}
+
+
+async def _list_gpu_jobs(request) -> list | None:
+    """The caller-org's gpu-jobs activities from the tasks engine. Returns None (not [])
+    when the tasks API can't be reached, so a transient blip falls back to the local
+    placeholder rather than flashing an empty queue. Tenant-scoped by the bearer."""
+    from middleware.gpu_dispatch import CLOUD, _bearer
+    tok = _bearer(request)
+    if not tok:
+        return []
+    url = f"{CLOUD}/v1/tasks/namespaces/{_JOBS_NS}/activities?pageSize=100"
+    try:
+        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=8)) as s:
+            async with s.get(url, headers={"Authorization": tok}) as r:
+                if r.status != 200:
+                    return None
+                data = await r.json()
+    except Exception:
+        return None
+    acts = data.get("activities") if isinstance(data, dict) else None
+    return acts if isinstance(acts, list) else []
+
+
+def _render_queue_placeholder(root, now: int, exclude: set) -> list:
+    """Optimistic pre-claim rows from render_jobs.json: ONLY jobs the authoritative list
+    hasn't surfaced yet and that are seconds-young — the bridge across the ~2s between
+    enqueue and first claim. Anything older is the engine's to report."""
+    try:
+        jobs = json.loads((root / "render_jobs.json").read_text())
+    except Exception:
+        return []
+    out = []
+    for j in jobs:
+        pid = j.get("id")
+        if not pid or pid in exclude:
+            continue
+        age = now - int(j.get("ts", 0))
+        if age < 0 or age > 30:
+            continue
+        out.append({"id": pid, "node": j.get("node") or "queued", "status": "queued",
+                    "prefix": j.get("prefix") or "render", "refs": (j.get("refs") or [])[:1],
+                    "age": age, "beat_age": None})
+    return out
 
 
 def _output_mtime(root: Path | None, rel: str) -> int | None:
@@ -2080,44 +2200,31 @@ def add_studio_home_routes(routes: web.RouteTableDef, server) -> None:
 
     @routes.get("/v1/render-queue")
     async def render_queue(request: web.Request):
-        """The org's IN-FLIGHT BYO-GPU renders (fix/compose/rerun dispatched to a
-        connected GPU). These run on the worker's gpu-jobs queue, NOT the pod's
-        local /queue, so the UI could not see them — this is what makes a queued
-        fix visible. Drops entries whose output has landed in the library or that
-        have aged out (~25 min). Cheap: reads one small per-org JSON."""
+        """The org's IN-FLIGHT BYO-GPU renders — read AUTHORITATIVELY from the cloud
+        gpu-jobs tasks engine: each row carries the REAL claiming GPU (activity.identity)
+        and REAL status, so a dispatched fix/compose/rerun is visible AND attributed to
+        the machine actually running it — and nothing can render on a GPU without
+        appearing here. render_jobs.json is used ONLY as a ~2s pre-claim placeholder for
+        a job the engine hasn't listed yet. Terminal (done/failed/cancelled) and stale
+        rows drop off. Tenant-scoped by the caller's bearer via the tasks gate."""
         org = _org_of(request)
         root = _library_root(org)
-        if root is None:
-            return web.json_response({"jobs": []})
-        jf = root / "render_jobs.json"
-        try:
-            jobs = json.loads(jf.read_text())
-        except Exception:
-            jobs = []
         now = int(time.time())
-        live = []
-        for j in jobs:
-            age = now - int(j.get("ts", 0))
-            if age > 1500:            # aged out (worker deadline is 1200s)
-                continue
-            # Completed only when the ACTUAL output for THIS job exists: the render
-            # saves to "<outPrefix>_NNNNN_.png". Check precisely (glob the exact
-            # output prefix) — not a fuzzy base match, which collided with the source
-            # image and made the job disappear from the queue after 30s.
-            out_prefix = j.get("outPrefix") or j.get("prefix") or ""
-            landed = False
-            if out_prefix:
-                try:
-                    parent = root / os.path.dirname(out_prefix)
-                    stem = os.path.basename(out_prefix)
-                    landed = any(any(parent.glob(stem + "*" + e)) for e in _SAVE_EXT)
-                except Exception:
-                    landed = False
-            if landed and age > 20:
-                continue
-            j["age"] = age
-            live.append(j)
-        return web.json_response({"jobs": live})
+        acts = await _list_gpu_jobs(request)
+        live, seen = [], set()
+        if acts is not None:
+            for a in acts:
+                if _act_type_name(a) not in ("studio.render", ""):
+                    continue
+                job = _job_from_activity(a, now)
+                if not job["id"]:
+                    continue
+                seen.add(job["id"])
+                if job["status"] in ("done", "failed", "cancelled") or job["age"] > 1500:
+                    continue
+                live.append(job)
+        placeholder = _render_queue_placeholder(root, now, seen) if root is not None else []
+        return web.json_response({"jobs": placeholder + live})
 
     @routes.post("/v1/library/status")
     async def set_status(request: web.Request):
@@ -2359,20 +2466,35 @@ def add_studio_home_routes(routes: web.RouteTableDef, server) -> None:
 
     @routes.get("/v1/nodes")
     async def get_nodes(request: web.Request):
-        """The caller-org's GPU nodes (online/offline) for the queue header badges,
-        plus this studio pod. The fleet is token-scoped, so only the caller's org's
-        nodes are ever returned."""
+        """The caller-org's GPU nodes (online/offline) for the queue header badges, plus
+        this studio pod — each annotated with LIVE queue depth read from the authoritative
+        gpu-jobs activities (jobs whose claiming identity, or targeted 'gpu:<name>' lane,
+        is this node). The fleet is token-scoped, so only the caller-org's nodes return."""
         try:
             from middleware.gpu_dispatch import _bearer, _fleet_machines, _node_label
         except ImportError:
             from .middleware.gpu_dispatch import _bearer, _fleet_machines, _node_label
+        now = int(time.time())
+        depth: dict = {}
+        for a in (await _list_gpu_jobs(request) or []):
+            if _act_type_name(a) not in ("studio.render", ""):
+                continue
+            ph = _activity_phase(a)
+            if ph not in ("queued", "running"):
+                continue
+            d = depth.setdefault(_job_from_activity(a, now)["node"], {"queued": 0, "running": 0})
+            d[ph] += 1
         nodes = []
         try:
             tok = _bearer(request)
             for m in (_fleet_machines(tok) if tok else []):
                 if not m.get("gpu"):
                     continue
-                nodes.append({"name": _node_label(m), "online": m.get("status") == "online"})
+                name = _node_label(m)
+                d = depth.get(name, {"queued": 0, "running": 0})
+                nodes.append({"name": name, "online": m.get("status") == "online",
+                              "queued": d["queued"], "running": d["running"],
+                              "depth": d["queued"] + d["running"]})
         except Exception:
             nodes = []
         return web.json_response({"nodes": nodes, "pod": {"name": "studio pod", "online": True}})
