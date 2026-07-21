@@ -61,3 +61,28 @@
   #hzchat.on{transform:translateY(0)}
   #hzgpus{left:12px;right:12px;width:auto;bottom:66px}
 }
+/* Developers workbench — the bottom drawer (Queue · Logs · Shell), both views.
+   Sits UNDER the pill bar's z so the pills stay clickable above it. */
+#hzwb{position:fixed;left:0;right:0;bottom:0;height:44vh;min-height:260px;background:#0e0e12;color:#ececf1;
+  border-top:1px solid #232329;z-index:2147482999;display:none;flex-direction:column;
+  box-shadow:0 -14px 44px #0007;font:400 13px/1.45 Inter,system-ui,-apple-system,sans-serif}
+#hzwb.on{display:flex}
+.hzwb-h{display:flex;align-items:center;gap:4px;padding:7px 10px;border-bottom:1px solid #232329;flex:0 0 auto}
+.hzwb-tab{background:none;border:none;color:#8a8a95;font:inherit;font-weight:600;padding:6px 11px;border-radius:8px;cursor:pointer}
+.hzwb-tab:hover{color:#ececf1}
+.hzwb-tab.on{background:#1a1a20;color:#ececf1}
+.hzwb-sp{flex:1}
+.hzwb-ic{background:none;border:none;color:#8a8a95;font:inherit;font-size:1.05rem;line-height:1;padding:5px 9px;cursor:pointer;border-radius:8px}
+.hzwb-ic:hover{color:#ececf1;background:#1a1a20}
+.hzwb-b{flex:1;min-height:0;overflow:auto;padding:12px 14px}
+.hzwb-row{padding:2px 0}
+.hzwb-dim{color:#8a8a95}
+.hzwb-cmd{color:#c9c9d4;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:.8rem;margin-top:8px}
+.hzwb-out{color:#ececf1;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:.78rem;
+  white-space:pre-wrap;word-break:break-word;margin:4px 0 0;padding:0}
+.hzwb-out.err{color:#ff7a70}
+#hzwbform{display:flex;align-items:center;gap:8px;padding:9px 14px;border-top:1px solid #232329;flex:0 0 auto}
+#hzwbform .hzwb-ps{color:#8a8a95;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+#hzwbform input{flex:1;background:#0a0a0d;border:1px solid #232329;border-radius:9px;color:#ececf1;padding:8px 11px;
+  font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:.8rem;outline:none}
+@media (max-width:600px){#hzwb{height:70vh}}

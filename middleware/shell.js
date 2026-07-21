@@ -39,7 +39,9 @@
     title: "Wallet — top up at pay.hanzo.ai" }, "wallet …");
   var gpus = el("button", { class: "hz-pill", id: "hzgpubtn", title: "GPUs" }, '<span class="hz-dot"></span><span class="hz-lbl">GPUs</span>');
   var chatBtn = el("button", { class: "hz-pill hz-chat", title: "Chat" }, '💬<span class="hz-lbl"> Chat</span>');
-  bar.appendChild(toggle);
+  var devBtn = el("button", { class: "hz-pill", id: "hzdevbtn", title: "Developers workbench — queue, logs, and a read-only API shell" },
+    '&gt;_<span class="hz-lbl"> Developers</span>');
+  bar.appendChild(devBtn); bar.appendChild(toggle);
   if (tmplBtn) bar.appendChild(tmplBtn);
   bar.appendChild(wallet); bar.appendChild(gpus); bar.appendChild(chatBtn);
 
@@ -56,7 +58,8 @@
     document.body.appendChild(bar);
     document.body.appendChild(gpuPanel);
     document.body.appendChild(chat);
-    wire();
+    document.body.appendChild(wb);
+    wire(); wireWb();
     loadSession(); loadWallet(); loadGpus();
     if (!STUDIO) editorBoot();
   }
@@ -94,6 +97,127 @@
     } else if (ops.length && STUDIO) {
       addMsg("sys", "Open the Editor to apply " + ops.length + " graph change" + (ops.length > 1 ? "s" : "") + ".");
     }
+  }
+
+  // ── Developers workbench: a bottom drawer (Queue · Logs · Shell), both views ──
+  // The same Stripe-Workbench footer-dock pattern the Cloud console ships: real
+  // queue/log data or an honest empty, and a READ-ONLY same-origin API shell
+  // (GET only — mutations belong in the product UI). Guarded: failures render as
+  // output lines, never throw.
+  var wb = el("div", { id: "hzwb" });
+  wb.innerHTML =
+    '<div class="hzwb-h">' +
+    '<button class="hzwb-tab on" data-t="queue">Queue</button>' +
+    '<button class="hzwb-tab" data-t="logs">Logs</button>' +
+    '<button class="hzwb-tab" data-t="shell">Shell</button>' +
+    '<span class="hzwb-sp"></span>' +
+    '<button class="hzwb-ic" id="hzwbre" title="Refresh">⟳</button>' +
+    '<button class="hzwb-ic" id="hzwbx" title="Close">×</button></div>' +
+    '<div class="hzwb-b" id="hzwbbody"></div>' +
+    '<form id="hzwbform" hidden><span class="hzwb-ps">$</span>' +
+    '<input id="hzwbin" placeholder="GET /api/queue — read-only, same origin" autocomplete="off" spellcheck="false"></form>';
+  var WBTAB = "queue";
+  function wbOpen(t) { if (t) WBTAB = t; wb.classList.add("on"); wbRender(); }
+  function wbClose() { wb.classList.remove("on"); }
+  function wbEsc(s, max) {
+    s = String(s == null ? "" : s);
+    if (max && s.length > max) s = s.slice(0, max) + "\n… (" + (s.length - max) + " more characters truncated)";
+    return esc(s);
+  }
+  // GET-only same-origin command: `GET /api/queue` | `/v1/nodes` | `internal/logs/raw`.
+  function wbParse(line) {
+    var w = line.trim().split(/\s+/).filter(Boolean);
+    if (!w.length) return { error: "Enter a path — e.g. GET /api/queue" };
+    var m = w[0].toUpperCase();
+    if (/^(POST|PUT|PATCH|DELETE|HEAD|OPTIONS)$/.test(m)) return { error: "The workbench shell is read-only — only GET is supported." };
+    if (m === "GET") w = w.slice(1);
+    if (w.length !== 1) return { error: "One path per command — e.g. GET /api/queue" };
+    var p = w[0];
+    if (/^([a-z][a-z0-9+.-]*:)?\/\//i.test(p)) return { error: "Same-origin paths only — /api, /v1 or /internal." };
+    p = p.replace(/^\/+/, "");
+    if (!/^(api|v1|internal)\//.test(p) || /\.\.|\/\//.test(p) || !/^[A-Za-z0-9\-_./?=&%,:+]+$/.test(p)) {
+      return { error: "Same-origin paths only — /api, /v1 or /internal." };
+    }
+    return { path: "/" + p };
+  }
+  async function wbRun(line) {
+    var out = $("hzwbbody");
+    var cmd = el("div", { class: "hzwb-cmd" }, "$ " + esc(line));
+    out.appendChild(cmd);
+    var parsed = wbParse(line);
+    var res = el("pre", { class: "hzwb-out" });
+    if (parsed.error) { res.classList.add("err"); res.textContent = parsed.error; }
+    else {
+      try {
+        var r = await fetch(parsed.path, { credentials: "same-origin" });
+        var text = await r.text();
+        try { text = JSON.stringify(JSON.parse(text), null, 2); } catch (_) {}
+        if (!r.ok) { res.classList.add("err"); res.innerHTML = wbEsc("HTTP " + r.status + "\n" + text, 4000); }
+        else res.innerHTML = wbEsc(text, 20000);
+      } catch (e) { res.classList.add("err"); res.textContent = "request failed: " + e.message; }
+    }
+    out.appendChild(res); out.scrollTop = out.scrollHeight;
+  }
+  async function wbQueue() {
+    var out = $("hzwbbody");
+    out.innerHTML = '<div class="hzwb-dim">Loading queue…</div>';
+    var q = await getJSON("/api/queue"), g = await getJSON("/v1/render-queue"), h = await getJSON("/api/history?max_items=8");
+    var run = (q.body && q.body.queue_running || []).length, pen = (q.body && q.body.queue_pending || []).length;
+    var jobs = (g.body && g.body.jobs) || [];
+    var hist = h.body && typeof h.body === "object" ? Object.keys(h.body) : [];
+    var html = '<div class="hzwb-row"><b>Local engine</b> — ' + run + " running · " + pen + " pending" +
+      ' &nbsp;·&nbsp; <b>GPU jobs</b> — ' + jobs.length + "</div>";
+    jobs.slice(0, 8).forEach(function (j) {
+      html += '<div class="hzwb-row hzwb-dim">' + esc((j.status || "queued") + " · " + (j.node || j.identity || "gpu") + " · " + String(j.prompt || j.kind || j.id || "").slice(0, 60)) + "</div>";
+    });
+    if (hist.length) {
+      html += '<div class="hzwb-row" style="margin-top:8px"><b>Recent history</b></div>';
+      hist.slice(-8).reverse().forEach(function (k) {
+        var it = h.body[k] || {}, st = (it.status && (it.status.status_str || (it.status.completed ? "success" : ""))) || "—";
+        var outs = it.outputs ? Object.keys(it.outputs).length : 0;
+        html += '<div class="hzwb-row hzwb-dim">' + esc(k.slice(0, 8) + " · " + st + " · " + outs + " output node" + (outs === 1 ? "" : "s")) + "</div>";
+      });
+    }
+    if (!run && !pen && !jobs.length && !hist.length) html += '<div class="hzwb-dim">Queue is empty — nothing has run yet.</div>';
+    out.innerHTML = html;
+  }
+  async function wbLogs() {
+    var out = $("hzwbbody");
+    out.innerHTML = '<div class="hzwb-dim">Loading logs…</div>';
+    var r = await getJSON("/internal/logs/raw");
+    var entries = (r.body && r.body.entries) || [];
+    if (!r.ok) { out.innerHTML = '<div class="hzwb-dim">Logs unavailable (HTTP ' + r.status + ").</div>"; return; }
+    if (!entries.length) { out.innerHTML = '<div class="hzwb-dim">No log lines yet.</div>'; return; }
+    out.innerHTML = '<pre class="hzwb-out">' + entries.slice(-250).map(function (e2) {
+      return wbEsc(String(e2.t || "").slice(11, 19) + "  " + String(e2.m || "").replace(/\s+$/, ""));
+    }).join("\n") + "</pre>";
+    out.scrollTop = out.scrollHeight;
+  }
+  function wbRender() {
+    wb.querySelectorAll(".hzwb-tab").forEach(function (b) { b.classList.toggle("on", b.dataset.t === WBTAB); });
+    $("hzwbform").hidden = WBTAB !== "shell";
+    $("hzwbre").hidden = WBTAB === "shell";
+    if (WBTAB === "queue") wbQueue().catch(function () {});
+    else if (WBTAB === "logs") wbLogs().catch(function () {});
+    else {
+      var out = $("hzwbbody");
+      if (!out.querySelector(".hzwb-cmd")) out.innerHTML = '<div class="hzwb-dim">Read-only API shell — try <b>GET /api/queue</b>, <b>/v1/nodes</b> or <b>/internal/logs/raw</b>. Runs as you, same origin.</div>';
+      $("hzwbin").focus();
+    }
+  }
+  function wireWb() {
+    devBtn.onclick = function () { wb.classList.contains("on") ? wbClose() : wbOpen(); };
+    $("hzwbx").onclick = wbClose;
+    $("hzwbre").onclick = function () { wbRender(); };
+    wb.querySelectorAll(".hzwb-tab").forEach(function (b) {
+      b.onclick = function () { WBTAB = b.dataset.t; $("hzwbbody").innerHTML = ""; wbRender(); };
+    });
+    $("hzwbform").onsubmit = function (e) {
+      e.preventDefault();
+      var v = $("hzwbin").value.trim(); if (!v) return;
+      $("hzwbin").value = "";
+      wbRun(v).catch(function () {});
+    };
   }
 
   function wire() {
