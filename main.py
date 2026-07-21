@@ -451,10 +451,10 @@ def start_studio(asyncio_loop=None):
     cuda_malloc_warning()
     setup_database()
 
-    prompt_server.add_routes()
-    hijack_progress(prompt_server)
-
-    # In worker mode, add worker execution routes and register with coordinator
+    # In worker mode, register the worker execution routes BEFORE add_routes() mounts
+    # the route table — otherwise POST /v1/worker/execute is appended after the SPA
+    # catch-all is already mounted and never registers, so the catch-all answers it
+    # (GET/HEAD only) and the coordinator seam 405s (no hidden-run hole, but no renders).
     if args.worker_mode:
         from middleware.worker_client import add_worker_routes, WORKER_TOKEN
         # FAIL CLOSED: a worker box executes jobs the coordinator hands it over a
@@ -466,6 +466,9 @@ def start_studio(asyncio_loop=None):
         add_worker_routes(prompt_server.routes, prompt_server)
         logging.info("Worker mode enabled — worker_id=%s coordinator=%s",
                       args.worker_id, args.coordinator_url)
+
+    prompt_server.add_routes()
+    hijack_progress(prompt_server)
 
     _worker_thread = threading.Thread(target=prompt_worker, daemon=True, args=(prompt_server.prompt_queue, prompt_server,))
     _worker_thread.start()
