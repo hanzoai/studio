@@ -135,8 +135,53 @@ def _login_redirect(request: web.Request) -> web.Response:
     """Send an unauthenticated browser to the ONE server-owned login entry point
     (``/login``), preserving where it was headed via ``?next`` so the OIDC round
     trip returns it there. The authorize-URL construction lives in ``/login``
-    (``handle_login``) alone — this gate only decides *who* is sent there."""
+    (``handle_login``) alone — this gate only decides *who* is sent there.
+
+    FRAMED navigations (the console embeds Studio in an iframe) must NOT be
+    302'd into the OIDC dance: the IdP's login/error pages send
+    ``frame-ancestors 'none'`` and the frame dies on a browser error page.
+    Instead the frame gets a tiny same-origin CONNECT card — sign in once
+    top-level (silent when the IdP session exists), the card polls the session
+    and reloads the frame into the real app."""
+    if request.headers.get("Sec-Fetch-Dest", "").lower() in ("iframe", "frame"):
+        return _embed_connect_card(request)
     return web.HTTPFound("/login?" + urlencode({"next": str(request.rel_url)}))
+
+
+def _embed_connect_card(request: web.Request) -> web.Response:
+    """The same-origin sign-in card an unauthenticated FRAME renders (never the
+    IdP — its pages refuse framing). Self-contained inline HTML; the button is
+    the user gesture that opens ``/login`` top-level, and the card polls
+    ``/v1/session`` until the session lands, then reloads the frame."""
+    login = "/login?" + urlencode({"next": _safe_next(str(request.rel_url))})
+    html = (
+        "<!doctype html><html><head><meta charset='utf-8'><title>Hanzo Studio</title>"
+        "<style>body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;"
+        "background:#0e0e12;color:#ececf1;font:15px/1.5 Inter,system-ui,sans-serif}"
+        ".c{max-width:380px;text-align:center;padding:32px}"
+        "h1{font-size:18px;margin:0 0 8px}p{color:#8a8a95;font-size:13px;margin:0 0 20px}"
+        "button{background:#f4f4f6;color:#111;border:none;border-radius:10px;padding:10px 18px;"
+        "font:600 14px Inter,system-ui,sans-serif;cursor:pointer}</style></head><body>"
+        "<div class='c'><h1>Connect Hanzo Studio</h1>"
+        "<p>Sign in once to use Studio here — with a live Hanzo ID session it completes instantly, "
+        "then this panel loads by itself.</p>"
+        "<button id='go'>Sign in to Studio</button></div>"
+        "<script>document.getElementById('go').onclick=function(){"
+        f"window.open({login!r},'_blank','noopener');"
+        "};setInterval(function(){fetch('/v1/session',{credentials:'same-origin'})"
+        ".then(function(r){return r.ok?r.json():null})"
+        ".then(function(s){if(s&&s.authenticated){location.reload()}}).catch(function(){})},2000);"
+        "</script></body></html>"
+    )
+    return web.Response(
+        text=html,
+        content_type="text/html",
+        headers={
+            "Cache-Control": "no-store",
+            # Only our own consoles may frame this card (same site).
+            "Content-Security-Policy": "frame-ancestors 'self' https://*.hanzo.ai",
+        },
+    )
 
 
 def _cache_key(token: str) -> str:

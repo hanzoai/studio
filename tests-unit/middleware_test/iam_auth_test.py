@@ -329,3 +329,26 @@ def test_handle_login_rejects_open_redirect_next():
         resp = asyncio.run(mw.handle_login(req))
         payload = m._verify_state(resp.cookies[m._STATE_COOKIE].value, "hanzo-studio")
         assert payload["t"] == "/", f"next={bad!r} should be rejected"
+
+
+def test_anon_framed_navigation_gets_connect_card_not_redirect():
+    """A FRAMED navigation (the console embeds Studio; Sec-Fetch-Dest: iframe)
+    must NOT be 302'd into the OIDC dance — the IdP's pages refuse framing and
+    the frame dies on a browser error page. It gets the same-origin CONNECT
+    card: 200 HTML with a top-level sign-in affordance + session poll, framable
+    only by our own consoles."""
+    resp = _gate({"Accept": "text/html", "Sec-Fetch-Mode": "navigate", "Sec-Fetch-Dest": "iframe"})
+    assert resp.status == 200
+    assert "text/html" in resp.headers["Content-Type"]
+    assert "Connect Hanzo Studio" in resp.text
+    assert "/login?" in resp.text and "next=%2Fstudio" in resp.text
+    assert resp.headers["Cache-Control"] == "no-store"
+    assert "frame-ancestors" in resp.headers["Content-Security-Policy"]
+
+
+def test_anon_top_level_navigation_still_redirects_with_dest_document():
+    """The framed branch keys on Sec-Fetch-Dest — a top-level document load
+    (dest: document) keeps the classic 302 into /login."""
+    resp = _gate({"Accept": "text/html", "Sec-Fetch-Mode": "navigate", "Sec-Fetch-Dest": "document"})
+    assert resp.status == 302
+    assert resp.headers["Location"].startswith("/login?")
