@@ -5,8 +5,11 @@
 <link rel="stylesheet" href="/studio/shell.css">
 <script src="/studio/shell.js" defer></script>
 <style>
-:root{--bg:#0a0a0b;--panel:#131317;--panel2:#17171c;--line:#232329;--txt:#ececf1;--dim:#8a8a95;
---brand:#f4f4f6;--ok:#3ddc84;--warn:#ffb648;--pub:#6aa5ff;font-size:15px}
+/* Canonical Hanzo design-system tokens (neutral grayscale) — match hanzo.app / hanzo.ai:
+   page #000 · surface/popover #0a0a0a · raised/hover #1a1a1a · border #1f1f1f ·
+   text #ededed · dim #888 · brand/CTA #fff · focus ring #333. */
+:root{--bg:#000000;--panel:#0a0a0a;--panel2:#1a1a1a;--line:#1f1f1f;--txt:#ededed;--dim:#888888;
+--brand:#ffffff;--ring:#333333;--ok:#3ddc84;--warn:#ffb648;--pub:#6aa5ff;font-size:15px}
 *{box-sizing:border-box;margin:0}
 body{background:var(--bg);color:var(--txt);font:400 1rem/1.5 Inter,system-ui,-apple-system,sans-serif}
 .serif{font-family:"Iowan Old Style","Palatino Linotype",Georgia,serif}
@@ -23,14 +26,18 @@ header h1{font-size:1.02rem;font-weight:600;letter-spacing:.2px}
 header .beta{font-size:.62rem;color:var(--dim);border:1px solid var(--line);border-radius:5px;padding:1px 5px;text-transform:uppercase;letter-spacing:.08em}
 header .sp{flex:1}
 header .lnk{color:var(--dim);font-size:.85rem;text-decoration:none}
-header .user{display:flex;align-items:center;gap:8px;border:1px solid var(--line);border-radius:99px;padding:3px 11px 3px 4px;cursor:pointer}
-#acctmenu{position:fixed;top:52px;right:12px;background:#0e0e12;border:1px solid var(--line);border-radius:12px;padding:6px;display:none;z-index:60;min-width:210px;box-shadow:0 16px 44px #000a}
-#acctmenu.on{display:block}
-#acctmenu .hd{padding:8px 12px;color:var(--dim);font-size:.78rem;border-bottom:1px solid var(--line);margin-bottom:4px}
-#acctmenu .mi{display:flex;align-items:center;gap:8px;padding:10px 12px;border-radius:8px;cursor:pointer;font-size:.88rem;color:var(--txt);text-decoration:none}
-#acctmenu .mi:hover{background:#ffffff10}
+header .user{display:flex;align-items:center;gap:7px;border:1px solid var(--line);border-radius:99px;padding:3px 10px 3px 4px;cursor:pointer;background:var(--panel2);font:inherit;color:var(--txt)}
+header .user:hover{border-color:var(--dim)} header .user.on{border-color:var(--dim);background:var(--panel2)}
 header .user .av{width:24px;height:24px;border-radius:50%;background:#26262e;display:flex;align-items:center;justify-content:center;font-size:.72rem;font-weight:600}
+header .user .unm{font-size:.82rem;color:var(--txt);font-weight:500}
+header .user .unm:empty{display:none}
 header .user .nm{font-size:.82rem;color:var(--dim)}
+header .user .caret{font-size:.6rem;color:var(--dim);margin-left:1px}
+/* account identity header inside the shared .pmenu popover */
+.pmenu .pm-id{display:flex;align-items:center;gap:10px;padding:9px 11px 11px;border-bottom:1px solid var(--line);margin-bottom:4px}
+.pmenu .pm-id-av{width:34px;height:34px;border-radius:50%;background:#26262e;color:var(--txt);display:flex;align-items:center;justify-content:center;font-size:.82rem;font-weight:600;flex:0 0 auto}
+.pmenu .pm-id-n{font-size:.9rem;color:var(--txt);font-weight:600;line-height:1.2}
+.pmenu .pm-id-e{font-size:.74rem;color:var(--dim);line-height:1.3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:210px}
 .btn{border:1px solid var(--line);background:var(--panel);color:var(--txt);border-radius:8px;padding:7px 13px;font-size:.85rem;cursor:pointer}
 .btn:hover{border-color:var(--dim)} .btn.brand{background:var(--brand);border-color:var(--brand);color:#111;font-weight:600}
 main{max-width:1120px;margin:0 auto;padding:12px 24px 80px}
@@ -241,22 +248,22 @@ body.immersive #stage{display:block}
   background:rgba(10,10,11,.7);color:var(--txt);font-size:1rem;cursor:pointer;z-index:5;display:none;align-items:center;justify-content:center;line-height:1}
 .stackcard:hover .ovf{display:flex}
 /* a floating overflow menu (stack card + detail) */
-.ovfmenu{position:fixed;background:#0e0e12;border:1px solid var(--line);border-radius:11px;padding:6px;z-index:60;min-width:190px;box-shadow:0 16px 44px #000b}
+.ovfmenu{position:fixed;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:6px;z-index:60;min-width:190px;box-shadow:0 16px 40px -16px rgba(0,0,0,.9),0 0 0 .5px rgba(255,255,255,.04)}
 .ovfmenu .mi{display:flex;align-items:center;gap:9px;padding:9px 12px;border-radius:8px;cursor:pointer;font-size:.85rem;color:var(--txt)}
-.ovfmenu .mi:hover{background:#ffffff12} .ovfmenu .mi.danger{color:#ff8f8f} .ovfmenu .sep{height:1px;background:var(--line);margin:4px 6px}
+.ovfmenu .mi:hover{background:var(--panel2)} .ovfmenu .mi.danger{color:#ff8f8f} .ovfmenu .sep{height:1px;background:var(--line);margin:4px 6px}
 /* composer pill dropdowns — the ONE popover for Design system · Template · </> · Model */
-.pchip:hover{border-color:var(--dim)} .pchip.on{border-color:var(--dim);background:#1c1c22}
-.pico:hover{border-color:var(--dim);color:var(--txt)} .pico.on{border-color:var(--dim);color:var(--txt);background:#1c1c22}
+.pchip:hover{border-color:var(--dim)} .pchip.on{border-color:var(--dim);background:var(--panel2)}
+.pico:hover{border-color:var(--dim);color:var(--txt)} .pico.on{border-color:var(--dim);color:var(--txt);background:var(--panel2)}
 .pchip .v{display:flex;align-items:center;gap:4px}
-.pmenu{position:absolute;z-index:80;background:#0c0c10;border:1px solid var(--line);border-radius:12px;padding:6px;
+.pmenu{position:absolute;z-index:80;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:6px;
   min-width:230px;max-width:min(380px,92vw);max-height:min(62vh,460px);overflow:auto;
-  box-shadow:0 18px 50px #000b,0 2px 8px #0008;animation:pmIn .12s ease}
+  box-shadow:0 16px 40px -16px rgba(0,0,0,.9),0 0 0 .5px rgba(255,255,255,.04);animation:pmIn .12s ease}
 @keyframes pmIn{from{opacity:0;transform:translateY(-5px)}to{opacity:1;transform:none}}
 .pmenu .pm-hd{padding:7px 11px 8px;color:var(--dim);font-size:.68rem;text-transform:uppercase;letter-spacing:.06em;border-bottom:1px solid var(--line);margin-bottom:4px}
 .pmenu .pm-g{padding:9px 11px 3px;color:var(--dim);font-size:.62rem;text-transform:uppercase;letter-spacing:.07em}
 .pmenu .pm-i{position:relative;display:block;padding:8px 30px 8px 11px;border-radius:8px;cursor:pointer}
-.pmenu .pm-i:hover{background:#ffffff10} .pmenu .pm-i.on{background:#ffffff16}
-.pmenu .pm-i:focus{outline:none;background:#ffffff1a} .pmenu .pm-i:focus-visible{box-shadow:inset 0 0 0 1px var(--dim)}
+.pmenu .pm-i:hover{background:var(--panel2)} .pmenu .pm-i.on{background:var(--panel2)}
+.pmenu .pm-i:focus{outline:none;background:var(--panel2)} .pmenu .pm-i:focus-visible{box-shadow:inset 0 0 0 1px var(--ring)}
 .pmenu .pm-t{font-size:.86rem;color:var(--txt);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .pmenu .pm-d{font-size:.72rem;color:var(--dim);margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .pmenu .pm-ck{position:absolute;right:11px;top:50%;transform:translateY(-50%);color:var(--txt);font-size:.82rem}
@@ -307,9 +314,8 @@ body.immersive #stage{display:block}
   <svg class="logo" viewBox="0 0 520 520" xmlns="http://www.w3.org/2000/svg"><rect width="520" height="520" rx="120" fill="#111"/><g transform="translate(100,100) scale(4.78)" fill="#fff"><path d="M22.21 67V44.6369H0V67H22.21Z"/><path d="M66.7038 22.3184H22.2534L0.0878906 44.6367H44.4634L66.7038 22.3184Z"/><path d="M22.21 0H0V22.3184H22.21V0Z"/><path d="M66.7198 0H44.5098V22.3184H66.7198V0Z"/><path d="M66.7198 67V44.6369H44.5098V67H66.7198Z"/></g></svg>
   <h1>Hanzo Studio</h1><span class="beta">Beta</span><span class="sp"></span>
   <button class="btn" onclick="load()">Refresh</button>
-  <div class="user" id="user" title="Account"><span class="av" id="av">·</span><span class="nm" id="org">…</span></div>
+  <button class="user" id="user" title="Account" aria-haspopup="menu" aria-label="Account, organization and project"><span class="av" id="av">·</span><span class="unm" id="uname"></span><span class="nm" id="org">…</span><span class="caret">▾</span></button>
 </header>
-<div id="acctmenu"><div class="hd" id="acctwho">Account</div><a class="mi" href="https://hanzo.id" target="_blank" rel="noopener">Manage account ↗</a><a class="mi" href="/logout">Sign out</a></div>
 <div id="tophover"></div>
 <div id="livebar" class="idle">
   <span id="lbstatus" class="lb-q">Checking queue…</span>
@@ -631,16 +637,24 @@ function _popover(anchor,node){
   _pop={el:node,anchor,out,key};
   setTimeout(()=>{document.addEventListener('click',out,true);document.addEventListener('keydown',key,true);},0);
 }
-// groups: [{label?, items:[{v,t,d?}]}] — onPick(v). current highlights + ✓.
-function openMenu(anchor,head,groups,current,onPick){
-  const m=document.createElement('div'); let html=head?`<div class="pm-hd">${esc(head)}</div>`:'',any=false;
+// groups: [{label?, items:[{v,t,d?,on?,href?,act?}]}]. Selection: an item's own
+// `on` wins, else `String(v)===current` gets the ✓ (so one menu can mark an active
+// org AND an active project). Click routes href→navigate, act→act(v), else onPick(v).
+// headNode (optional) is prepended — the identity header on the account menu.
+function openMenu(anchor,head,groups,current,onPick,headNode){
+  const m=document.createElement('div'); const flat=[];
+  let html=head?`<div class="pm-hd">${esc(head)}</div>`:'',any=false;
   for(const g of groups){ if(g.label)html+=`<div class="pm-g">${esc(g.label)}</div>`;
-    for(const it of g.items){ any=true; const on=String(it.v)===String(current);
-      html+=`<div class="pm-i${on?' on':''}" role="menuitem" tabindex="0" data-v="${esc(String(it.v))}">`+
+    for(const it of g.items){ any=true; const i=flat.push(it)-1;
+      const on=('on'in it)?it.on:String(it.v)===String(current);
+      html+=`<div class="pm-i${on?' on':''}" role="menuitem" tabindex="0" data-i="${i}">`+
         `<div class="pm-t">${esc(it.t)}</div>${it.d?`<div class="pm-d">${esc(it.d)}</div>`:''}${on?'<span class="pm-ck">✓</span>':''}</div>`; } }
   if(!any)html+='<div class="pm-empty">Nothing here yet.</div>';
   m.innerHTML=html;
-  m.querySelectorAll('.pm-i').forEach(el=>{ const go=e=>{e.preventDefault();e.stopPropagation();const v=el.dataset.v;closeMenu();onPick(v);};
+  if(headNode)m.insertBefore(headNode,m.firstChild);
+  m.querySelectorAll('.pm-i').forEach(el=>{ const it=flat[+el.dataset.i];
+    const go=e=>{e.preventDefault();e.stopPropagation();closeMenu();
+      if(it.href){location.href=it.href;return;} if(it.act){it.act(it.v);return;} onPick(it.v);};
     el.onclick=go; el.onkeydown=e=>{ if(e.key==='Enter'||e.key===' ')go(e); }; });
   _popover(anchor,m); const f=m.querySelector('.pm-i.on')||m.querySelector('.pm-i'); f&&f.focus();
 }
@@ -1233,7 +1247,7 @@ async function openFeedback(path){FBPATH=path;const r=RATINGS[path]||{};FBVOTE=r
   $('fbthread').innerHTML='<div class="empty" style="padding:6px;font-size:.8rem">Loading…</div>';$('fbdlg').showModal();$('fbtext').focus();
   let thread=[];try{thread=(await (await fetch('/v1/library/critique?path='+encodeURIComponent(path))).json()).thread||[];}catch(_){}
   fbRenderThread(thread);}
-function fbBubble(role,text){const me=role==='user';return `<div style="align-self:${me?'flex-end':'flex-start'};max-width:82%;background:${me?'var(--brand)':'#17171c'};color:${me?'#fff':'inherit'};border:1px solid var(--line);border-radius:10px;padding:7px 10px;font-size:.84rem;white-space:pre-wrap">${esc(text)}</div>`;}
+function fbBubble(role,text){const me=role==='user';return `<div style="align-self:${me?'flex-end':'flex-start'};max-width:82%;background:${me?'var(--brand)':'var(--panel2)'};color:${me?'#111':'inherit'};border:1px solid var(--line);border-radius:10px;padding:7px 10px;font-size:.84rem;white-space:pre-wrap">${esc(text)}</div>`;}
 function fbRenderThread(thread){const el=$('fbthread');if(!thread||!thread.length){el.innerHTML='<div class="empty" style="padding:6px;font-size:.8rem">No critique yet — tell the AI what to change and it will remember.</div>';return;}
   el.innerHTML=thread.map(t=>fbBubble(t.role==='user'?'user':'ai',t.content)).join('');el.scrollTop=el.scrollHeight;}
 async function sendCritique(e){e.preventDefault();const t=($('fbtext').value||'').trim();if(!t||!FBPATH)return false;$('fbtext').value='';
@@ -1499,8 +1513,6 @@ async function cancelJob(id){
   const af=$('attachfile');
   af.addEventListener('change',e=>{attachFiles(e.target.files);e.target.value='';});
   const pin=$('pin'); if(pin)pin.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();create();}});
-  const uc=$('user'); if(uc){uc.addEventListener('click',e=>{e.stopPropagation();$('acctwho').textContent=($('org').textContent||'').trim()||'Account';$('acctmenu').classList.toggle('on');});
-    document.addEventListener('click',e=>{const m=$('acctmenu');if(m&&m.classList.contains('on')&&!m.contains(e.target))m.classList.remove('on');});}
   const box=document.querySelector('.prompt'); if(box){ wireDrop(box,attachFiles); wirePaste(box,attachFiles); }
 })();
 function setZoomMedia(u,mode){const im=$('zoomimg'),vd=$('zoomvid'),md=$('zoom3d');
@@ -1530,19 +1542,40 @@ function closeZoom(){const z=$('zoom');z.style.display='none';z.classList.remove
   const vd=$('zoomvid');if(vd){vd.pause&&vd.pause();vd.removeAttribute('src');vd.style.display='none';}
   const md=$('zoom3d');if(md){md.removeAttribute('src');md.style.display='none';}$('zoomimg').style.display='';SVI=-1;ZL=[];ZLI=-1;ZPATH=null;$('zrate').style.display='none';}
 const ta=$('pin'); ta.addEventListener('input',()=>{ta.style.height='auto';ta.style.height=Math.min(ta.scrollHeight,180)+'px';});
+// ── Account pill → the ONE identity popover (same .pmenu design system as the
+// composer pills): who you are, org switch, project switch, Console, Sign out.
+// Org/Project switch hit the SAME session API the node editor uses so tenancy +
+// output paths re-scope on reload (/v1/session/{org,project}). ──────────────────
+let SESSION=null;
+function initials(name,email){ const src=(name||email||'?').trim(), p=src.split(/[\s@._-]+/).filter(Boolean);
+  return (p.length>=2?(p[0][0]+p[1][0]):src.slice(0,2)).toUpperCase(); }
+function switchOrg(o){ if(!SESSION||o===SESSION.org)return;
+  fetch('/v1/session/org',{method:'POST',headers:genHeaders(),body:JSON.stringify({org:o})}).finally(()=>location.reload()); }
+function switchProject(p){ if(!SESSION||p===SESSION.project)return;
+  fetch('/v1/session/project',{method:'POST',headers:genHeaders(),body:JSON.stringify({project:p})}).finally(()=>location.reload()); }
+function openIdentity(ev){ const s=SESSION, a=ev.currentTarget;
+  if(_pop&&_pop.anchor===a){closeMenu();return;}          // toggle
+  if(!s)return;
+  if(s.signedOut){ location.href='/login'; return; }
+  const head=document.createElement('div'); head.className='pm-id';
+  head.innerHTML=`<div class="pm-id-av">${esc(initials(s.user,s.email))}</div>`+
+    `<div><div class="pm-id-n">${esc(s.user||'User')}</div><div class="pm-id-e">${esc(s.email||'')}</div></div>`;
+  const orgs=(s.orgs&&s.orgs.length?s.orgs:[s.org]).filter(Boolean);
+  const projects=(s.projects||[]).filter(Boolean);
+  const groups=[{label:'Organization',items:orgs.map(o=>({v:o,t:o,on:o===s.org,act:switchOrg}))}];
+  if(projects.length)groups.push({label:'Project',items:projects.map(p=>({v:p,t:p,on:p===s.project,act:switchProject}))});
+  groups.push({items:[
+    {v:'console',t:'Console ↗',href:s.console_url||'https://console.hanzo.ai'},
+    {v:'logout',t:'Sign out',href:'/logout'}]});
+  openMenu(a,'',groups,s.org,()=>{},head);
+}
 async function loadSession(){
   let s={}; try{ s=await (await fetch('/v1/session')).json(); }catch(e){ return; }
-  const nm=(s.user||s.email||'').trim(); $('av').textContent=(nm[0]||'·').toUpperCase(); if(s.org)$('org').textContent=s.org;
-  $('user').onclick=()=>{ const ex=$('omenu'); if(ex){ex.remove();return;}
-    const orgs=(s.orgs&&s.orgs.length?s.orgs:[s.org]).filter(Boolean);
-    const m=document.createElement('div'); m.id='omenu';
-    m.style.cssText='position:fixed;top:54px;right:24px;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:6px;min-width:190px;z-index:30;box-shadow:0 12px 34px #000b';
-    m.innerHTML=orgs.map(o=>`<div class="omi" data-o="${o}" style="padding:8px 11px;border-radius:8px;cursor:pointer;font-size:.85rem;color:${o===s.org?'var(--txt)':'var(--dim)'}">${o===s.org?'● ':'○ '}${o}</div>`).join('')
-      +`<div style="height:1px;background:var(--line);margin:5px 4px"></div>`+(s.console_url?`<a href="${s.console_url}" style="display:block;padding:8px 11px;color:var(--dim);text-decoration:none;font-size:.85rem">Console ↗</a>`:'')+`<a href="/logout" style="display:block;padding:8px 11px;color:var(--dim);text-decoration:none;font-size:.85rem">Sign out</a>`;
-    document.body.appendChild(m);
-    m.querySelectorAll('.omi').forEach(el=>el.onclick=async()=>{try{await fetch('/v1/session/org',{method:'POST',headers:genHeaders(),body:JSON.stringify({org:el.dataset.o})});}catch(e){} location.reload();});
-    setTimeout(()=>document.addEventListener('click',function h(e){if(!m.contains(e.target)&&!$('user').contains(e.target)){m.remove();document.removeEventListener('click',h);}}),0);
-  };
+  SESSION=s;
+  $('av').textContent=initials(s.user,s.email).slice(0,1)||'·';
+  const un=$('uname'); if(un)un.textContent=(s.user||'').trim();
+  if(s.org)$('org').textContent=s.org;
+  $('user').onclick=openIdentity;
 }
 // ── persistent live-queue bar: always shows what's generating + ETA ──────────
 const ETA_MIN=9; // ~min per render on a warm BYO-GPU
