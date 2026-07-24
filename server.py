@@ -1512,6 +1512,17 @@ class PromptServer():
                 web.static('/docs', embedded_docs_path)
             ])
 
+        # Serve the unified Hanzo marketing shell (header + footer bundle) used by
+        # the logged-out login page. Built from web/shell into web/marketing and
+        # committed; assets are public (.js/.css) so they load pre-auth.
+        marketing_path = os.path.join(
+            os.path.dirname(os.path.realpath(__file__)), "web", "marketing"
+        )
+        if os.path.isdir(marketing_path):
+            self.app.add_routes([
+                web.static('/marketing', marketing_path)
+            ])
+
         self.app.add_routes([
             web.static('/', self.web_root),
         ])
