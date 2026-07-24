@@ -7,6 +7,9 @@
   <meta name="color-scheme" content="dark">
   <link rel="icon" type="image/svg+xml" href="/favicon.svg">
   <link rel="alternate icon" href="/favicon.ico">
+  <!-- Unified Hanzo shell chrome (header + pre-footer + footer). Self-contained
+       bundle built from web/shell (@hanzogui/shell), served at /marketing. -->
+  <link rel="stylesheet" href="/marketing/shell.css">
   <style>
     /* Hanzo Studio sign-in — matches console.hanzo.ai's design system:
      * monochrome true-black surfaces, hairline borders, 9px radii, a white
@@ -36,13 +39,20 @@
       min-height: 100vh;
       display: flex;
       flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      padding: 24px;
       -webkit-font-smoothing: antialiased;
       -moz-osx-font-smoothing: grayscale;
       text-rendering: optimizeLegibility;
       line-height: 1.5;
+    }
+
+    /* Growing hero that vertically centers the sign-in card between the
+       unified header and pre-footer/footer. */
+    .hero {
+      flex: 1 0 auto;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 64px 24px;
     }
 
     .card {
@@ -96,19 +106,15 @@
     .footnote { font-size: 12px; color: var(--muted); text-align: center; }
     .footnote a { color: var(--text-2); text-decoration: none; transition: color 0.15s; }
     .footnote a:hover { color: var(--text); }
-
-    .product {
-      margin-top: 16px;
-      font-size: 12px;
-      color: var(--muted);
-      text-align: center;
-    }
-    .product a { color: var(--text-2); text-decoration: none; transition: color 0.15s; }
-    .product a:hover { color: var(--text); }
-    .product .sep { opacity: 0.5; padding: 0 8px; }
   </style>
 </head>
 <body>
+  <!-- Unified Hanzo marketing header (surface: studio.hanzo.ai). Rendered by
+       /marketing/shell.js; the sign-in card below is the progressive-enhancement
+       fallback and the primary auth action. -->
+  <div id="hanzo-header"></div>
+
+  <main class="hero">
   <div class="card">
     <div class="head">
       <svg class="mark" viewBox="0 0 67 67" role="img" aria-label="Hanzo" xmlns="http://www.w3.org/2000/svg">
@@ -136,15 +142,11 @@
       <a href="https://console.hanzo.ai">Create an account</a>.
     </p>
   </div>
+  </main>
 
-  <p class="product">
-    <a href="https://docs.hanzo.ai/docs/studio">Docs</a>
-    <span class="sep">·</span>
-    <a href="https://github.com/hanzoai/studio">GitHub</a>
-    <span class="sep">·</span>
-    <a href="https://console.hanzo.ai">Console</a>
-    <span class="sep">·</span>
-    <a href="https://discord.gg/hanzoai">Discord</a>
-  </p>
+  <!-- Unified Hanzo pre-footer CTA + ecosystem footer (rendered by shell.js). -->
+  <div id="hanzo-footer"></div>
+
+  <script type="module" src="/marketing/shell.js"></script>
 </body>
 </html>
