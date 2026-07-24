@@ -97,11 +97,43 @@
   // (api.hanzo.ai/v1/chat/completions, OpenAI-compatible SSE). Otherwise the secure
   // same-origin copilot path (cookie-authed; also carries graph ops in the editor).
   // Same transcript UI either way.
-  function send(text) { return USE_STREAM ? sendStream(text) : sendCopilot(text); }
-
-  async function sendStream(text) {
+  function send(text) {
     HISTORY.push({ role: "user", content: text });
     addMsg("u", text);
+    return USE_STREAM ? sendStream() : sendCopilot();
+  }
+
+  // Pure SSE helpers (no DOM) — decomplected so the stream loop and the unit tests
+  // share ONE parser. `sseLines()` returns a stateful splitter that holds a partial
+  // line across chunk boundaries; `sseDelta(line)` maps one line to its content
+  // delta (or null for keep-alives, `[DONE]`, non-data lines, or malformed JSON).
+  function sseLines() {
+    var buf = "";
+    return function (chunk) {
+      buf += chunk;
+      var out = [], nl;
+      while ((nl = buf.indexOf("\n")) >= 0) { out.push(buf.slice(0, nl)); buf = buf.slice(nl + 1); }
+      return out;
+    };
+  }
+  function sseDelta(line) {
+    line = line.replace(/\r$/, "").trim();
+    if (line.slice(0, 5) !== "data:") return null;
+    var d = line.slice(5).trim();
+    if (!d || d === "[DONE]") return null;
+    try {
+      var j = JSON.parse(d);
+      var delta = j.choices && j.choices[0] && j.choices[0].delta && j.choices[0].delta.content;
+      return delta || null;
+    } catch (_) { return null; }
+  }
+
+  // Home + publishable key: stream enso from the gateway. On a TRANSPORT failure
+  // (fetch throws, non-2xx, or no body — e.g. a PK provisioned before the gateway
+  // allows CORS/Authorization for this origin) degrade to the same-origin copilot
+  // instead of dead-ending, so Chat never hard-breaks. A partial stream that drops
+  // mid-flight keeps whatever text already arrived.
+  async function sendStream() {
     var box = addMsg("a", ""); box.classList.add("streaming");
     var acc = "";
     try {
@@ -110,31 +142,26 @@
         headers: { "Content-Type": "application/json", "Authorization": "Bearer " + PK },
         body: JSON.stringify({ model: chatModel(), messages: HISTORY.slice(-20), stream: true }),
       });
-      if (!res.ok || !res.body) { box.classList.remove("streaming"); box.textContent = "chat failed (" + res.status + ")"; return; }
-      var reader = res.body.getReader(), dec = new TextDecoder(), buf = "";
+      if (!res.ok || !res.body) { box.remove(); return sendCopilot(); }
+      var reader = res.body.getReader(), dec = new TextDecoder(), feed = sseLines();
       for (;;) {
         var rd = await reader.read(); if (rd.done) break;
-        buf += dec.decode(rd.value, { stream: true });
-        var nl;
-        while ((nl = buf.indexOf("\n")) >= 0) {
-          var line = buf.slice(0, nl).replace(/\r$/, "").trim(); buf = buf.slice(nl + 1);
-          if (line.slice(0, 5) !== "data:") continue;
-          var d = line.slice(5).trim(); if (!d || d === "[DONE]") continue;
-          try {
-            var j = JSON.parse(d);
-            var delta = j.choices && j.choices[0] && j.choices[0].delta && j.choices[0].delta.content;
-            if (delta) { acc += delta; box.textContent = acc; $("hzmsgs").scrollTop = $("hzmsgs").scrollHeight; }
-          } catch (_) {}
+        var lines = feed(dec.decode(rd.value, { stream: true }));
+        for (var k = 0; k < lines.length; k++) {
+          var delta = sseDelta(lines[k]);
+          if (delta) { acc += delta; box.textContent = acc; $("hzmsgs").scrollTop = $("hzmsgs").scrollHeight; }
         }
       }
       box.classList.remove("streaming");
       if (acc) HISTORY.push({ role: "assistant", content: acc }); else box.textContent = "(no response)";
-    } catch (e) { box.classList.remove("streaming"); box.textContent = "error: " + e.message; }
+    } catch (e) {
+      box.classList.remove("streaming");
+      if (acc) HISTORY.push({ role: "assistant", content: acc });
+      else { box.remove(); return sendCopilot(); }
+    }
   }
 
-  async function sendCopilot(text) {
-    HISTORY.push({ role: "user", content: text });
-    addMsg("u", text);
+  async function sendCopilot() {
     var pending = addMsg("sys", "…");
     var payload = Object.assign({ model: chatModel(), messages: HISTORY.slice(-20) }, await graphContext());
     var r = await getJSON("/v1/copilot/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });

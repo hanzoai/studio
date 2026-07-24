@@ -1551,17 +1551,17 @@ _SHELL_BODY = '<script src="/studio/shell.js" defer></script>'
 # Chat sidebar falls back to the secure same-origin copilot path (httpOnly cookie),
 # so no key is exposed. NEVER a server secret.
 _PUBLISHABLE_KEY_ENV = ("NEXT_PUBLIC_HANZO_PUBLISHABLE_KEY", "STUDIO_PUBLISHABLE_KEY")
-_SECRET_PREFIXES = ("sk-", "sk_", "hk-", "hk_", "secret")
+_PUBLISHABLE_PREFIX = "pk-"  # gateway iamauth.go: the ONE client-safe key family
 
 
 def _publishable(pk: str) -> str:
-    """Fail closed: refuse to hand the browser anything that looks like a SERVER
-    secret. A misconfigured secret is dropped (Chat falls back to the same-origin
-    copilot) rather than leaked into page source."""
-    low = pk.strip().lower()
-    if not low or any(low.startswith(p) for p in _SECRET_PREFIXES):
-        return ""
-    return pk.strip()
+    """Fail CLOSED via allowlist: hand the browser a value ONLY when it is a
+    publishable key (`pk-`, the single client-safe prefix the gateway defines).
+    Every server secret (`hk-`/`sk-`/`fw_`/`hz_`), JWT, or unknown value is dropped
+    so a misconfigured secret can never reach page source; Chat then falls back to
+    the secure same-origin copilot path."""
+    pk = pk.strip()
+    return pk if pk.startswith(_PUBLISHABLE_PREFIX) else ""
 
 
 def _hz_config_script() -> str:
