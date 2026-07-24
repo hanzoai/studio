@@ -244,6 +244,27 @@ body.immersive #stage{display:block}
 .ovfmenu{position:fixed;background:#0e0e12;border:1px solid var(--line);border-radius:11px;padding:6px;z-index:60;min-width:190px;box-shadow:0 16px 44px #000b}
 .ovfmenu .mi{display:flex;align-items:center;gap:9px;padding:9px 12px;border-radius:8px;cursor:pointer;font-size:.85rem;color:var(--txt)}
 .ovfmenu .mi:hover{background:#ffffff12} .ovfmenu .mi.danger{color:#ff8f8f} .ovfmenu .sep{height:1px;background:var(--line);margin:4px 6px}
+/* composer pill dropdowns — the ONE popover for Design system · Template · </> · Model */
+.pchip:hover{border-color:var(--dim)} .pchip.on{border-color:var(--dim);background:#1c1c22}
+.pico:hover{border-color:var(--dim);color:var(--txt)} .pico.on{border-color:var(--dim);color:var(--txt);background:#1c1c22}
+.pchip .v{display:flex;align-items:center;gap:4px}
+.pmenu{position:absolute;z-index:80;background:#0c0c10;border:1px solid var(--line);border-radius:12px;padding:6px;
+  min-width:230px;max-width:min(380px,92vw);max-height:min(62vh,460px);overflow:auto;
+  box-shadow:0 18px 50px #000b,0 2px 8px #0008;animation:pmIn .12s ease}
+@keyframes pmIn{from{opacity:0;transform:translateY(-5px)}to{opacity:1;transform:none}}
+.pmenu .pm-hd{padding:7px 11px 8px;color:var(--dim);font-size:.68rem;text-transform:uppercase;letter-spacing:.06em;border-bottom:1px solid var(--line);margin-bottom:4px}
+.pmenu .pm-g{padding:9px 11px 3px;color:var(--dim);font-size:.62rem;text-transform:uppercase;letter-spacing:.07em}
+.pmenu .pm-i{position:relative;display:block;padding:8px 30px 8px 11px;border-radius:8px;cursor:pointer}
+.pmenu .pm-i:hover{background:#ffffff10} .pmenu .pm-i.on{background:#ffffff16}
+.pmenu .pm-i:focus{outline:none;background:#ffffff1a} .pmenu .pm-i:focus-visible{box-shadow:inset 0 0 0 1px var(--dim)}
+.pmenu .pm-t{font-size:.86rem;color:var(--txt);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pmenu .pm-d{font-size:.72rem;color:var(--dim);margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pmenu .pm-ck{position:absolute;right:11px;top:50%;transform:translateY(-50%);color:var(--txt);font-size:.82rem}
+.pmenu .pm-empty{padding:10px 11px;color:var(--dim);font-size:.8rem}
+.pmenu .pm-foot{padding:9px 11px 5px;margin-top:4px;border-top:1px solid var(--line);color:var(--dim);font-size:.68rem}
+.pmenu .pm-code-h{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.74rem;color:var(--txt);padding:7px 11px 4px}
+.pmenu .pm-code pre{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.72rem;color:var(--dim);background:#08080b;border:1px solid var(--line);border-radius:8px;padding:9px 11px;margin:2px 8px 4px;white-space:pre-wrap;word-break:break-word}
+.pmenu .pm-warn{padding:10px 11px;color:var(--warn);font-size:.8rem}
 /* ── Stack detail view ───────────────────────────────────────────────────────── */
 #stackview[hidden]{display:none}
 #svbulk[hidden]{display:none}   /* .row's display:flex would otherwise beat [hidden] */
@@ -303,10 +324,10 @@ body.immersive #stage{display:block}
     <div class="pctl">
       <span class="pico" title="Attach a photo" onclick="attachPick()">+</span>
       <input id="attachfile" type="file" accept="image/*" multiple hidden>
-      <span class="pchip" onclick="pickPreset()"><span class="k">Design system</span><span class="v" id="ds">None</span></span>
-      <span class="pchip" onclick="laneChip()" title="Pick a template lane — or click to return to edit / compose"><span class="k">Template</span><span class="v" id="tmpl">None</span></span>
-      <span class="pico" title="Code">&lt;/&gt;</span>
-      <span class="pchip" style="margin-left:auto"><span class="k">Model</span><span class="v">Opus 4.8</span></span>
+      <span class="pchip" onclick="pickPreset(event)" title="Scope the gallery to a design system"><span class="k">Design system</span><span class="v" id="ds">None</span></span>
+      <span class="pchip" onclick="laneChip(event)" title="Pick a template — or return to edit / compose"><span class="k">Template</span><span class="v" id="tmpl">None</span></span>
+      <span class="pico" title="Request preview (developer)" onclick="codeView(event)">&lt;/&gt;</span>
+      <span class="pchip" style="margin-left:auto" onclick="pickModel(event)" title="Choose the Hanzo AI model"><span class="k">Model</span><span class="v" id="model">Enso</span></span>
       <button class="psend" onclick="create()" title="Create">↑</button>
     </div>
   </div>
@@ -592,59 +613,128 @@ function pickTemplate(k,t){KIND=k;$('tmpl').textContent=t; tab('assets'); $('pin
 // the KIND='video' flag routes create(), and a stuck flag silently sends a
 // billable image-to-video) and by clicking the Template chip while a lane is set.
 function clearLane(){KIND='';$('tmpl').textContent='None';}
-function laneChip(){ if(KIND){clearLane();toast('Back to edit / compose');} else tab('templates'); }
-function pickPreset(){toast('Design systems / presets — coming in the preset library');}
-// The ONE create path: the top composer's ↑ generates from its prompt + the photos
-// attached to it (via + / drag / paste / a gallery card's +). 1 photo → edit (fix),
-// 2-5 → compose. Same proven graphs the gallery uses — one surface, no second box.
-async function create(){
+// ── Composer pill dropdowns — ONE popover, four REAL sources ───────────────────
+// Design system (the org's designs) · Template (the KIND catalog) · </> (request
+// preview) · Model (real models from api.hanzo.ai/v1/models). Monochrome; closes
+// on outside-click / Esc; keyboard-selectable. No bespoke per-pill menu code.
+let _pop=null;
+function closeMenu(){ if(!_pop)return; try{_pop.anchor.classList.remove('on');}catch(_){}
+  _pop.el.remove(); document.removeEventListener('click',_pop.out,true); document.removeEventListener('keydown',_pop.key,true); _pop=null; }
+function _popover(anchor,node){
+  closeMenu(); node.className='pmenu'; node.setAttribute('role','menu'); document.body.appendChild(node);
+  const r=anchor.getBoundingClientRect(), mw=Math.min(node.offsetWidth||260,innerWidth-16);
+  let left=r.left+scrollX; if(left+mw>scrollX+innerWidth-8)left=scrollX+innerWidth-8-mw;
+  node.style.left=Math.max(scrollX+8,left)+'px'; node.style.top=(r.bottom+6+scrollY)+'px';
+  anchor.classList.add('on');
+  const out=e=>{ if(!node.contains(e.target)&&e.target!==anchor&&!anchor.contains(e.target))closeMenu(); };
+  const key=e=>{ if(e.key==='Escape'){e.preventDefault();closeMenu();anchor.focus&&anchor.focus();} };
+  _pop={el:node,anchor,out,key};
+  setTimeout(()=>{document.addEventListener('click',out,true);document.addEventListener('keydown',key,true);},0);
+}
+// groups: [{label?, items:[{v,t,d?}]}] — onPick(v). current highlights + ✓.
+function openMenu(anchor,head,groups,current,onPick){
+  const m=document.createElement('div'); let html=head?`<div class="pm-hd">${esc(head)}</div>`:'',any=false;
+  for(const g of groups){ if(g.label)html+=`<div class="pm-g">${esc(g.label)}</div>`;
+    for(const it of g.items){ any=true; const on=String(it.v)===String(current);
+      html+=`<div class="pm-i${on?' on':''}" role="menuitem" tabindex="0" data-v="${esc(String(it.v))}">`+
+        `<div class="pm-t">${esc(it.t)}</div>${it.d?`<div class="pm-d">${esc(it.d)}</div>`:''}${on?'<span class="pm-ck">✓</span>':''}</div>`; } }
+  if(!any)html+='<div class="pm-empty">Nothing here yet.</div>';
+  m.innerHTML=html;
+  m.querySelectorAll('.pm-i').forEach(el=>{ const go=e=>{e.preventDefault();e.stopPropagation();const v=el.dataset.v;closeMenu();onPick(v);};
+    el.onclick=go; el.onkeydown=e=>{ if(e.key==='Enter'||e.key===' ')go(e); }; });
+  _popover(anchor,m); const f=m.querySelector('.pm-i.on')||m.querySelector('.pm-i'); f&&f.focus();
+}
+function openHTML(anchor,html){ const m=document.createElement('div'); m.innerHTML=html; _popover(anchor,m); }
+// Design system → scope the gallery to one of the org's REAL designs (the SAME
+// FILTER the chips drive; pill and chips stay in sync via paintChips).
+const _SPECIAL=['all','marketing','drafts','flagged','deleted'];
+function pickPreset(ev){
+  const designs=[...new Set((DATA.assets||[]).map(a=>a.design).filter(Boolean))].sort();
+  const items=[{v:'all',t:'None',d:'Show all designs'}].concat(designs.map(d=>({v:d,t:d})));
+  const cur=_SPECIAL.includes(FILTER)?'all':FILTER;
+  openMenu(ev.currentTarget,'Design system',[{items}],cur,v=>{ FILTER=v; paintChips(); render();
+    if(v!=='all')$('assets').scrollIntoView({behavior:'smooth',block:'nearest'}); });
+}
+// Template → the KIND catalog, grouped. Pick sets the lane (pickTemplate); None
+// returns to the neutral edit/compose composer (clearLane).
+function laneChip(ev){
+  const grps=[...new Set(TEMPLATES.map(t=>t.grp))];
+  const groups=[{items:[{v:'__none__',t:'None',d:'Edit / compose your photos'}]}]
+    .concat(grps.map(g=>({label:g,items:TEMPLATES.filter(t=>t.grp===g).map(t=>({v:t.k,t:t.t,d:t.d}))})));
+  openMenu(ev.currentTarget,'Template',groups,KIND||'__none__',v=>{
+    if(v==='__none__'){clearLane();toast('Back to edit / compose');return;}
+    const tpl=TEMPLATES.find(x=>x.k===v); if(tpl)pickTemplate(tpl.k,tpl.t); });
+}
+// Model → the REAL Hanzo catalog (api.hanzo.ai/v1/models), curated to the
+// Studio-relevant set and shown ONLY where the id truly exists upstream. Choice
+// persists (hz_model) and drives the composer + the Chat sidebar model.
+let MODEL=(()=>{try{return localStorage.hz_model||'enso'}catch(_){return 'enso'}})(), MODELS=null;
+const MODEL_SETS=[
+  {label:'Assistant',ids:['enso','enso-flash','enso-ultra','zen5','zen5-pro','zen5-flash','zen5-mini','zen5-coder','zen-vl']},
+  {label:'Image',    ids:['zen-image','stable-diffusion-3.5-large','openai-gpt-image-2','openai-gpt-image-1.5','openai-gpt-image-1']},
+  {label:'Video',    ids:['zen-video','wan2-2-t2v-a14b']},
+  {label:'Audio',    ids:['zen-music','zen-voice','zen-foley']},
+];
+const _MLABEL={'enso':'Enso','enso-flash':'Enso Flash','enso-ultra':'Enso Ultra','zen-vl':'Zen VL','zen-image':'Zen Image',
+  'zen-video':'Zen Video','zen-music':'Zen Music','zen-voice':'Zen Voice','zen-foley':'Zen Foley',
+  'stable-diffusion-3.5-large':'Stable Diffusion 3.5 L','wan2-2-t2v-a14b':'Wan 2.2 Video',
+  'openai-gpt-image-1':'GPT Image 1','openai-gpt-image-1.5':'GPT Image 1.5','openai-gpt-image-2':'GPT Image 2'};
+function modelLabel(id){ return _MLABEL[id]||String(id).replace(/[-_]/g,' ').replace(/\b\w/g,c=>c.toUpperCase()); }
+async function loadModels(){
+  if(MODELS)return MODELS;
+  let ids=new Set();
+  try{ const r=await fetch('https://api.hanzo.ai/v1/models',{headers:{Accept:'application/json'}}); // public list, no creds
+    const j=await r.json(); (Array.isArray(j)?j:j.data||[]).forEach(m=>{const id=m&&(m.id||m);if(id)ids.add(id);}); }catch(_){}
+  MODELS=MODEL_SETS.map(s=>({label:s.label,items:s.ids.filter(id=>ids.size?ids.has(id):id==='enso').map(id=>({v:id,t:modelLabel(id)}))})).filter(g=>g.items.length);
+  if(!MODELS.length)MODELS=[{label:'Assistant',items:[{v:'enso',t:'Enso'}]}]; // fail-safe
+  return MODELS;
+}
+function initModel(){ $('model')&&($('model').textContent=modelLabel(MODEL)); loadModels(); }
+function pickModel(ev){ const a=ev.currentTarget;
+  loadModels().then(groups=>openMenu(a,'Model — Hanzo AI',groups,MODEL,v=>{ MODEL=v; try{localStorage.hz_model=v}catch(_){}
+    $('model').textContent=modelLabel(v); toast('Model: '+modelLabel(v)); })); }
+// </> → the developer request preview: the EXACT POST the ↑ will send for the
+// current prompt/attachments/lane, from the ONE planner create() uses (no drift).
+function codeView(ev){ const p=composerPlan();
+  const body=p.error?`<div class="pm-warn">${esc(p.error)}</div>`
+    :`<div class="pm-code-h">POST ${esc(p.url)}</div><div class="pm-code"><pre>${esc(JSON.stringify(p.body,null,2))}</pre></div>`;
+  openHTML(ev.currentTarget,`<div class="pm-hd">Request preview</div>${body}<div class="pm-foot">Powered by Hanzo AI · api.hanzo.ai/v1</div>`); }
+// The ONE composer planner — routes prompt + attached photos to a render action.
+// Returns {kind,url,body} or {error}. create() executes it; </> previews it.
+function composerPlan(){
   const t=$('pin').value.trim();
   const libs=TRAY.filter(r=>r.kind==='lib').map(r=>r.ref), ups=TRAY.filter(r=>r.kind==='up').map(r=>r.ref);
   const n=libs.length+ups.length;
-  if(KIND==='model3d'){
-    // The 3D lane: ONE reference image → a .glb mesh. No prompt, no text-to-3D.
-    if(n!==1){ toast('Attach ONE photo with + to turn into 3D'); return; }
-    const m3btn=document.querySelector('.psend');
-    await enqueue(m3btn,'…',async()=>{
-      if(!(await gpuOnline()))toast('⚠ No GPU online — queues until a BYO-GPU connects');
-      const body=libs.length?{path:libs[0]}:{upload:ups[0]};
-      const r=await fetch('/v1/library/model3d',{method:'POST',headers:genHeaders(),body:JSON.stringify(body)});
-      const j=await r.json().catch(()=>({}));
-      if(r.ok){ toast('3D queued → see Queue & History'); track('model3d',{from:'composer'}); $('pin').value=''; clearTray(); clearLane(); }
-      else if(!(await healStale(j))) toast('Failed: '+(errMsg(j)||('error '+r.status)));
-    });
-    return;
-  }
-  if(KIND==='video'){
-    // The video lane: text-to-video, or ONE reference image (library or upload). Same
-    // queued-toast / GPU advisory path as fix/compose — no second box, no flags.
-    if(t.length<3){ toast('Describe the video you want'); return; }
-    if(n>1){ toast('Video takes at most one reference'); return; }
-    const vbtn=document.querySelector('.psend');
-    await enqueue(vbtn,'…',async()=>{
-      if(!(await gpuOnline()))toast('⚠ No GPU online — queues until a BYO-GPU connects');
-      const body={prompt:t}; if(libs.length)body.path=libs[0]; else if(ups.length)body.upload=ups[0];
-      const r=await fetch('/v1/library/video',{method:'POST',headers:genHeaders(),body:JSON.stringify(body)});
-      const j=await r.json().catch(()=>({}));
-      if(r.ok){ toast('Video queued → see Queue & History'); track('video',{from:'composer'}); $('pin').value=''; clearTray(); clearLane(); }
-      else if(!(await healStale(j))) toast('Failed: '+(errMsg(j)||('error '+r.status)));
-    });
-    return;
-  }
-  if(!n){ toast(t.length<3?'Describe what to create, then attach a photo with +':'Attach a photo with + to edit or compose it'); return; }
-  if(t.length<3){ toast('Describe what to make from your photo'+(n>1?'s':'')); return; }
-  // Same latch as the dialog queue buttons: the ↑ / Enter can fire twice before the
-  // POST resolves — QBUSY makes the second a no-op so no double (billable) dispatch.
+  if(KIND==='model3d'){ if(n!==1)return{error:'Attach ONE photo with + to turn into 3D'};
+    return{kind:'model3d',url:'/v1/library/model3d',body:libs.length?{path:libs[0]}:{upload:ups[0]}}; }
+  if(KIND==='video'){ if(t.length<3)return{error:'Describe the video you want'};
+    if(n>1)return{error:'Video takes at most one reference'};
+    const b={prompt:t}; if(libs.length)b.path=libs[0]; else if(ups.length)b.upload=ups[0];
+    return{kind:'video',url:'/v1/library/video',body:b}; }
+  if(!n)return{error:t.length<3?'Describe what to create, then attach a photo with +':'Attach a photo with + to edit or compose it'};
+  if(t.length<3)return{error:'Describe what to make from your photo'+(n>1?'s':'')};
+  if(n===1)return{kind:'fix',url:'/v1/library/fix',body:libs.length?{path:libs[0],instruction:t}:{upload:ups[0],instruction:t}};
+  return{kind:'compose',url:'/v1/library/compose',body:{paths:libs,uploads:ups,instruction:t}};
+}
+// The ONE create path: the top composer's ↑ generates from its prompt + the photos
+// attached to it (via + / drag / paste / a gallery card's +). 1 photo → edit (fix),
+// 2-5 → compose. Same proven graphs the gallery uses — one surface, no second box.
+// The ONE dispatch: execute the composer plan. Same latch as the dialog queue
+// buttons — the ↑ / Enter can fire twice before the POST resolves; QBUSY makes the
+// second a no-op so there is no double (billable) dispatch.
+async function create(){
+  const plan=composerPlan();
+  if(plan.error){ toast(plan.error); return; }
   const btn=document.querySelector('.psend');
   await enqueue(btn,'…',async()=>{
     if(!(await gpuOnline()))toast('⚠ No GPU online — queues until a BYO-GPU connects');
-    let r;
-    if(n===1){ r=await fetch('/v1/library/fix',{method:'POST',headers:genHeaders(),
-        body:JSON.stringify(libs.length?{path:libs[0],instruction:t}:{upload:ups[0],instruction:t})}); }
-    else{ r=await fetch('/v1/library/compose',{method:'POST',headers:genHeaders(),body:JSON.stringify({paths:libs,uploads:ups,instruction:t})}); }
+    const r=await fetch(plan.url,{method:'POST',headers:genHeaders(),body:JSON.stringify(plan.body)});
     const j=await r.json().catch(()=>({}));
-    if(r.ok){ toast('Queued → see Queue & History'); track(n===1?'fix':'compose',{from:'composer'}); $('pin').value=''; clearTray(); }
-    else if(!(await healStale(j))) toast('Failed: '+(errMsg(j)||('error '+r.status)));
+    if(r.ok){
+      toast(plan.kind==='model3d'?'3D queued → see Queue & History':plan.kind==='video'?'Video queued → see Queue & History':'Queued → see Queue & History');
+      track(plan.kind,{from:'composer'}); $('pin').value=''; clearTray();
+      if(plan.kind==='model3d'||plan.kind==='video')clearLane();
+    } else if(!(await healStale(j))) toast('Failed: '+(errMsg(j)||('error '+r.status)));
   });
 }
 async function load(){
@@ -665,6 +755,7 @@ async function load(){
   paintChips(); render();
 }
 function paintChips(){
+  const ds=$('ds'); if(ds)ds.textContent=(_SPECIAL.includes(FILTER)||!FILTER)?'None':FILTER;  // keep the Design-system pill in sync with the chips
   const groups=[...new Set(DATA.assets.map(a=>a.design).filter(Boolean))].sort();
   const delN=DATA.assets.filter(a=>a.status==='deleted').length;
   const flagN=DATA.assets.filter(a=>a.status==='flagged').length;
@@ -1753,7 +1844,7 @@ function openStackFromHash(){const m=(location.hash||'').match(/stack=([A-Za-z0-
 // header auto-hide (immersive) — reveal on top-hover / mouse near top
 document.getElementById('tophover').addEventListener('mouseenter',()=>document.querySelector('header').classList.add('reveal'));
 document.addEventListener('mousemove',e=>{if(e.clientY<8)document.querySelector('header').classList.add('reveal');else if(e.clientY>90&&document.body.classList.contains('immersive'))document.querySelector('header').classList.remove('reveal');});
-load().then(openStackFromHash); loadSession(); updateLivebar(); setInterval(updateLivebar, 5000);
+load().then(openStackFromHash); loadSession(); updateLivebar(); initModel(); setInterval(updateLivebar, 5000);
 window.addEventListener('hashchange',openStackFromHash);
 // Queue transparency: refresh positions/ETAs while the queue view is open (sane
 // cadence, no hammering); node badges less often; tick the running item's elapsed.

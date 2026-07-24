@@ -16,6 +16,16 @@
   window.__hzShell = 1;
 
   var STUDIO = location.pathname === "/studio" || location.pathname === "/studio/";
+  // Hanzo AI chat config, injected server-side as window.HZ. `pk` is a PUBLISHABLE
+  // key (NEXT_PUBLIC_HANZO_PUBLISHABLE_KEY) — safe in the client, scoped to chat
+  // completions; NEVER a server secret. Empty pk ⇒ the secure same-origin copilot
+  // path (cookie-authed) is used instead. `model` follows the composer's pick
+  // (hz_model) so the Chat sidebar and the composer share one model.
+  var HZ = window.HZ || {};
+  var AI_BASE = (HZ.aiBase || "https://api.hanzo.ai").replace(/\/+$/, "");
+  var PK = HZ.pk || "";
+  var USE_STREAM = STUDIO && !!PK;   // direct enso streaming on the home; the editor keeps the copilot (graph ops)
+  function chatModel() { try { return localStorage.hz_model || HZ.model || "enso"; } catch (_) { return HZ.model || "enso"; } }
   var $ = function (id) { return document.getElementById(id); };
   var el = function (tag, attrs, html) {
     var e = document.createElement(tag);
@@ -52,7 +62,8 @@
     '<span class="hz-who"><b id="hzuser">…</b><span id="hzorg"></span></span>' +
     '<button class="hz-x" id="hzclose" title="Close">×</button></div>' +
     '<div id="hzmsgs"></div>' +
-    '<form id="hzform"><input id="hzin" placeholder="Ask the copilot…" autocomplete="off"><button type="submit">Send</button></form>';
+    '<form id="hzform"><input id="hzin" placeholder="Ask Hanzo AI…" autocomplete="off"><button type="submit">Send</button></form>' +
+    '<div class="hz-pw">Powered by <b>Hanzo&nbsp;AI</b></div>';
 
   function mount() {
     document.body.appendChild(bar);
@@ -82,11 +93,50 @@
       return ctx;
     } catch (_) { return {}; }
   }
-  async function send(text) {
+  // The ONE chat send. Home + a publishable key ⇒ stream enso from the gateway
+  // (api.hanzo.ai/v1/chat/completions, OpenAI-compatible SSE). Otherwise the secure
+  // same-origin copilot path (cookie-authed; also carries graph ops in the editor).
+  // Same transcript UI either way.
+  function send(text) { return USE_STREAM ? sendStream(text) : sendCopilot(text); }
+
+  async function sendStream(text) {
+    HISTORY.push({ role: "user", content: text });
+    addMsg("u", text);
+    var box = addMsg("a", ""); box.classList.add("streaming");
+    var acc = "";
+    try {
+      var res = await fetch(AI_BASE + "/v1/chat/completions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Authorization": "Bearer " + PK },
+        body: JSON.stringify({ model: chatModel(), messages: HISTORY.slice(-20), stream: true }),
+      });
+      if (!res.ok || !res.body) { box.classList.remove("streaming"); box.textContent = "chat failed (" + res.status + ")"; return; }
+      var reader = res.body.getReader(), dec = new TextDecoder(), buf = "";
+      for (;;) {
+        var rd = await reader.read(); if (rd.done) break;
+        buf += dec.decode(rd.value, { stream: true });
+        var nl;
+        while ((nl = buf.indexOf("\n")) >= 0) {
+          var line = buf.slice(0, nl).replace(/\r$/, "").trim(); buf = buf.slice(nl + 1);
+          if (line.slice(0, 5) !== "data:") continue;
+          var d = line.slice(5).trim(); if (!d || d === "[DONE]") continue;
+          try {
+            var j = JSON.parse(d);
+            var delta = j.choices && j.choices[0] && j.choices[0].delta && j.choices[0].delta.content;
+            if (delta) { acc += delta; box.textContent = acc; $("hzmsgs").scrollTop = $("hzmsgs").scrollHeight; }
+          } catch (_) {}
+        }
+      }
+      box.classList.remove("streaming");
+      if (acc) HISTORY.push({ role: "assistant", content: acc }); else box.textContent = "(no response)";
+    } catch (e) { box.classList.remove("streaming"); box.textContent = "error: " + e.message; }
+  }
+
+  async function sendCopilot(text) {
     HISTORY.push({ role: "user", content: text });
     addMsg("u", text);
     var pending = addMsg("sys", "…");
-    var payload = Object.assign({ messages: HISTORY.slice(-20) }, await graphContext());
+    var payload = Object.assign({ model: chatModel(), messages: HISTORY.slice(-20) }, await graphContext());
     var r = await getJSON("/v1/copilot/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
     pending.remove();
     var reply = (r.body && r.body.reply) || (r.body && r.body.error) || (r.ok ? "" : "chat failed (" + r.status + ")");
