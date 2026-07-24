@@ -20,6 +20,7 @@ venv*/
 /web/extensions/*
 !/web/extensions/logging.js.example
 !/web/extensions/core/
+/web/shell/node_modules/
 /tests-ui/data/object_info.json
 /user/
 *.log

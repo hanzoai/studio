@@ -1,0 +1,20 @@
+{
+  "name": "@hanzo/studio-marketing-shell",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Builds the self-contained unified-Hanzo-shell bundle (header + pre-footer + footer) served on the studio.hanzo.ai logged-out page. Output is committed to ../marketing and served by the Python app at /marketing.",
+  "scripts": {
+    "build": "node build.mjs"
+  },
+  "dependencies": {
+    "@hanzo/brand": "^1.4.1",
+    "@hanzogui/shell": "^7.4.2",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@hanzo/iam": "^0.13.1",
+    "esbuild": "^0.24.2"
+  }
+}
