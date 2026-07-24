@@ -1,22 +1,14 @@
-# Canonical CI/CD — imports the shared hanzoai/ci reusable workflow, which
-# reads hanzo.yml (images + test + deploy + kms). No per-repo build logic,
-# no GitHub-hosted runners (defaults to the Hanzo cloud arc pool).
+# Deploy is native now — see .hanzo/workflows/deploy.yml (Hanzo Git → act_runner
+# → BuildKit → ghcr.io/hanzoai/studio:<sha> → operator reconcile → hanzocd).
+# GitHub is a mirror; this workflow no longer builds or deploys the app image.
 name: CI/CD
 
 on:
-  push:
-    branches: [main]
-    tags: ['v*']
-  pull_request:
   workflow_dispatch:
 
 jobs:
-  cicd:
-    uses: hanzoai/ci/.github/workflows/build.yml@v1
-    # Target the Hanzo arc scale set by its installation name. ARC scale sets
-    # are matched by name, not by the [self-hosted,linux,amd64] label triple
-    # that ci@v1 defaults to — without this override the job never gets a
-    # runner and sits queued.
-    with:
-      runner: '["hanzo-build-linux-amd64"]'
-    secrets: inherit
+  sync-notice:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Notice
+        run: echo "native pipeline is .hanzo/workflows/deploy.yml; GitHub is a mirror"
