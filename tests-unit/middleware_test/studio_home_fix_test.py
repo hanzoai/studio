@@ -298,8 +298,10 @@ def in_dir(tmp_path, monkeypatch):
 
 def test_stage_source_is_content_addressed(in_dir, tmp_path):
     d = Path(in_dir("acme"))
-    a = tmp_path / "a.png"; a.write_bytes(b"AAAA-dress-bytes")
-    b = tmp_path / "b.png"; b.write_bytes(b"BBBB-clasp-bytes")
+    a = tmp_path / "a.png"
+    a.write_bytes(b"AAAA-dress-bytes")
+    b = tmp_path / "b.png"
+    b.write_bytes(b"BBBB-clasp-bytes")
     na, nb = sh._stage_source(d, a, "fix"), sh._stage_source(d, b, "fix")
     # different bytes -> different name (cryptographic, not a salted-hash coincidence)
     assert na != nb
@@ -315,8 +317,10 @@ def test_two_concurrent_edits_are_isolated(in_dir, tmp_path):
     """The reported scenario: Job A (design A, 'make the dress red') and Job B
     (design B, 'add a silver clasp') constructed back-to-back share NOTHING."""
     d = Path(in_dir("acme"))
-    srcA = tmp_path / "A.png"; srcA.write_bytes(b"\x89PNG-design-A" + b"\x00" * 64)
-    srcB = tmp_path / "B.png"; srcB.write_bytes(b"\x89PNG-design-B" + b"\x00" * 64)
+    srcA = tmp_path / "A.png"
+    srcA.write_bytes(b"\x89PNG-design-A" + b"\x00" * 64)
+    srcB = tmp_path / "B.png"
+    srcB.write_bytes(b"\x89PNG-design-B" + b"\x00" * 64)
     refA, refB = sh._stage_source(d, srcA, "fix"), sh._stage_source(d, srcB, "fix")
     gA = sh._fix_graph(refA, "make the dress red", "fixes/A_" + sh._job_tag())
     gB = sh._fix_graph(refB, "add a silver clasp", "fixes/B_" + sh._job_tag())
@@ -339,7 +343,8 @@ def test_collect_input_images_ships_exact_source_and_is_org_scoped(in_dir, tmp_p
     """gpu_dispatch inlines the bytes the worker will LoadImage. It must ship the
     SELECTED org's copy exactly — never a same-named file from another org."""
     dA, dB = Path(in_dir("acme")), Path(in_dir("other"))
-    src = tmp_path / "s.png"; src.write_bytes(b"\x89PNG-real-source" + b"\x01" * 40)
+    src = tmp_path / "s.png"
+    src.write_bytes(b"\x89PNG-real-source" + b"\x01" * 40)
     ref = sh._stage_source(dA, src, "fix")
     (dB / ref).write_bytes(b"\x89PNG-WRONG-org" + b"\x02" * 40)   # decoy, same basename
     shipped = gd._collect_input_images(sh._fix_graph(ref, "brighten", "fixes/x"), "acme")
