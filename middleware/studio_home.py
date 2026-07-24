@@ -1545,6 +1545,40 @@ async def home_redirect(request: web.Request, handler):
 _SHELL_HEAD = '<link rel="stylesheet" href="/studio/shell.css">'
 _SHELL_BODY = '<script src="/studio/shell.js" defer></script>'
 
+# Client chat config, injected as window.HZ before the shell loads. `pk` is a
+# PUBLISHABLE key (safe in the browser, scoped to chat completions) — the shell
+# streams enso from api.hanzo.ai/v1/chat/completions with it. When it is absent the
+# Chat sidebar falls back to the secure same-origin copilot path (httpOnly cookie),
+# so no key is exposed. NEVER a server secret.
+_PUBLISHABLE_KEY_ENV = ("NEXT_PUBLIC_HANZO_PUBLISHABLE_KEY", "STUDIO_PUBLISHABLE_KEY")
+_PUBLISHABLE_PREFIX = "pk-"  # gateway iamauth.go: the ONE client-safe key family
+
+
+def _publishable(pk: str) -> str:
+    """Fail CLOSED via allowlist: hand the browser a value ONLY when it is a
+    publishable key (`pk-`, the single client-safe prefix the gateway defines).
+    Every server secret (`hk-`/`sk-`/`fw_`/`hz_`), JWT, or unknown value is dropped
+    so a misconfigured secret can never reach page source; Chat then falls back to
+    the secure same-origin copilot path."""
+    pk = pk.strip()
+    return pk if pk.startswith(_PUBLISHABLE_PREFIX) else ""
+
+
+def _hz_config_script() -> str:
+    """`<script>window.HZ={...}</script>` — JSON-encoded so no value can break out
+    of the tag. Reads the publishable key from env; empty when unset."""
+    pk = ""
+    for key in _PUBLISHABLE_KEY_ENV:
+        pk = _publishable(os.environ.get(key, ""))
+        if pk:
+            break
+    cfg = {"aiBase": (os.environ.get("STUDIO_AI_BASE", "").strip() or "https://api.hanzo.ai").rstrip("/"),
+           "pk": pk,
+           "model": os.environ.get("STUDIO_CHAT_MODEL", "").strip() or "enso"}
+    # json.dumps escapes quotes/backslashes and (ensure_ascii) U+2028/2029; also
+    # neutralize any literal "</" so no value can close the <script> tag.
+    return "<script>window.HZ=" + json.dumps(cfg).replace("</", "<\\/") + ";</script>"
+
 
 def _asset(name: str, ctype: str) -> web.Response:
     """Serve a shell asset. no-store like the SPA HTML — it changes every release."""
@@ -1565,8 +1599,9 @@ def editor_index(web_root: str) -> web.Response:
     html = html.replace("<title>ComfyUI</title>", "<title>Hanzo Studio</title>")
     html = html.replace("Loading ComfyUI...", "Loading Hanzo Studio…")
     if "/studio/shell.js" not in html:
+        body = _hz_config_script() + _SHELL_BODY
         html = html.replace("</head>", _SHELL_HEAD + "</head>", 1) if "</head>" in html else _SHELL_HEAD + html
-        html = html.replace("</body>", _SHELL_BODY + "</body>", 1) if "</body>" in html else html + _SHELL_BODY
+        html = html.replace("</body>", body + "</body>", 1) if "</body>" in html else html + body
     return web.Response(text=html, content_type="text/html",
                         headers={"Cache-Control": "no-cache", "Pragma": "no-cache", "Expires": "0"})
 
@@ -1825,7 +1860,8 @@ def add_studio_home_routes(routes: web.RouteTableDef, server) -> None:
         # deploy — which is why UI fixes appeared "not working" to a user still
         # running yesterday's cached page. Always serve fresh; the page is small
         # and its shell.js/shell.css keep their own cache.
-        return web.Response(text=_HTML.read_text(), content_type="text/html",
+        html = _HTML.read_text().replace(_SHELL_BODY, _hz_config_script() + _SHELL_BODY, 1)
+        return web.Response(text=html, content_type="text/html",
                             headers={"Cache-Control": "no-store, must-revalidate"})
 
     @routes.get("/studio/shell.js")
