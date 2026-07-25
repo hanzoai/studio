@@ -34,7 +34,11 @@ def jwt_alg(tok: str) -> str:
     try:
         h = tok.split(".", 1)[0]
         h += "=" * (-len(h) % 4)
-        return json.loads(base64.urlsafe_b64decode(h.encode())).get("alg", "")
+        alg = json.loads(base64.urlsafe_b64decode(h.encode())).get("alg", "")
+        # A crafted header can make alg a non-string (null/list/number/dict); the
+        # contract is "the alg string or ''", so a non-string is not a usable alg
+        # (else `alg[:2]`/`alg.startswith` below would raise → a self-inflicted 500).
+        return alg if isinstance(alg, str) else ""
     except Exception:
         return ""
 
@@ -63,7 +67,7 @@ def forwardable_bearer(request) -> str:
         return "Bearer " + tok
     if tok.count(".") == 2:
         alg = jwt_alg(tok)
-        if alg[:2] in ("RS", "ES", "PS") or alg.startswith("Ed"):
+        if isinstance(alg, str) and (alg[:2] in ("RS", "ES", "PS") or alg.startswith("Ed")):
             return "Bearer " + tok
     return ""
 

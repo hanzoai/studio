@@ -83,3 +83,16 @@ def test_ai_bearer_server_key_wins_else_forwardable(monkeypatch):
     # a configured server key wins over any caller token
     monkeypatch.setenv("SRV_TOK", "hk-server-key")
     assert G.ai_bearer(_Req("Bearer " + rs), server_env=envs) == "Bearer hk-server-key"
+
+
+def test_forwardable_bearer_survives_crafted_non_string_alg():
+    """A JWT header with a non-string alg (null/list/number/dict) must yield "" — never
+    a self-inflicted 500 from alg[:2]/alg.startswith. Mirrors the documents.py RED fix."""
+    def jwt_bad_alg(alg_value):
+        h = base64.urlsafe_b64encode(json.dumps({"alg": alg_value}).encode()).rstrip(b"=").decode()
+        return f"{h}.eyJzdWIiOiIxIn0.sig"
+    for bad in (None, [], 123, {"x": 1}, True):
+        assert G.jwt_alg(jwt_bad_alg(bad)) == ""
+        assert G.forwardable_bearer(_Req("Bearer " + jwt_bad_alg(bad))) == ""
+    assert G.jwt_alg(jwt_bad_alg("RS256")) == "RS256"  # real asymmetric alg still read
+    assert G.forwardable_bearer(_Req("Bearer " + jwt_bad_alg("RS256"))) == "Bearer " + jwt_bad_alg("RS256")
