@@ -17,7 +17,7 @@ Env (all optional):
     STUDIO_COPILOT_URL    chat-completions URL. Default: the local engine at
                           http://127.0.0.1:1234/v1/chat/completions if that port
                           is open, else https://api.hanzo.ai/v1/chat/completions.
-    STUDIO_COPILOT_MODEL  model id (default "zen").
+    STUDIO_COPILOT_MODEL  model id (default "enso" — the Hanzo flagship assistant).
     STUDIO_COPILOT_TOKEN  bearer for the gateway. Falls back to
                           STUDIO_COMMERCE_TOKEN, then any bearer on the request.
 
@@ -144,7 +144,7 @@ class CopilotError(Exception):
 def _resolve_target(request) -> tuple[str, str, str]:
     """(url, model, token) for this request."""
     url = os.environ.get("STUDIO_COPILOT_URL", "").strip() or _DEFAULT_URL
-    model = os.environ.get("STUDIO_COPILOT_MODEL", "").strip() or "zen"
+    model = os.environ.get("STUDIO_COPILOT_MODEL", "").strip() or "enso"
     token = (
         os.environ.get("STUDIO_COPILOT_TOKEN", "").strip()
         or os.environ.get("STUDIO_COMMERCE_TOKEN", "").strip()

@@ -1,11 +1,12 @@
-/* Hanzo Studio — black surface + Hanzo-purple accent theme.
+/* Hanzo Studio — black surface + monochrome accent theme.
  * Minimal override: only background/surface/accent tokens are touched so the
  * rest of the frontend's dark palette (text, node colors, borders) is intact.
  * Loaded LAST in index.html so it beats PrimeVue's runtime-injected tokens;
  * every declaration is !important because those tokens are injected after this
- * sheet at boot. Colors chosen for WCAG AA contrast on black:
- *   accent  #8B5CF6 on #000  -> 6.2:1 (AA normal text)
- *   button  #ffffff on #7C3AED -> 5.25:1 (AA normal text)
+ * sheet at boot. Monochrome — no color accent — matching the canonical Hanzo
+ * design system (page #000 · surface #0a0a0a · raised #1a1a1a · border #1f1f1f ·
+ * text #ededed · accent/brand #ededed/#fff). Contrast on black:
+ *   accent  #ededed on #000 -> ~18:1   ·   button #111 on #fff -> ~18:1
  */
 
 :root {
@@ -36,23 +37,23 @@
   --p-overlay-popover-background: #0a0a0a !important;
   --p-mask-background: rgba(0, 0, 0, 0.72) !important;
 
-  /* --- Hanzo purple accent --- */
-  --p-primary-color: #8b5cf6 !important;         /* icons/links/active — AA on black */
-  --p-primary-contrast-color: #ffffff !important;
-  --p-primary-400: #a78bfa !important;
-  --p-primary-500: #8b5cf6 !important;
-  --p-primary-600: #7c3aed !important;
-  --p-focus-ring-color: #8b5cf6 !important;
-  --p-highlight-background: rgba(124, 58, 237, 0.24) !important;
-  --p-highlight-focus-background: rgba(124, 58, 237, 0.32) !important;
-  --p-highlight-color: #ede9fe !important;
+  /* --- Monochrome accent (near-white on black — icons/links/active) --- */
+  --p-primary-color: #ededed !important;
+  --p-primary-contrast-color: #111111 !important;
+  --p-primary-400: #f5f5f5 !important;
+  --p-primary-500: #ededed !important;
+  --p-primary-600: #d4d4d4 !important;
+  --p-focus-ring-color: #8a8a8a !important;
+  --p-highlight-background: rgba(255, 255, 255, 0.14) !important;
+  --p-highlight-focus-background: rgba(255, 255, 255, 0.20) !important;
+  --p-highlight-color: #ffffff !important;
 
-  /* --- Primary buttons: white on deeper violet keeps AA (5.25:1) --- */
-  --p-button-primary-background: #7c3aed !important;
-  --p-button-primary-hover-background: #6d28d9 !important;
-  --p-button-primary-active-background: #5b21b6 !important;
-  --p-button-primary-border-color: #7c3aed !important;
-  --p-button-primary-color: #ffffff !important;
+  /* --- Primary buttons: brand/CTA white on black, dark text (matches Home) --- */
+  --p-button-primary-background: #ffffff !important;
+  --p-button-primary-hover-background: #e4e4e7 !important;
+  --p-button-primary-active-background: #d4d4d4 !important;
+  --p-button-primary-border-color: #ffffff !important;
+  --p-button-primary-color: #111111 !important;
 }
 
 /* Pure-black canvas gutter behind the litegraph <canvas>. */
@@ -65,31 +66,31 @@ body.litegraph,
 
 /* ── hover/active states: dark surfaces, never light (fix white-on-white) ── */
 :root, :root.dark-theme {
-  --p-content-hover-background: #1f1f23 !important;
+  --p-content-hover-background: #1a1a1a !important;
   --p-content-hover-color: #ffffff !important;
-  --p-navigation-item-hover-background: #1f1f23 !important;
-  --p-list-option-focus-background: #26262b !important;
-  --p-select-option-focus-background: #26262b !important;
-  --p-button-text-secondary-hover-background: #1f1f23 !important;
-  --p-button-text-primary-hover-background: rgba(139,92,246,.16) !important;
-  --p-button-secondary-hover-background: #26262b !important;
-  --p-togglebutton-hover-background: #26262b !important;
-  --p-tab-hover-background: #1f1f23 !important;
-  --p-menubar-item-focus-background: #26262b !important;
-  --p-menu-item-focus-background: #26262b !important;
-  --p-tree-node-hover-background: #1f1f23 !important;
-  --p-surface-100: #26262b !important;
-  --p-surface-200: #1f1f23 !important;
-  --p-highlight-background: rgba(139,92,246,.20) !important;
+  --p-navigation-item-hover-background: #1a1a1a !important;
+  --p-list-option-focus-background: #242424 !important;
+  --p-select-option-focus-background: #242424 !important;
+  --p-button-text-secondary-hover-background: #1a1a1a !important;
+  --p-button-text-primary-hover-background: rgba(255,255,255,.10) !important;
+  --p-button-secondary-hover-background: #242424 !important;
+  --p-togglebutton-hover-background: #242424 !important;
+  --p-tab-hover-background: #1a1a1a !important;
+  --p-menubar-item-focus-background: #242424 !important;
+  --p-menu-item-focus-background: #242424 !important;
+  --p-tree-node-hover-background: #1a1a1a !important;
+  --p-surface-100: #242424 !important;
+  --p-surface-200: #1a1a1a !important;
+  --p-highlight-background: rgba(255,255,255,.14) !important;
   --p-highlight-color: #ffffff !important;
 }
 .side-tool-bar-container .p-button:hover,
 .side-bar-button:hover,
 .comfyui-button:hover {
-  background: #1f1f23 !important;
+  background: #1a1a1a !important;
   color: #fff !important;
 }
-.p-button-text:not(.p-button-danger):hover { background: #1f1f23 !important; color: #fff !important; }
+.p-button-text:not(.p-button-danger):hover { background: #1a1a1a !important; color: #fff !important; }
 
 /* ── the H logo menu button: keep the mark visible on hover/open ── */
 button:has(> .comfyui-logo):hover,
@@ -97,7 +98,7 @@ button:has(.comfyui-logo):hover,
 .p-button:has(.comfyui-logo):hover,
 button:has(.comfyui-logo)[aria-expanded="true"],
 .comfyui-logo-menu-trigger:hover {
-  background: #1f1f23 !important;
+  background: #1a1a1a !important;
 }
 button:has(.comfyui-logo):hover .comfyui-logo,
 button:has(.comfyui-logo):hover svg,
@@ -106,37 +107,37 @@ button:has(.comfyui-logo):hover path {
   fill: #ffffff !important;
 }
 
-/* ── active/selected/checked states: never white (white-box-under-H fix) ── */
+/* ── active/selected/checked states: neutral gray, never white ── */
 :root, :root.dark-theme {
-  --p-button-secondary-active-background: #26262b !important;
-  --p-togglebutton-checked-background: #2a2140 !important;
-  --p-togglebutton-checked-color: #c4b5fd !important;
-  --p-navigation-item-active-background: #26262b !important;
+  --p-button-secondary-active-background: #242424 !important;
+  --p-togglebutton-checked-background: #242424 !important;
+  --p-togglebutton-checked-color: #ededed !important;
+  --p-navigation-item-active-background: #242424 !important;
   --p-tab-active-background: #0a0a0a !important;
-  --p-button-text-primary-active-background: rgba(139,92,246,.24) !important;
+  --p-button-text-primary-active-background: rgba(255,255,255,.16) !important;
 }
 .side-tool-bar-container .p-button.p-highlight,
 .side-tool-bar-container .p-togglebutton.p-togglebutton-checked,
 .side-tool-bar-container [aria-pressed="true"],
 .side-tool-bar-container .p-button:active,
 .p-selectbutton .p-button.p-highlight {
-  background: #2a2140 !important;
-  color: #c4b5fd !important;
+  background: #242424 !important;
+  color: #ededed !important;
 }
 .side-tool-bar-container .p-button.p-highlight svg,
-.side-tool-bar-container [aria-pressed="true"] svg { color: #c4b5fd !important; fill: currentColor !important; }
+.side-tool-bar-container [aria-pressed="true"] svg { color: #ededed !important; fill: currentColor !important; }
 
-/* ── selected sidebar icon: purple-tinted dark, never white ── */
+/* ── selected sidebar icon: neutral dark, never white ── */
 :root, :root.dark-theme {
-  --interface-panel-selected-surface: #2a2140 !important;
-  --interface-menu-component-surface-selected: #2a2140 !important;
+  --interface-panel-selected-surface: #242424 !important;
+  --interface-menu-component-surface-selected: #242424 !important;
 }
 .side-bar-button-selected {
-  background-color: #2a2140 !important;
-  color: #c4b5fd !important;
+  background-color: #242424 !important;
+  color: #ededed !important;
 }
-.side-bar-button-selected svg, .side-bar-button-selected i { color: #c4b5fd !important; }
+.side-bar-button-selected svg, .side-bar-button-selected i { color: #ededed !important; }
 .selected:not(.p-galleria-thumbnail-item) {
-  background-color: #2a2140 !important;
+  background-color: #242424 !important;
   color: #e5e5e5 !important;
 }

@@ -1,6 +1,7 @@
-/* Hanzo Studio Copilot — black + Hanzo-purple sidebar chat.
- * Reuses the theme's CSS vars (hanzo-theme.css) so it tracks the shell palette;
- * hard-coded fallbacks keep it on-brand if a var is ever absent.
+/* Hanzo Studio Copilot — monochrome sidebar chat.
+ * Tracks the shell's neutral theme vars (hanzo-theme.css) with canonical Hanzo
+ * design-system fallbacks: surface #0a0a0a · raised #1a1a1a · border #1f1f1f ·
+ * text #ededed · dim #888 · brand/CTA #fff. No color accent — monochrome.
  */
 .hanzo-copilot {
   display: flex;
@@ -9,7 +10,7 @@
   width: 100%;
   box-sizing: border-box;
   background: var(--comfy-menu-bg, #0a0a0a);
-  color: var(--fg-color, #fff);
+  color: var(--fg-color, #ededed);
   font-size: 13px;
 }
 
@@ -26,8 +27,7 @@
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: var(--p-primary-color, #8b5cf6);
-  box-shadow: 0 0 8px var(--p-primary-color, #8b5cf6);
+  background: #ededed;
 }
 
 .hanzo-copilot .hz-messages {
@@ -50,12 +50,13 @@
   white-space: normal;
 }
 .hanzo-copilot .hz-user .hz-bubble {
-  background: var(--p-button-primary-background, #7c3aed);
-  color: #fff;
+  background: #ffffff;
+  color: #111;
   border-bottom-right-radius: 4px;
 }
 .hanzo-copilot .hz-assistant .hz-bubble {
-  background: #1a1a1f;
+  background: #1a1a1a;
+  color: var(--fg-color, #ededed);
   border: 1px solid var(--border-color, #1f1f1f);
   border-bottom-left-radius: 4px;
 }
@@ -69,17 +70,18 @@
 }
 .hanzo-copilot .hz-chip {
   background: transparent;
-  color: #c4b5fd;
-  border: 1px solid #2a2140;
+  color: #888;
+  border: 1px solid var(--border-color, #1f1f1f);
   border-radius: 999px;
   padding: 5px 10px;
   font-size: 11.5px;
   cursor: pointer;
-  transition: background 0.15s, border-color 0.15s;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
 }
 .hanzo-copilot .hz-chip:hover {
-  background: rgba(139, 92, 246, 0.16);
-  border-color: var(--p-primary-color, #8b5cf6);
+  background: #1a1a1a;
+  border-color: #333;
+  color: #ededed;
 }
 
 .hanzo-copilot .hz-input {
@@ -93,7 +95,7 @@
   flex: 1 1 auto;
   resize: none;
   background: var(--comfy-input-bg, #0a0a0a);
-  color: var(--fg-color, #fff);
+  color: var(--fg-color, #ededed);
   border: 1px solid var(--border-color, #1f1f1f);
   border-radius: 8px;
   padding: 8px 10px;
@@ -101,11 +103,11 @@
   outline: none;
 }
 .hanzo-copilot .hz-input textarea:focus {
-  border-color: var(--p-primary-color, #8b5cf6);
+  border-color: #888;
 }
 .hanzo-copilot .hz-send {
-  background: var(--p-button-primary-background, #7c3aed);
-  color: #fff;
+  background: #ffffff;
+  color: #111;
   border: none;
   border-radius: 8px;
   padding: 9px 14px;
@@ -113,7 +115,7 @@
   cursor: pointer;
   transition: background 0.15s;
 }
-.hanzo-copilot .hz-send:hover { background: #6d28d9; }
+.hanzo-copilot .hz-send:hover { background: #e4e4e7; }
 .hanzo-copilot .hz-send:disabled { opacity: 0.5; cursor: default; }
 
 /* Fallback toast (used only when the app toast service is unavailable) */
@@ -122,10 +124,9 @@
   bottom: 24px;
   left: 50%;
   transform: translate(-50%, 12px);
-  background: #17171c;
-  color: #fff;
-  border: 1px solid #2a2140;
-  border-left: 3px solid var(--p-primary-color, #8b5cf6);
+  background: #1a1a1a;
+  color: #ededed;
+  border: 1px solid var(--border-color, #1f1f1f);
   border-radius: 8px;
   padding: 10px 16px;
   font-size: 13px;
