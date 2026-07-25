@@ -64,7 +64,7 @@ log = logging.getLogger("studio.documents")
 _MAX_DESC = 4000          # one-line-ish description cap
 _MAX_FIELDS_BYTES = 256 * 1024
 _MAX_LIST = 200           # cap list/lineitem/row counts (bound render + storage)
-_ID_RE = re.compile(r"^[0-9a-f]{32}$")
+_ID_RE = re.compile(r"^[0-9a-f]{32}\Z")  # \Z (not $) so a trailing "\n" can't sneak past the id gate
 
 
 # ── Field schema — the ONE typed vocabulary the form, the AI-fill, and build() share ─
@@ -94,17 +94,28 @@ def _num(v, default=0.0):
         return float(default)
 
 
+# C0 control chars are illegal in XML 1.0 (except TAB \x09, LF \x0a, CR \x0d), so
+# python-docx/openpyxl/python-pptx (lxml) REJECT them — a raw \x00 in a field would
+# store a doc that then 500s on docx/xlsx download (or fails generate outright). Strip
+# them at this ONE coerce boundary so every renderer stays valid for any input.
+_C0_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f]")
+
+
+def _xml_text(value) -> str:
+    return _C0_RE.sub("", "" if value is None else str(value))
+
+
 def _coerce(value, ftype, of=None):
     """Coerce one field value to its declared type. Never raises — a bad value degrades
     to an empty/zero of the right shape so a hostile or sloppy AI reply can't break render."""
     if ftype in ("text", "textarea", "date", "email"):
-        return "" if value is None else str(value)
+        return _xml_text(value)
     if ftype in ("number", "money"):
         return _num(value)
     if ftype == "list":
         if isinstance(value, str):
             value = [ln for ln in re.split(r"[\n;]", value) if ln.strip()]
-        return [str(x) for x in value][:_MAX_LIST] if isinstance(value, list) else []
+        return [_xml_text(x) for x in value][:_MAX_LIST] if isinstance(value, list) else []
     if ftype in ("lineitems", "rows", "sections", "slides"):
         if not isinstance(value, list):
             return []
@@ -114,7 +125,7 @@ def _coerce(value, ftype, of=None):
                 continue
             out.append({sf["key"]: _coerce(row.get(sf["key"]), sf["type"]) for sf in (of or [])})
         return out
-    return "" if value is None else str(value)
+    return _xml_text(value)
 
 
 def coerce_fields(tmpl, raw):
@@ -756,7 +767,10 @@ def _jwt_alg(tok):
     try:
         h = tok.split(".", 1)[0]
         h += "=" * (-len(h) % 4)
-        return json.loads(base64.urlsafe_b64decode(h.encode())).get("alg", "")
+        alg = json.loads(base64.urlsafe_b64decode(h.encode())).get("alg", "")
+        # A crafted header can make alg a non-string (null/list/number/dict); the
+        # contract is "the alg string or ''", so a non-string is not a usable alg.
+        return alg if isinstance(alg, str) else ""
     except Exception:
         return ""
 
@@ -783,7 +797,7 @@ def _forwardable_bearer(request):
         return "Bearer " + tok
     if tok.count(".") == 2:
         alg = _jwt_alg(tok)
-        if alg[:2] in ("RS", "ES", "PS") or alg.startswith("Ed"):
+        if isinstance(alg, str) and (alg[:2] in ("RS", "ES", "PS") or alg.startswith("Ed")):
             return "Bearer " + tok
     return ""
 

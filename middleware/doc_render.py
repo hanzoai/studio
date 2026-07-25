@@ -715,6 +715,18 @@ def _render_sheet(ir: dict, fmt: str) -> bytes:
 _XLSX_FMT = {"money": "#,##0.00", "int": "#,##0", "pct": "0.0%", "date": "yyyy-mm-dd"}
 
 
+def _xlsx_safe(v):
+    """OWASP formula-injection guard (CWE-1236). openpyxl turns any string cell
+    starting with '=' into a LIVE formula; '+','-','@','\\t','\\r' are the other
+    DDE/HYPERLINK triggers. These XLSX outputs (budgets, expense reports) are made
+    to be shared, so a text cell that begins with a trigger char is coerced to text
+    with a leading apostrophe — inert in Excel/Sheets, invisible to the reader.
+    Numeric cells (int/float) are untouched: openpyxl only weaponizes strings."""
+    if isinstance(v, str) and v[:1] in ("=", "+", "-", "@", "\t", "\r"):
+        return "'" + v
+    return v
+
+
 def _sheet_xlsx(ir: dict) -> bytes:
     from openpyxl import Workbook
     from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
@@ -741,7 +753,7 @@ def _sheet_xlsx(ir: dict) -> bytes:
         for row in sh.get("rows", []):
             for ci, col in enumerate(cols, start=1):
                 v = row.get(col["key"])
-                c = ws.cell(row=r, column=ci, value=v)
+                c = ws.cell(row=r, column=ci, value=_xlsx_safe(v))
                 c.font = base_font
                 c.border = thin
                 nf = _XLSX_FMT.get(col.get("fmt"))
@@ -751,7 +763,7 @@ def _sheet_xlsx(ir: dict) -> bytes:
         for total in sh.get("totals", []):
             for ci, col in enumerate(cols, start=1):
                 v = total.get(col["key"])
-                c = ws.cell(row=r, column=ci, value=v)
+                c = ws.cell(row=r, column=ci, value=_xlsx_safe(v))
                 c.font = Font(name="Helvetica", bold=True, color=ink, size=10)
                 c.border = bot
                 nf = _XLSX_FMT.get(col.get("fmt"))

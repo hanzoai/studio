@@ -431,3 +431,66 @@ def test_download_rejects_bad_id_and_format(client):
     assert client.get("/v1/documents/not-a-real-id/download").status == 404
     doc_id = _gen(client, "memo", fields={"subject": "x", "body": "b"}).json()["id"]
     assert client.get(f"/v1/documents/{doc_id}/download?format=xlsx").status == 400  # not in memo formats
+
+
+# ── RED-review regressions (@e631d35f): XLSX formula injection, C0 control chars, crafted JWT alg ──
+
+def test_xlsx_text_cell_formula_is_neutralized():
+    # the guard: a formula-trigger text cell becomes inert text; numbers are untouched.
+    assert R._xlsx_safe("=1+1") == "'=1+1"
+    assert R._xlsx_safe("+a") == "'+a" and R._xlsx_safe("-b") == "'-b" and R._xlsx_safe("@c") == "'@c"
+    assert R._xlsx_safe("plain") == "plain" and R._xlsx_safe(42) == 42 and R._xlsx_safe(3.5) == 3.5
+    if not _fmt_available("xlsx"):
+        pytest.skip("openpyxl not installed")
+    import openpyxl
+    tmpl = next(t for t in D.CATALOG if t["id"] == "budget")
+    fields = {k: (list(v) if isinstance(v, list) else v) for k, v in tmpl["sample"].items()}
+    rows = [dict(r) for r in fields.get("rows", [])] or [dict.fromkeys(("category", "planned", "actual"), "")]
+    first_key = next(iter(rows[0]), "category")
+    rows[0][first_key] = "=cmd|'/c calc.exe'!A1"
+    fields["rows"] = rows
+    data, _ = D.render_document(tmpl, fields, "xlsx")
+    ws = openpyxl.load_workbook(io.BytesIO(data)).worksheets[0]
+    cells = [c for row in ws.iter_rows() for c in row]
+    assert all(c.data_type != "f" for c in cells), "no cell may be a live formula"
+    hit = [c for c in cells if isinstance(c.value, str) and "calc.exe" in c.value]
+    assert hit and all(not c.value.startswith("=") for c in hit), "the =-leading value was neutralized to text"
+
+
+def test_control_chars_stripped_and_ooxml_stays_valid():
+    # C0 controls (illegal in XML 1.0) are stripped at the coerce boundary; \t \n \r survive.
+    assert D._coerce("a\x00b\x0b\x1fc", "text") == "abc"
+    assert D._coerce("keep\ttab\nnl\rcr", "textarea") == "keep\ttab\nnl\rcr"
+    # end-to-end: a NUL/BEL in a field renders valid docx/pdf/md/xlsx — never a 500 / poison doc.
+    memo = next(t for t in D.CATALOG if t["id"] == "memo")
+    mf = dict(memo["sample"])
+    mf["body"] = "line1\x00\x07line2"
+    for fmt in [f for f in ("pdf", "docx", "md") if _fmt_available(f)]:
+        data, _ = D.render_document(memo, mf, fmt)
+        assert _valid(fmt, data), f"{fmt} must be valid after control-char strip"
+    if _fmt_available("xlsx"):
+        b = next(t for t in D.CATALOG if t["id"] == "budget")
+        bf = {k: (list(v) if isinstance(v, list) else v) for k, v in b["sample"].items()}
+        rows = [dict(r) for r in bf.get("rows", [])] or [{"category": "", "planned": 0, "actual": 0}]
+        rows[0][next(iter(rows[0]), "category")] = "x\x00y"
+        bf["rows"] = rows
+        assert _valid("xlsx", D.render_document(b, bf, "xlsx")[0])
+
+
+def test_crafted_jwt_alg_never_crashes_the_allowlist():
+    import base64
+
+    def jwt_with_alg(alg_value):  # a JWT header carrying an arbitrary (maybe non-string) alg
+        h = base64.urlsafe_b64encode(json.dumps({"alg": alg_value}).encode()).rstrip(b"=").decode()
+        return f"{h}.eyJzdWIiOiIxIn0.sig"
+
+    for bad in (None, [], 123, {"x": 1}, True):
+        assert D._jwt_alg(jwt_with_alg(bad)) == "", "a non-string alg must yield '' (no exception)"
+    assert D._jwt_alg(jwt_with_alg("RS256")) == "RS256"  # real asymmetric alg still read
+    from aiohttp.test_utils import make_mocked_request
+    req = make_mocked_request("POST", "/v1/documents/generate",
+                              headers={"Authorization": "Bearer " + jwt_with_alg(None)})
+    assert D._forwardable_bearer(req) == ""  # crafted alg → not forwarded, no 500
+    ok = make_mocked_request("POST", "/v1/documents/generate",
+                             headers={"Authorization": "Bearer " + jwt_with_alg("RS256")})
+    assert D._forwardable_bearer(ok) == "Bearer " + jwt_with_alg("RS256")  # asymmetric still forwarded
