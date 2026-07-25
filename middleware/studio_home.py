@@ -85,6 +85,14 @@ _WAN_NEG = "色调艳丽，过曝，静态，细节模糊不清，字幕，风�
 _VIDEO_EXT = (".mp4", ".webm")
 _MODEL3D_EXT = (".glb",)                  # Hunyuan3D SaveGLB output
 _HY3D_CKPT = "hunyuan_3d_v2.1.safetensors"  # bundled model+CLIP-vision+VAE (Comfy-Org repackaged)
+
+# The Z-Image-Turbo text-to-image model set, by the EXACT filenames the shipped
+# "Text to Image (Z-Image-Turbo)" blueprint names (unet / lumina2 text encoder / vae) —
+# the same locality rule as the Qwen/Wan sets. Turbo → 4 steps, cfg 1.0. This is the
+# composer's default "What should we create?" lane: words in, an image out.
+_ZIMAGE_UNET = "z_image_turbo_bf16.safetensors"
+_ZIMAGE_CLIP = "qwen_3_4b.safetensors"
+_ZIMAGE_VAE = "ae.safetensors"
 _SAVE_EXT = (".png",) + _VIDEO_EXT + _MODEL3D_EXT   # every extension a saver writes
 try:
     from middleware.gpu_dispatch import SAVE_NODES as _SAVERS   # the ONE output-node list
@@ -731,6 +739,43 @@ def _video_graph(prompt: str, prefix: str, *, ref_name: str | None = None,
     return g
 
 
+def _image_graph(prompt: str, prefix: str, *, width: int = 1024, height: int = 1024,
+                 seed: int | None = None, lessons: list[str] | None = None) -> dict:
+    """The proven Z-Image-Turbo text-to-image graph, lifted node-for-node from the shipped
+    "Text to Image (Z-Image-Turbo)" blueprint. UNETLoader(z_image_turbo_bf16) →
+    ModelSamplingAuraFlow(shift 3) → KSampler(res_multistep / simple, 4 steps, cfg 1.0,
+    denoise 1.0) over EmptySD3LatentImage; CLIPLoader(qwen_3_4b, type ``lumina2``) +
+    VAELoader(ae) feed the positive/negative CLIPTextEncode; VAEDecode → SaveImage.
+    width/height clamp to [256,2048] and snap to the 16-px grid. Turbo means 4 steps at
+    cfg 1.0 (a negative prompt is inert at cfg 1, but the node is kept for graph symmetry
+    with the other builders and so lessons can steer via the positive). Pure dict builder,
+    same shape as _video_graph — the text-to-image analogue the composer's default lane
+    dispatches. Unlike _fix_graph this DOES start from an EmptySD3LatentImage: it is a true
+    text-to-image create, not an edit of an existing asset."""
+    w = max(256, min(2048, int(width)))
+    w -= w % 16
+    h = max(256, min(2048, int(height)))
+    h -= h % 16
+    pos = prompt.strip()
+    if lessons:
+        pos += " Known mistakes on earlier versions — do not repeat: " + "; ".join(lessons) + "."
+    return {
+        "1": {"class_type": "UNETLoader", "inputs": {"unet_name": _ZIMAGE_UNET, "weight_dtype": "default"}},
+        "2": {"class_type": "CLIPLoader", "inputs": {"clip_name": _ZIMAGE_CLIP, "type": "lumina2", "device": "default"}},
+        "3": {"class_type": "VAELoader", "inputs": {"vae_name": _ZIMAGE_VAE}},
+        "4": {"class_type": "ModelSamplingAuraFlow", "inputs": {"model": ["1", 0], "shift": 3.0}},
+        "5": {"class_type": "CLIPTextEncode", "inputs": {"clip": ["2", 0], "text": pos}},
+        "6": {"class_type": "CLIPTextEncode", "inputs": {"clip": ["2", 0], "text": ""}},
+        "7": {"class_type": "EmptySD3LatentImage", "inputs": {"width": w, "height": h, "batch_size": 1}},
+        "8": {"class_type": "KSampler", "inputs": {"model": ["4", 0], "positive": ["5", 0],
+              "negative": ["6", 0], "latent_image": ["7", 0],
+              "seed": seed if seed is not None else random.randrange(2**31),
+              "steps": 4, "cfg": 1.0, "sampler_name": "res_multistep", "scheduler": "simple", "denoise": 1.0}},
+        "9": {"class_type": "VAEDecode", "inputs": {"samples": ["8", 0], "vae": ["3", 0]}},
+        "10": {"class_type": "SaveImage", "inputs": {"images": ["9", 0], "filename_prefix": prefix}},
+    }
+
+
 def _model3d_graph(ref_name: str, prefix: str, *, seed: int | None = None) -> dict:
     """The proven Hunyuan3D-2.1 image-to-mesh graph, lifted node-for-node from ComfyUI's
     own 3d_hunyuan3d-v2.1 template. ImageOnlyCheckpointLoader loads MODEL+CLIP_VISION+VAE
@@ -1345,6 +1390,34 @@ async def dispatch_video(request: web.Request, server, org: str, prompt: str,
     if stack:
         stacks_store.route_prefix(org, f"video/{stem}", stack, added_by=_owner_of(request))
     return {"ok": True, "prompt_id": pid, "output_prefix": f"video/{stem}"}
+
+
+async def dispatch_image(request: web.Request, server, org: str, prompt: str,
+                         width: int | None = None, height: int | None = None,
+                         seed: int | None = None, stack: str | None = None) -> dict:
+    """Generate an IMAGE from a text prompt — the proven Z-Image-Turbo text-to-image graph.
+    This is the composer's default "What should we create?" lane: no reference image (that
+    is fix/compose), pure text-to-image through the ONE dispatch funnel. Org is the
+    bearer-token claim (IAM middleware) ONLY — an ``org`` field in the body/query is never
+    read. Like video/fix, a model-less pod surfaces the real DispatchError ("unet_name …
+    not in []" / "no GPU worker") rather than a silent nothing, so the composer can ALWAYS
+    show a queued/generating state or an honest error."""
+    prompt = (prompt or "").strip()
+    if not 3 <= len(prompt) <= 2000:
+        raise DispatchError("describe what to create (3-2000 chars)")
+    root = _library_root(org)
+    stem = re.sub(r"[^a-zA-Z0-9_-]", "_", " ".join(prompt.split()[:8]))[:48] + f"_{_job_tag()}"
+    prefix = f"image/{stem}"
+    lessons = _lessons(org, root, [])
+    pid = await _dispatch(
+        request, server, org,
+        _image_graph(prompt, prefix, width=width or 1024, height=height or 1024,
+                     seed=seed, lessons=lessons),
+        lessons=lessons, kind="image", prompt=prompt,
+        refs=[], uploads=[], parents=[], output_prefix=prefix)
+    if stack:
+        stacks_store.route_prefix(org, prefix, stack, added_by=_owner_of(request))
+    return {"ok": True, "prompt_id": pid, "output_prefix": prefix}
 
 
 async def dispatch_model3d(request: web.Request, server, org: str,
@@ -2603,6 +2676,21 @@ def add_studio_home_routes(routes: web.RouteTableDef, server) -> None:
                 request, server, _org_of(request), body.get("path", ""),
                 body.get("instruction", ""), body.get("upload"), body.get("stack"),
                 strength=body.get("strength"), seed=body.get("seed"), mask=body.get("mask")))
+        except DispatchError as e:
+            return web.json_response({"error": str(e)}, status=400)
+
+    @routes.post("/v1/library/image")
+    async def image(request: web.Request):
+        """Generate an image from {prompt, width?, height?, seed?, stack?} — the proven
+        Z-Image-Turbo text-to-image graph, the composer's default create lane. Org from the
+        bearer claim only; a bad request is {"error": …} 400, never a silent nothing, so
+        the composer can always transition to a queued/generating state."""
+        body = await request.json()
+        try:
+            return web.json_response(await dispatch_image(
+                request, server, _org_of(request), body.get("prompt", ""),
+                width=body.get("width"), height=body.get("height"),
+                seed=body.get("seed"), stack=body.get("stack")))
         except DispatchError as e:
             return web.json_response({"error": str(e)}, status=400)
 

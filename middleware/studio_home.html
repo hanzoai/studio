@@ -15,8 +15,8 @@ body{background:var(--bg);color:var(--txt);font:400 1rem/1.5 Inter,system-ui,-ap
 .serif{font-family:"Iowan Old Style","Palatino Linotype",Georgia,serif}
 a{color:inherit}
 header{display:flex;align-items:center;gap:12px;padding:14px 26px;border-bottom:1px solid var(--line);
-position:fixed;top:0;left:0;right:0;background:rgba(10,10,11,.82);backdrop-filter:blur(14px);z-index:30;
-transition:transform .28s ease,opacity .28s ease}
+position:fixed;top:0;left:0;right:0;background:var(--bg);z-index:30;
+transition:transform .28s ease,opacity .28s ease}  /* OPAQUE: content scrolls under the fixed header, never shows through */
 /* immersive: header hides; a top hover-zone or mouse-near-top reveals it */
 body.immersive header{transform:translateY(-100%);opacity:0;border-bottom-color:transparent}
 body.immersive header.reveal{transform:translateY(0);opacity:1}
@@ -51,7 +51,10 @@ body.immersive{padding-top:0}
 @keyframes pulse{0%,100%{opacity:.35}50%{opacity:1}}
 #livebar .lb-q{color:var(--dim)} #livebar .lb-eta{color:var(--warn)} #livebar .sp{flex:1}
 #livebar a.lb-more{color:var(--dim);text-decoration:none;font-size:.8rem;border:1px solid var(--line);border-radius:7px;padding:3px 10px;cursor:pointer}
-#livebar.idle{opacity:.72}
+/* Idle dims only the TEXT — the sticky bar itself stays OPAQUE so gallery content never
+   shows through it on scroll. A full-bleed backing covers the (empty) side gutters too. */
+#livebar.idle .lb-q{opacity:.85}
+#livebar::before{content:"";position:absolute;left:-50vw;right:-50vw;top:-8px;bottom:-8px;background:var(--bg);z-index:-1}
 .hero{text-align:center;font-size:3rem;font-weight:500;margin:56px 0 26px;letter-spacing:-.01em}
 /* prompt box */
 .prompt{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:16px 16px 12px;max-width:820px;margin:0 auto}
@@ -62,6 +65,9 @@ body.immersive{padding-top:0}
 .pchip .k{color:var(--dim);font-size:.64rem;text-transform:uppercase;letter-spacing:.05em}
 .pchip .v{color:var(--txt);font-weight:500}
 .pico{border:1px solid var(--line);border-radius:9px;padding:8px 10px;background:var(--panel2);cursor:pointer;color:var(--dim);font-size:.9rem}
+/* developer-only controls (the </> request preview) — revealed only in Developers mode
+   (the shell's Developers pill sets body.hzdev). Hidden for everyone else. */
+body:not(.hzdev) .pico.dev{display:none}
 .psend{margin-left:auto;width:38px;height:38px;border-radius:10px;border:none;background:var(--brand);color:#111;font-size:1.1rem;cursor:pointer}
 /* templates */
 .sec-l{color:var(--dim);font-size:.82rem;margin:40px 0 12px}
@@ -126,6 +132,10 @@ dialog::backdrop{background:rgba(0,0,0,.6)} dialog textarea{width:100%;backgroun
 .vote.up.on{border-color:#3fb950;color:#3fb950;background:rgba(63,185,80,.12)}
 .vote.down.on{border-color:#f85149;color:#f85149;background:rgba(248,81,73,.12)}
 .vote.note.has{border-color:#4a9eff;color:#8fc3ff}
+/* Download — first-class (getting work OUT is the #1 job): a touch more prominent than the
+   feedback votes, always visible on the tile and in the viewer. */
+.vote.dl{border-color:var(--dim);color:var(--txt)} .vote.dl:hover{border-color:var(--brand);color:var(--brand)}
+#zrate .vote.dl{white-space:nowrap;font-weight:600}
 /* Rating bar on the full-image (zoom) view — same vote semantics as the cards, bigger tap targets for mobile. */
 #zrate{position:absolute;bottom:max(22px,calc(env(safe-area-inset-bottom) + 14px));left:50%;transform:translateX(-50%);z-index:2;display:none;gap:8px;align-items:center;background:rgba(12,12,14,.82);border:1px solid var(--line);border-radius:14px;padding:8px 12px;backdrop-filter:blur(7px);-webkit-backdrop-filter:blur(7px)}
 #zrate .vote{font-size:1.05rem;padding:8px 15px;color:#cdd;min-height:44px;display:inline-flex;align-items:center}
@@ -205,6 +215,13 @@ body.immersive #stage{display:block}
   .tabs{overflow-x:auto;white-space:nowrap;-webkit-overflow-scrolling:touch}
   .tabs button{padding:8px 10px;font-size:.84rem}
   .search{width:120px} .tabs .sp{display:none}
+  /* Filters: ONE horizontally-scrollable row instead of ~30 pills wrapping over the gallery. */
+  .chips{flex-wrap:nowrap;overflow-x:auto;-webkit-overflow-scrolling:touch;padding-bottom:3px}
+  .chips .chip{flex:0 0 auto}
+  /* Scroll affordance: a subtle right-edge fade + hidden scrollbar cue that the tab bar and
+     filter row scroll horizontally (they overflowed silently before). */
+  .tabs,.chips{scrollbar-width:none;-webkit-mask-image:linear-gradient(90deg,#000 93%,transparent);mask-image:linear-gradient(90deg,#000 93%,transparent)}
+  .tabs::-webkit-scrollbar,.chips::-webkit-scrollbar{height:0}
   #livebar{flex-wrap:wrap;font-size:.78rem}
   #bulkbar{left:8px;right:8px;transform:none;flex-wrap:wrap;justify-content:center}
   .card .delx,.card .addref{width:30px;height:30px}  /* bigger tap targets */
@@ -496,10 +513,10 @@ body.immersive #stage{display:block}
     <div class="pctl">
       <span class="pico" title="Attach a photo" onclick="attachPick()">+</span>
       <input id="attachfile" type="file" accept="image/*" multiple hidden>
-      <span class="pchip" onclick="pickPreset(event)" title="Scope the gallery to a design system"><span class="k">Design system</span><span class="v" id="ds">None</span></span>
-      <span class="pchip" onclick="laneChip(event)" title="Pick a template — or return to edit / compose"><span class="k">Template</span><span class="v" id="tmpl">None</span></span>
-      <span class="pico" title="Request preview (developer)" onclick="codeView(event)">&lt;/&gt;</span>
-      <span class="pchip" style="margin-left:auto" onclick="pickModel(event)" title="Choose the Hanzo AI model"><span class="k">Model</span><span class="v" id="model">Enso</span></span>
+      <span class="pchip" onclick="pickPreset(event)" title="Apply a visual style — the colors, type and mood of one of your design systems"><span class="k">Design system</span><span class="v" id="ds">None</span></span>
+      <span class="pchip" onclick="laneChip(event)" title="Start from a ready-made recipe — or return to the default edit / compose"><span class="k">Template</span><span class="v" id="tmpl">None</span></span>
+      <span class="pico dev" title="Developer: preview the exact API request the ↑ will send" onclick="codeView(event)">&lt;/&gt;</span>
+      <span class="pchip" style="margin-left:auto" onclick="pickModel(event)" title="Pick what to create — image, video, or chat with the assistant"><span class="k">Model</span><span class="v" id="model">Zen Image</span></span>
       <button class="psend" onclick="create()" title="Create">↑</button>
     </div>
   </div>
@@ -694,6 +711,7 @@ body.immersive #stage{display:block}
     <button class="vote up" id="zrup" title="Good result — 👍 teaches the model" aria-label="Upvote" onclick="zVote(1)">👍</button>
     <button class="vote down" id="zrdown" title="Wrong result — 👎 teaches the model" aria-label="Downvote" onclick="zVote(-1)">👎</button>
     <button class="vote note" id="zrnote" title="Critique this — the AI sees it, replies, and learns" aria-label="Add a comment" onclick="if(ZPATH)openFeedback(ZPATH)">💬 Comment</button>
+    <button class="vote dl" id="zrdl" title="Download — PNG, JPG or WebP" aria-label="Download this image" onclick="if(ZPATH)dlMenu(event,ZPATH)">⬇ Download</button>
   </div>
 </div>
 <dialog id="fixdlg">
@@ -907,6 +925,35 @@ const isVideo=p=>/\.(mp4|webm)$/i.test(p||'');
 const is3d=p=>/\.glb$/i.test(p||'');
 // The output-node in a graph, any medium — used to title runs by their real prefix.
 const saver=g=>Object.values(g||{}).find(n=>n&&['SaveImage','SaveVideo','SaveWEBM'].includes(n.class_type));
+// ── Download: getting work OUT is the #1 job — a visible control on every tile AND in the
+// viewer, with a format choice. PNG/original downloads the file as-is; JPG/WebP convert
+// client-side via <canvas> (same-origin, no re-render, no server round trip). ──────────
+function _trigDownload(url,name){const a=document.createElement('a');a.href=url;a.download=name;document.body.appendChild(a);a.click();a.remove();}
+const _baseName=p=>String(p||'image').split('/').pop().replace(/\.[a-z0-9]+$/i,'')||'image';
+async function downloadImage(path,fmt){
+  const src='/v1/library/file?path='+encodeURIComponent(path);
+  try{
+    if(fmt!=='jpg'&&fmt!=='jpeg'&&fmt!=='webp'){                          // original bytes, no re-encode (PNG / video / 3D)
+      const b=await (await fetch(src)).blob(); const u=URL.createObjectURL(b);
+      _trigDownload(u,_baseName(path)+'.'+((path.split('.').pop()||'png').toLowerCase())); setTimeout(()=>URL.revokeObjectURL(u),5000); toast('Downloaded'); return;
+    }
+    const mime=fmt==='webp'?'image/webp':'image/jpeg';
+    const img=new Image(); img.crossOrigin='anonymous';
+    await new Promise((res,rej)=>{img.onload=res;img.onerror=()=>rej(new Error('load'));img.src=src;});
+    const c=document.createElement('canvas'); c.width=img.naturalWidth; c.height=img.naturalHeight;
+    const cx=c.getContext('2d'); if(mime==='image/jpeg'){cx.fillStyle='#fff';cx.fillRect(0,0,c.width,c.height);} cx.drawImage(img,0,0);
+    c.toBlob(b=>{ if(!b){toast('Couldn’t convert — try PNG');return;} const u=URL.createObjectURL(b);
+      _trigDownload(u,_baseName(path)+'.'+(fmt==='webp'?'webp':'jpg')); setTimeout(()=>URL.revokeObjectURL(u),5000); toast('Downloaded '+(fmt==='webp'?'WebP':'JPG')); },mime,0.92);
+  }catch(e){ toast('Download failed — try again'); }
+}
+// Format chooser (the SAME monochrome popover as the composer pills). Images → PNG/JPG/WebP;
+// video/3D → one download of the original file (no format menu).
+function dlMenu(ev,path){ ev.stopPropagation(); const a=ev.currentTarget;
+  if(isVideo(path)||is3d(path)){ downloadImage(path,'orig'); return; }
+  openMenu(a,'Download',[{items:[
+    {v:'png',t:'PNG',d:'Original quality · transparent'},
+    {v:'jpg',t:'JPG',d:'Smaller · easy to share'},
+    {v:'webp',t:'WebP',d:'Smallest · modern web'}]}],'',v=>downloadImage(path,v)); }
 function tcard(x){const oc=x.office?"tab('documents')":`pickTemplate('${x.k}','${x.t.replace(/'/g,"")}')`;return `<button type="button" class="tcard" role="listitem" aria-label="${esc(x.t+' — '+x.d)}" onclick="${oc}"><span class="ic">${icon(x.ic)}</span><span class="tl">${esc(x.t)}</span><span class="td">${esc(x.d)}</span></button>`;}
 function tab(name){document.querySelectorAll('.tabs button').forEach(b=>b.classList.toggle('on',b.dataset.tab===name));
   // Leaving for another tab closes an open Stack detail (it lives over Assets).
@@ -1087,7 +1134,10 @@ function _popover(anchor,node){
   closeMenu(); node.classList.add('pmenu'); node.setAttribute('role','menu'); document.body.appendChild(node);
   const r=anchor.getBoundingClientRect(), mw=Math.min(node.offsetWidth||260,innerWidth-16);
   let left=r.left+scrollX; if(left+mw>scrollX+innerWidth-8)left=scrollX+innerWidth-8-mw;
-  node.style.left=Math.max(scrollX+8,left)+'px'; node.style.top=(r.bottom+6+scrollY)+'px';
+  node.style.left=Math.max(scrollX+8,left)+'px';
+  const mh=node.offsetHeight||0; let top=r.bottom+6;                 // default: below the anchor…
+  if(top+mh>innerHeight-8 && r.top-6-mh>8) top=r.top-6-mh;           // …flip ABOVE when below would clip the viewport bottom (e.g. the viewer's Download menu)
+  node.style.top=(top+scrollY)+'px';
   anchor.classList.add('on');
   const out=e=>{ if(!node.contains(e.target)&&e.target!==anchor&&!anchor.contains(e.target))closeMenu(); };
   const key=e=>{ if(e.key==='Escape'){e.preventDefault();closeMenu();anchor.focus&&anchor.focus();} };
@@ -1123,34 +1173,50 @@ function pickPreset(ev){ openDesignSystemPicker(ev.currentTarget); }
 // Template → the KIND catalog, grouped. Pick sets the lane (pickTemplate); None
 // returns to the neutral edit/compose composer (clearLane).
 function laneChip(ev){ openTemplatePicker(ev.currentTarget); }
-// Model → the REAL Hanzo catalog (api.hanzo.ai/v1/models), curated to the
-// Studio-relevant set and shown ONLY where the id truly exists upstream. Choice
-// persists (hz_model) and drives the composer + the Chat sidebar model.
-let MODEL=(()=>{try{return localStorage.hz_model||'enso'}catch(_){return 'enso'}})(), MODELS=null;
+// Model → the creative models the composer PRODUCES with. The composer creates
+// (image / video); Chat is the separate assistant surface. Default is an IMAGE model
+// so the headline "What should we create?" produces something visible on the first ↑.
+// Choice persists as hz_create_model — DECOUPLED from the chat model (hz_model) so
+// picking an image model here never breaks the assistant. Picking an Assistant model
+// routes ↑ to Chat instead — one clear create-vs-chat intent split.
+let MODEL=(()=>{try{return localStorage.hz_create_model||'zen-image'}catch(_){return 'zen-image'}})(), MODELS=null;
 const MODEL_SETS=[
-  {label:'Assistant',ids:['enso','enso-flash','enso-ultra','zen5','zen5-pro','zen5-flash','zen5-mini','zen5-coder','zen-vl']},
-  {label:'Image',    ids:['zen-image','stable-diffusion-3.5-large','openai-gpt-image-2','openai-gpt-image-1.5','openai-gpt-image-1']},
+  {label:'Image',    ids:['zen-image','stable-diffusion-3.5-large','openai-gpt-image-2','openai-gpt-image-1.5']},
   {label:'Video',    ids:['zen-video','wan2-2-t2v-a14b']},
-  {label:'Audio',    ids:['zen-music','zen-voice','zen-foley']},
+  {label:'Assistant',ids:['enso','enso-flash','enso-ultra','zen5','zen5-pro','zen5-flash','zen5-mini','zen-vl']},
 ];
 const _MLABEL={'enso':'Enso','enso-flash':'Enso Flash','enso-ultra':'Enso Ultra','zen-vl':'Zen VL','zen-image':'Zen Image',
-  'zen-video':'Zen Video','zen-music':'Zen Music','zen-voice':'Zen Voice','zen-foley':'Zen Foley',
-  'stable-diffusion-3.5-large':'Stable Diffusion 3.5 L','wan2-2-t2v-a14b':'Wan 2.2 Video',
-  'openai-gpt-image-1':'GPT Image 1','openai-gpt-image-1.5':'GPT Image 1.5','openai-gpt-image-2':'GPT Image 2'};
+  'zen-video':'Zen Video','stable-diffusion-3.5-large':'Stable Diffusion 3.5 L','wan2-2-t2v-a14b':'Wan 2.2 Video',
+  'openai-gpt-image-1.5':'GPT Image 1.5','openai-gpt-image-2':'GPT Image 2',
+  'zen5':'Zen5','zen5-pro':'Zen5 Pro','zen5-flash':'Zen5 Flash','zen5-mini':'Zen5 Mini'};
+// One plain-language line per model (same voice as the Design-system picker descriptions).
+const _MDESC={'zen-image':'Text-to-image — fast, high quality','stable-diffusion-3.5-large':'Text-to-image — detailed, photographic',
+  'openai-gpt-image-2':'Text-to-image — strong prompt-following','openai-gpt-image-1.5':'Text-to-image — reliable all-rounder',
+  'zen-video':'Text-to-video — short clips','wan2-2-t2v-a14b':'Text-to-video — higher fidelity',
+  'enso':'Chat assistant — plan, brainstorm, refine','enso-flash':'Chat — fastest replies','enso-ultra':'Chat — deepest reasoning',
+  'zen-vl':'Chat — reads images you share','zen5':'Chat — general assistant','zen5-pro':'Chat — stronger reasoning',
+  'zen5-flash':'Chat — quick answers','zen5-mini':'Chat — lightweight'};
+const _VIDEO_MODELS=new Set(['zen-video','wan2-2-t2v-a14b']);
+const _CHAT_MODELS=new Set(['enso','enso-flash','enso-ultra','zen-vl','zen5','zen5-pro','zen5-flash','zen5-mini']);
+// The composer routes ↑ by the selected model's modality: image → generate an image (or
+// edit/compose when photos are attached), video → generate a video, assistant → Chat.
+function modelModality(id){ return _VIDEO_MODELS.has(id)?'video':_CHAT_MODELS.has(id)?'assistant':'image'; }
+const _CORE_MODELS=new Set(['zen-image','zen-video','enso']);  // always offered, even if the gateway list is unreachable
 function modelLabel(id){ return _MLABEL[id]||String(id).replace(/[-_]/g,' ').replace(/\b\w/g,c=>c.toUpperCase()); }
 async function loadModels(){
   if(MODELS)return MODELS;
   let ids=new Set();
   try{ const r=await fetch('https://api.hanzo.ai/v1/models',{headers:{Accept:'application/json'}}); // public list, no creds
     const j=await r.json(); (Array.isArray(j)?j:j.data||[]).forEach(m=>{const id=m&&(m.id||m);if(id)ids.add(id);}); }catch(_){}
-  MODELS=MODEL_SETS.map(s=>({label:s.label,items:s.ids.filter(id=>ids.size?ids.has(id):id==='enso').map(id=>({v:id,t:modelLabel(id)}))})).filter(g=>g.items.length);
-  if(!MODELS.length)MODELS=[{label:'Assistant',items:[{v:'enso',t:'Enso'}]}]; // fail-safe
+  MODELS=MODEL_SETS.map(s=>({label:s.label,items:s.ids.filter(id=>!ids.size||ids.has(id)||_CORE_MODELS.has(id)).map(id=>({v:id,t:modelLabel(id),d:_MDESC[id]||''}))})).filter(g=>g.items.length);
+  if(!MODELS.length)MODELS=[{label:'Image',items:[{v:'zen-image',t:'Zen Image',d:_MDESC['zen-image']}]}]; // fail-safe: ALWAYS offer image create
   return MODELS;
 }
 function initModel(){ $('model')&&($('model').textContent=modelLabel(MODEL)); loadModels(); }
 function pickModel(ev){ const a=ev.currentTarget;
-  loadModels().then(groups=>openMenu(a,'Model — Hanzo AI',groups,MODEL,v=>{ MODEL=v; try{localStorage.hz_model=v}catch(_){}
-    $('model').textContent=modelLabel(v); toast('Model: '+modelLabel(v)); })); }
+  loadModels().then(groups=>openMenu(a,'Model — pick what to create',groups,MODEL,v=>{ MODEL=v; try{localStorage.hz_create_model=v}catch(_){}
+    $('model').textContent=modelLabel(v);
+    toast(modelModality(v)==='assistant'?('Chat: '+modelLabel(v)+' — ↑ opens Chat'):('Model: '+modelLabel(v))); })); }
 // </> → the developer request preview: the EXACT POST the ↑ will send for the
 // current prompt/attachments/lane, from the ONE planner create() uses (no drift).
 function codeView(ev){ const p=composerPlan();
@@ -1163,13 +1229,22 @@ function composerPlan(){
   const t=$('pin').value.trim();
   const libs=TRAY.filter(r=>r.kind==='lib').map(r=>r.ref), ups=TRAY.filter(r=>r.kind==='up').map(r=>r.ref);
   const n=libs.length+ups.length;
+  const mod=modelModality(MODEL);
+  // Assistant model + no photos + no template lane → a CHAT intent, handed to the ONE
+  // chat (the shell sidebar) rather than a render. (With a photo/lane the create lanes win.)
+  if(mod==='assistant'&&!n&&KIND!=='video'&&KIND!=='model3d'){
+    if(t.length<2)return{error:'Ask the assistant anything'};
+    return{kind:'chat',body:{text:t}}; }
   if(KIND==='model3d'){ if(n!==1)return{error:'Attach ONE photo with + to turn into 3D'};
     return{kind:'model3d',url:'/v1/library/model3d',body:libs.length?{path:libs[0]}:{upload:ups[0]}}; }
-  if(KIND==='video'){ if(t.length<3)return{error:'Describe the video you want'};
+  if(KIND==='video'||(mod==='video'&&n<=1)){ if(t.length<3)return{error:'Describe the video you want'};
     if(n>1)return{error:'Video takes at most one reference'};
     const b={prompt:t}; if(libs.length)b.path=libs[0]; else if(ups.length)b.upload=ups[0];
     return{kind:'video',url:'/v1/library/video',body:b}; }
-  if(!n)return{error:t.length<3?'Describe what to create, then attach a photo with +':'Attach a photo with + to edit or compose it'};
+  // Text only, no photo → text-to-image: the DEFAULT create. Words in, an image out —
+  // never the old "attach a photo first" dead end.
+  if(!n){ if(t.length<3)return{error:'Describe what you want to create'};
+    return{kind:'image',url:'/v1/library/image',body:{prompt:t}}; }
   if(t.length<3)return{error:'Describe what to make from your photo'+(n>1?'s':'')};
   if(n===1)return{kind:'fix',url:'/v1/library/fix',body:libs.length?{path:libs[0],instruction:t}:{upload:ups[0],instruction:t}};
   return{kind:'compose',url:'/v1/library/compose',body:{paths:libs,uploads:ups,instruction:t}};
@@ -1182,19 +1257,37 @@ function composerPlan(){
 // second a no-op so there is no double (billable) dispatch.
 async function create(){
   const plan=composerPlan();
-  if(plan.error){ toast(plan.error); return; }
+  if(plan.error){ toast(plan.error); $('pin').focus(); return; }
+  // Chat intent → hand the prompt to the ONE chat (the shell sidebar). No render, no gateway
+  // call here — the sidebar owns the chat transport (and its friendly errors).
+  if(plan.kind==='chat'){ const t=plan.body.text; $('pin').value='';
+    if(window.HanzoChat&&typeof window.HanzoChat.send==='function') window.HanzoChat.send(t,MODEL);
+    else toast('Open Chat (bottom-right) to talk to the assistant'); return; }
   const btn=document.querySelector('.psend');
   await enqueue(btn,'…',async()=>{
-    if(!(await gpuOnline()))toast('⚠ No GPU online — queues until a BYO-GPU connects');
-    const r=await fetch(plan.url,{method:'POST',headers:genHeaders(),body:JSON.stringify(plan.body)});
-    const j=await r.json().catch(()=>({}));
+    pulseGenerating(plan);                 // ALWAYS show a generating state the instant ↑ fires — never a silent no-op
+    const online=await gpuOnline();
+    let r,j;
+    try{ r=await fetch(plan.url,{method:'POST',headers:genHeaders(),body:JSON.stringify(plan.body)}); }
+    catch(e){ createFailed('network error — check your connection'); return; }
+    j=await r.json().catch(()=>({}));
     if(r.ok){
-      toast(plan.kind==='model3d'?'3D queued → see Queue & History':plan.kind==='video'?'Video queued → see Queue & History':'Queued → see Queue & History');
+      const noun=plan.kind==='model3d'?'3D model':plan.kind==='video'?'Video':'Image';
+      toast(online?(noun+' generating → Queue & History'):(noun+' queued — starts when a GPU connects'));
       track(plan.kind,{from:'composer'}); $('pin').value=''; clearTray();
       if(plan.kind==='model3d'||plan.kind==='video')clearLane();
-    } else if(!(await healStale(j))) toast('Failed: '+(errMsg(j)||('error '+r.status)));
+      updateLivebar().catch(()=>{});       // reflect the new job now, not on the next 5s poll
+    } else if(!(await healStale(j))) createFailed(errMsg(j)||('error '+r.status));
   });
 }
+// The moment ↑ fires, flip the always-visible live bar to a "preparing" state so create
+// always visibly takes hold (the real queue overwrites this on the next updateLivebar()).
+function pulseGenerating(plan){ const st=$('lbstatus'),lb=$('livebar'); if(!st||!lb)return; lb.classList.remove('idle');
+  const noun=plan.kind==='model3d'?'3D model':plan.kind==='video'?'video':'image';
+  st.innerHTML=`<span class="lb-run"><span class="spin"></span>Preparing your ${noun}…</span>`; }
+// A create failure is never silent and never raw JSON: one friendly line, prompt kept for retry.
+function createFailed(msg){ const lb=$('livebar'); if(lb)lb.classList.add('idle'); updateLivebar().catch(()=>{});
+  toast('Couldn’t start — '+String(msg).slice(0,120)+' · tap ↑ to retry'); $('pin').focus(); }
 async function load(){
   // The core library fetch: on a transient failure show a clear retry message instead
   // of a silent blank gallery (which reads as "all my assets vanished").
@@ -1294,11 +1387,12 @@ function render(){
       <div class="meta">
         <span class="t">${esc((a.path||'').split('/').pop())}</span>
         <span class="sub">${a.design||a.kind||''}${prov}</span>
-        <div class="row"><span class="st ${a.status}">${a.status==='deleted'?'archived':a.status}</span>${a.gate==='skipped'?`<span class="st" style="background:#7a6329;color:#ffd98a" title="Auto-judge could not sample this video — review manually">ungated</span>`:''}</div>
+        ${((a.status==='deleted'||a.status==='flagged')||a.gate==='skipped')?`<div class="row">${(a.status==='deleted'||a.status==='flagged')?`<span class="st ${a.status}">${a.status==='deleted'?'archived':'flagged'}</span>`:''}${a.gate==='skipped'?`<span class="st" style="background:#7a6329;color:#ffd98a" title="Auto-judge could not sample this video — review manually">ungated</span>`:''}</div>`:''}
         ${media&&!SELMODE?`<div class="fbrow" onclick="event.stopPropagation()">
           <button class="vote up ${(RATINGS[a.path]||{}).vote===1?'on':''}" title="Good result — 👍 teaches the model" onclick="castVote('${pe}',1)">👍</button>
           <button class="vote down ${(RATINGS[a.path]||{}).vote===-1?'on':''}" title="Wrong result — 👎 teaches the model" onclick="castVote('${pe}',-1)">👎</button>
           <button class="vote note ${(RATINGS[a.path]||{}).notes?'has':''}" title="Critique this — the AI sees it, replies, and learns" onclick="openFeedback('${pe}')">💬</button>
+          <button class="vote dl" title="Download this ${is3d(a.path)?'3D model':isVideo(a.path)?'video':'image'}" aria-label="Download" onclick="dlMenu(event,'${pe}')">⬇</button>
         </div>`:''}
         ${SELMODE?'':`<div class="row tools">
           ${review?`<button class="mini" onclick="setSt(${i},'draft')">${showDel?'Recover':'Restore'}</button>${showDel?`<button class="mini hot" onclick="purgeOne('${pe}')" title="Permanently delete — cannot be undone">🗑 Delete forever</button>`:''}`:`
@@ -2200,7 +2294,7 @@ function svCard(path,idx){
       :vid?`<div class="im" style="position:relative"><video src="${imgURL({path})}" poster="${thumb}" preload="none" muted playsinline style="width:100%;height:100%;object-fit:cover;display:block" ${SELMODE?'':`onclick="svOpen(${idx})"`}></video><span style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);font-size:1.6rem;color:#fff;text-shadow:0 2px 10px #000c;pointer-events:none">▶</span></div>`
       :`<div class="doc">${esc(path.split('/').pop())}</div>`}
     <div class="meta"><span class="t">${esc(path.split('/').pop())}</span>
-      ${a?`<div class="row"><span class="st ${a.status}">${a.status==='deleted'?'archived':a.status}</span></div>`:'<span class="sub">unavailable — asset deleted</span>'}
+      ${a?((a.status==='deleted'||a.status==='flagged')?`<div class="row"><span class="st ${a.status}">${a.status==='deleted'?'archived':'flagged'}</span></div>`:''):'<span class="sub">unavailable — asset deleted</span>'}
       ${SELMODE?'':`<div class="row tools">
         <button class="mini" onclick="setCover('${pe}')">Set cover</button>
         <button class="mini" onclick="svRemove(['${pe}'])" title="Return to gallery">Remove</button>

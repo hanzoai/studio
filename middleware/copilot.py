@@ -62,6 +62,11 @@ _OP_REQUIRED = {
 _GATEWAY_URL = "https://api.hanzo.ai/v1/chat/completions"
 _LOCAL_URL = "http://127.0.0.1:1234/v1/chat/completions"
 
+# Server-side gateway keys, in precedence order (never in page source). When none is set
+# the caller's own token is forwarded ONLY when the gateway can verify it (pk-/asymmetric
+# JWT) — see gateway_auth. This is why a browser HS256 session token no longer 502s.
+_SERVER_TOKEN_ENV = ("STUDIO_COPILOT_TOKEN", "STUDIO_COMMERCE_TOKEN")
+
 # Single tool: the model calls it to both reply and edit the graph.
 _EDIT_TOOL = {
     "type": "function",
@@ -142,17 +147,19 @@ class CopilotError(Exception):
 
 
 def _resolve_target(request) -> tuple[str, str, str]:
-    """(url, model, token) for this request."""
+    """(url, model, bearer_token) for this request.
+
+    The bearer is chosen by the ONE fail-closed gateway allowlist (``gateway_auth``): a
+    server-side key first, else the caller's own token ONLY when the gateway can verify it
+    (a publishable ``pk-`` key or an asymmetric/JWKS JWT). A symmetric HS256 hanzo.id
+    session token is NEVER forwarded — the gateway rejects it ("unsupported signing method:
+    HS256"), which was the 502 that made Chat show a raw error. ``token`` is the bare value
+    (no ``Bearer `` prefix) since ``_post_chat`` adds it; "" when none is usable."""
+    from middleware import gateway_auth
     url = os.environ.get("STUDIO_COPILOT_URL", "").strip() or _DEFAULT_URL
     model = os.environ.get("STUDIO_COPILOT_MODEL", "").strip() or "enso"
-    token = (
-        os.environ.get("STUDIO_COPILOT_TOKEN", "").strip()
-        or os.environ.get("STUDIO_COMMERCE_TOKEN", "").strip()
-    )
-    if not token:
-        auth = request.headers.get("Authorization", "")
-        if auth.startswith("Bearer "):
-            token = auth[7:]
+    bearer = gateway_auth.ai_bearer(request, server_env=_SERVER_TOKEN_ENV)
+    token = bearer[7:] if bearer[:7].lower() == "bearer " else bearer
     return url, model, token
 
 

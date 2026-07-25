@@ -263,6 +263,49 @@ NOT bolted onto graphs; its own module, store, endpoints, and Home tab.
   re-open a saved doc to edit (PATCH). The dead `doc/sheet/paper` composer KIND placeholders
   were replaced with one "Office documents" card that opens the tab.
 
+## Create composer + gateway auth (v0.18.1 — the intuitive first Create)
+The "What should we create?" composer must PRODUCE something on the first ↑, and Chat must
+reach the gateway. Both were fixed here.
+
+- **Gateway auth is ONE fail-closed seam** (`middleware/gateway_auth.py`): the canonical
+  allowlist for handing a browser-edge bearer to api.hanzo.ai. `ai_bearer(request,
+  server_env=…)` = a server key first (never in page source), else the caller's own token
+  ONLY when the gateway can verify it — a publishable `pk-` key or an asymmetric/JWKS JWT
+  (RS/ES/PS/EdDSA). A symmetric **HS256 hanzo.id session token is NEVER forwarded** (the
+  gateway rejects it → "unsupported signing method: HS256" → the old 502), nor any secret
+  `sk-`/`hk-`/`rk-` key. `copilot.py._resolve_target` now uses it
+  (`_SERVER_TOKEN_ENV=(STUDIO_COPILOT_TOKEN, STUDIO_COMMERCE_TOKEN)`), so the editor-ops
+  chat no longer 502s on the session token. The shipped **Chat sidebar** (`shell.js`) still
+  streams enso directly from the gateway with `window.HZ.pk` when present; its copilot
+  fallback now renders ONE friendly line on failure — never the raw backend error/JSON.
+  (documents.py's AI-fill has an equivalent private copy; it should adopt `gateway_auth`
+  once its concurrent review lands — the shared module is the going-forward one way.)
+- **Text-to-image is the default create lane** (`studio_home.py`: `_image_graph` +
+  `dispatch_image` + `POST /v1/library/image`): the proven **Z-Image-Turbo** graph
+  (`z_image_turbo_bf16` / `qwen_3_4b` lumina2 / `ae` vae; EmptySD3LatentImage →
+  ModelSamplingAuraFlow shift 3 → KSampler res_multistep/simple 4 steps cfg 1.0 →
+  SaveImage), lifted from the shipped blueprint, dispatched through the ONE funnel like
+  video/fix. Words in → an image out; a model-less pod surfaces the real DispatchError, not
+  a silent nothing.
+- **Composer routes ↑ by the selected model's modality** (`studio_home.html`): default
+  `MODEL='zen-image'` from `hz_create_model` — DECOUPLED from the chat model (`hz_model`),
+  so an image pick never breaks the assistant (and `shell.js chatModel()` ignores a
+  non-chat `hz_model`). `composerPlan()`: assistant model → hand to the ONE chat via
+  `window.HanzoChat.send` (exposed by shell.js); no photo → text-to-image; 1 photo → fix;
+  2+ → compose; video model/lane → video. `create()` ALWAYS pulses a "Preparing…"
+  live-bar state and, on failure, shows a friendly retry (prompt kept) — never a silent
+  no-op. The code model (`zen5-coder`) is hidden from the creative composer; each model has
+  a one-line description; the `</>` request-preview is gated behind Developers mode
+  (`body.hzdev`, set by the shell's Developers pill).
+- **P2 friction fixes** (`studio_home.html` + `shell.css`): a first-class **Download** on
+  every tile AND in the viewer (PNG original · JPG/WebP client-side canvas convert, the
+  popover flips up near the viewport bottom); the fixed header + sticky live-bar are now
+  OPAQUE (were translucent → content scrolled under them); the **ARCHIVED** badge shows
+  ONLY for truly deleted/flagged items (active work is unbadged); on mobile the ~30 filter
+  pills collapse to one horizontally-scrollable row and the tab bar gets a scroll fade
+  affordance. The Chat empty state (shell.js) shows an assistant identity + one line + 3
+  tappable starters.
+
 ## Tests
 `tests-unit/{folder_paths_test,middleware_test,app_test,prompt_server_test,studio_home_test,documents_test}` —
 run `uv run pytest tests-unit/folder_paths_test tests-unit/middleware_test
@@ -273,4 +316,11 @@ covered by `middleware_test/iam_auth_test.py`,
 `folder_paths_test/org_scoping_test.py`. Office documents:
 `documents_test/test_documents.py` (catalog invariants, the full template×format render
 matrix asserted by magic numbers, AI-fill parse + fail-closed bearer allowlist, and the
-REST surface incl. per-org isolation on a real aiohttp app).
+REST surface incl. per-org isolation on a real aiohttp app). Create composer + gateway
+auth: `middleware_test/gateway_auth_test.py` (the fail-closed allowlist — HS256/`sk-` refused,
+`pk-`/asymmetric forwarded, server-key precedence, session-cookie path),
+`middleware_test/copilot_test.py::test_resolve_target_never_forwards_hs256_session_token`,
+and `studio_home_test/create_image_test.py` (the Z-Image-Turbo graph shape, `dispatch_image`
+validation, and served-HTML invariants: default-model-is-image, text→image route,
+Create-always-shows-a-state, first-class Download, no ARCHIVED badge on active items, opaque
+bars, gated `</>`, collapsed mobile filters).

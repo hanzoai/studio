@@ -5,11 +5,45 @@ node types are passed in as a set, so this stays as light as the other
 middleware tests. Async paths run via asyncio.run to avoid a plugin dependency.
 """
 import asyncio
+import base64
 import json
 
 from middleware import copilot
 
 VALID = {"KSampler", "SaveImage", "UpscaleModelLoader", "ImageUpscaleWithModel", "CLIPTextEncode"}
+
+
+def _jwt(alg: str) -> str:
+    h = base64.urlsafe_b64encode(json.dumps({"alg": alg, "typ": "JWT"}).encode()).rstrip(b"=").decode()
+    return f"{h}.eyJzdWIiOiIxIn0.sig"
+
+
+class _Req:
+    def __init__(self, auth=None, cookies=None):
+        self.headers = {"Authorization": auth} if auth else {}
+        self.cookies = cookies or {}
+
+
+# ------------------------------------------------- _resolve_target token allowlist
+def test_resolve_target_never_forwards_hs256_session_token(monkeypatch):
+    """The regression the whole task turns on: the copilot MUST NOT forward the browser's
+    HS256 session token (gateway → "unsupported signing method: HS256" → 502). It forwards
+    only a gateway-verifiable caller token, and a server key wins."""
+    for env in copilot._SERVER_TOKEN_ENV:
+        monkeypatch.delenv(env, raising=False)
+    hs, rs = _jwt("HS256"), _jwt("RS256")
+    # HS256 session token (header OR cookie) → NOT forwarded
+    assert copilot._resolve_target(_Req("Bearer " + hs))[2] == ""
+    assert copilot._resolve_target(_Req(None, {"access_token": hs}))[2] == ""
+    # a JWKS-verifiable JWT → forwarded (bare token, no "Bearer " prefix — _post_chat adds it)
+    assert copilot._resolve_target(_Req("Bearer " + rs))[2] == rs
+    # a publishable pk- key → forwarded
+    assert copilot._resolve_target(_Req("Bearer pk-xyz"))[2] == "pk-xyz"
+    # a secret key → never forwarded
+    assert copilot._resolve_target(_Req("Bearer sk-secret"))[2] == ""
+    # a configured server gateway key wins, stripped to the bare token
+    monkeypatch.setenv("STUDIO_COPILOT_TOKEN", "hk-server")
+    assert copilot._resolve_target(_Req("Bearer " + hs))[2] == "hk-server"
 
 
 # --------------------------------------------------------------- validate_ops

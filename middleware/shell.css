@@ -31,6 +31,14 @@
 .hz-m.u{align-self:flex-end;background:#f4f4f6;color:#111;border-bottom-right-radius:3px}
 .hz-m.a{align-self:flex-start;background:#1a1a20;border:1px solid #232329;border-bottom-left-radius:3px}
 .hz-m.sys{align-self:center;color:#8a8a95;font-size:.78rem;background:none}
+/* chat empty state — assistant identity + one line + 3 tappable starters */
+.hz-empty{display:flex;flex-direction:column;align-items:center;text-align:center;gap:6px;margin:auto 0;padding:8px 6px}
+.hz-empty .hz-eav{width:40px;height:40px;border-radius:50%;background:#1a1a20;border:1px solid #232329;display:flex;align-items:center;justify-content:center;font-size:1.1rem;color:#ececf1}
+.hz-empty .hz-etitle{font-size:.95rem;font-weight:600;color:#ececf1}
+.hz-empty .hz-esub{font-size:.8rem;color:#8a8a95;line-height:1.45;max-width:280px}
+.hz-empty .hz-starters{display:flex;flex-direction:column;gap:7px;width:100%;margin-top:8px}
+.hz-empty .hz-starter{background:#131317;color:#ececf1;border:1px solid #232329;border-radius:10px;padding:9px 12px;font:inherit;font-size:.82rem;text-align:left;cursor:pointer}
+.hz-empty .hz-starter:hover{border-color:#3a3a48;background:#17171c}
 #hzform{display:flex;gap:8px;padding:12px;border-top:1px solid #232329}
 #hzform input{flex:1;background:#0a0a0d;border:1px solid #232329;border-radius:9px;color:#ececf1;padding:9px 11px;font:inherit;font-size:.85rem;outline:none}
 #hzform button{background:#f4f4f6;color:#111;border:none;border-radius:9px;padding:0 14px;font-weight:600;cursor:pointer}

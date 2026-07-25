@@ -25,7 +25,10 @@
   var AI_BASE = (HZ.aiBase || "https://api.hanzo.ai").replace(/\/+$/, "");
   var PK = HZ.pk || "";
   var USE_STREAM = STUDIO && !!PK;   // direct enso streaming on the home; the editor keeps the copilot (graph ops)
-  function chatModel() { try { return localStorage.hz_model || HZ.model || "enso"; } catch (_) { return HZ.model || "enso"; } }
+  // The Chat model is always an ASSISTANT model. The composer stores its CREATE model
+  // separately (hz_create_model), so an image pick can never leak here; and a stale
+  // hz_model that isn't a chat model is ignored (falls back to the enso assistant).
+  function chatModel() { try { var m = localStorage.hz_model; if (m && /^(enso|zen5|zen-vl)/.test(m)) return m; } catch (_) {} return HZ.model || "enso"; }
   var $ = function (id) { return document.getElementById(id); };
   var el = function (tag, attrs, html) {
     var e = document.createElement(tag);
@@ -71,18 +74,49 @@
     document.body.appendChild(chat);
     document.body.appendChild(wb);
     wire(); wireWb();
+    setDev(devOn());        // developer controls (the composer's </>) follow this ONE flag
     loadSession(); loadWallet(); loadGpus();
     if (!STUDIO) editorBoot();
   }
+  // Developers mode — a persistent, page-spanning flag. `body.hzdev` reveals dev-only
+  // controls (e.g. the composer's </> request preview) via CSS; opening the Developers
+  // workbench turns it on. One flag, no per-control JS coupling.
+  function devOn() { try { return localStorage.hz_dev === "1"; } catch (_) { return false; } }
+  function setDev(on) { try { if (on) localStorage.hz_dev = "1"; } catch (_) {} if (document.body) document.body.classList.toggle("hzdev", !!on); }
 
   // ── chat: the ONE path — POST /v1/copilot/chat; ops applied via the editor's
   // existing applier when present (no second chat mechanism) ────────────────────
   var HISTORY = [];
   function addMsg(role, text) {
+    var e = $("hzmsgs").querySelector(".hz-empty"); if (e) e.remove();   // first message clears the welcome
     var m = el("div", { class: "hz-m " + role }, esc(text));
     $("hzmsgs").appendChild(m); $("hzmsgs").scrollTop = $("hzmsgs").scrollHeight;
     return m;
   }
+  // Empty state: who the assistant is, one line on what it does, and 3 tappable starters —
+  // so an opened, empty chat is never a blank box. Editor vs home get fitting starters.
+  function chatStarters() {
+    return STUDIO
+      ? ["A poster for a jazz night", "Ideas for a product launch image", "How do I make a logo transparent?"]
+      : ["What does this workflow do?", "Add a 4x upscale to the output", "Make the image sharper"];
+  }
+  function chatEmptyState() {
+    var box = $("hzmsgs"); if (!box || HISTORY.length || box.querySelector(".hz-empty")) return;
+    var wrap = el("div", { class: "hz-empty" });
+    wrap.innerHTML =
+      '<div class="hz-eav">✦</div><div class="hz-etitle">Hanzo&nbsp;Assistant</div>' +
+      '<div class="hz-esub">' + (STUDIO
+        ? "Brainstorm ideas, sharpen a prompt, or ask how to make something."
+        : "Ask me to change your workflow, or how any node works.") + '</div>' +
+      '<div class="hz-starters">' + chatStarters().map(function (s) {
+        return '<button class="hz-starter" type="button">' + esc(s) + "</button>";
+      }).join("") + "</div>";
+    box.appendChild(wrap);
+    wrap.querySelectorAll(".hz-starter").forEach(function (b) {
+      b.onclick = function () { $("hzin").value = ""; send(b.textContent).catch(function () {}); };
+    });
+  }
+  function openChat() { chat.classList.add("on"); if (!HISTORY.length) chatEmptyState(); var i = $("hzin"); if (i) i.focus(); }
   async function graphContext() {
     var app = window.app;
     if (!app || typeof app.graphToPrompt !== "function") return {};
@@ -166,8 +200,11 @@
     var payload = Object.assign({ model: chatModel(), messages: HISTORY.slice(-20) }, await graphContext());
     var r = await getJSON("/v1/copilot/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
     pending.remove();
-    var reply = (r.body && r.body.reply) || (r.body && r.body.error) || (r.ok ? "" : "chat failed (" + r.status + ")");
+    // Only ever render the model's reply. A backend error (e.g. the gateway unreachable)
+    // becomes ONE friendly line — never the raw error string or JSON in a chat bubble.
+    var reply = r.body && r.body.reply;
     if (reply) { HISTORY.push({ role: "assistant", content: reply }); addMsg("a", reply); }
+    else if (!r.ok) { addMsg("sys", "Hanzo AI is unavailable right now — please try again in a moment."); }
     var ops = (r.body && r.body.ops) || [];
     if (ops.length && window.HanzoCopilot && typeof window.HanzoCopilot.applyOps === "function") {
       try { window.HanzoCopilot.applyOps(ops); } catch (e) { addMsg("sys", "couldn't apply changes: " + e.message); }
@@ -283,7 +320,7 @@
     }
   }
   function wireWb() {
-    devBtn.onclick = function () { wb.classList.contains("on") ? wbClose() : wbOpen(); };
+    devBtn.onclick = function () { setDev(true); wb.classList.contains("on") ? wbClose() : wbOpen(); };
     $("hzwbx").onclick = wbClose;
     $("hzwbre").onclick = function () { wbRender(); };
     wb.querySelectorAll(".hzwb-tab").forEach(function (b) {
@@ -298,7 +335,7 @@
   }
 
   function wire() {
-    chatBtn.onclick = function () { chat.classList.toggle("on"); if (chat.classList.contains("on")) $("hzin").focus(); };
+    chatBtn.onclick = function () { if (chat.classList.contains("on")) chat.classList.remove("on"); else openChat(); };
     $("hzclose").onclick = function () { chat.classList.remove("on"); };
     $("hzform").onsubmit = function (e) {
       e.preventDefault();
@@ -399,6 +436,18 @@
       body: JSON.stringify({ name: name.trim(), graph: { workflow: g.workflow, output: g.output } }) });
     alert(r.ok ? '★ Saved template "' + (r.body.name || name.trim()) + '"' : "Save failed: " + ((r.body && r.body.error) || r.status));
   }
+
+  // The ONE public chat entry, so other surfaces (the composer's assistant-intent ↑) reuse
+  // this exact sidebar + transport instead of building a second chat. `send` opens the
+  // panel and sends; an optional assistant model is remembered for the sidebar.
+  window.HanzoChat = {
+    open: openChat,
+    send: function (text, model) {
+      if (model) { try { localStorage.hz_model = model; } catch (_) {} }
+      openChat();
+      if (text && text.trim()) send(text.trim()).catch(function () {});
+    },
+  };
 
   if (document.body) mount();
   else document.addEventListener("DOMContentLoaded", mount);
