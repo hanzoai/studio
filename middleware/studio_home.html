@@ -468,6 +468,13 @@ body.immersive #stage{display:block}
   .atable .upc{display:none}
   .tpick-grid{grid-template-columns:repeat(auto-fill,minmax(44vw,1fr))}
 }
+/* Office documents — describe/fill dialog + generated-doc cards (house monochrome) */
+#docdlg{max-width:560px}
+#docdlg .docl{display:block;font-size:.7rem;color:var(--dim);margin:10px 0 4px;text-transform:uppercase;letter-spacing:.04em}
+#docform{max-height:44vh;overflow:auto;padding-right:4px}
+#docform .docfield input,#docform .docfield textarea{width:100%;background:#0f0f12;color:var(--txt);border:1px solid var(--line);border-radius:8px;padding:8px 10px;font:inherit;font-size:.86rem;min-height:0;margin:0;resize:vertical}
+#docform .docfield textarea{line-height:1.45}
+#doclib .doc{flex-direction:column;gap:8px}
 </style>
 <header>
   <svg class="logo" viewBox="0 0 520 520" xmlns="http://www.w3.org/2000/svg"><rect width="520" height="520" rx="120" fill="#111"/><g transform="translate(100,100) scale(4.78)" fill="#fff"><path d="M22.21 67V44.6369H0V67H22.21Z"/><path d="M66.7038 22.3184H22.2534L0.0878906 44.6367H44.4634L66.7038 22.3184Z"/><path d="M22.21 0H0V22.3184H22.21V0Z"/><path d="M66.7198 0H44.5098V22.3184H66.7198V0Z"/><path d="M66.7198 67V44.6369H44.5098V67H66.7198Z"/></g></svg>
@@ -502,6 +509,7 @@ body.immersive #stage{display:block}
 
   <div class="tabs">
     <button class="on" data-tab="assets" onclick="tab('assets')">Assets</button>
+    <button data-tab="documents" onclick="tab('documents')" title="Create office documents — PDF, Word, Excel, PowerPoint"><span class="ic-slot" data-ic="doc"></span>Documents</button>
     <button data-tab="templates" onclick="tab('templates')">Templates</button>
     <button data-tab="designsys" onclick="tab('designsys')">Design systems</button>
     <button data-tab="pipelines" onclick="tab('pipelines')">Workflows</button>
@@ -578,6 +586,18 @@ body.immersive #stage{display:block}
     <div class="tgrid" id="orgtmpl"></div>
     <div class="sec-l">Start from a kind</div>
     <div class="grid" id="tgall"></div>
+  </section>
+  <section id="documents" hidden>
+    <div class="row" style="justify-content:space-between;align-items:flex-end;flex-wrap:wrap;gap:10px">
+      <div>
+        <div class="sec-l" style="margin:0">Create an office document</div>
+        <div style="color:var(--dim);font-size:.78rem;margin-top:3px">Pick a template, describe it in one line or fill a short form — download a PDF, Word, Excel or PowerPoint. No GPU needed.</div>
+      </div>
+      <input class="search" id="docq" placeholder="Search templates…" oninput="renderDocCatalog()">
+    </div>
+    <div id="docgall" class="grid" style="margin-top:16px"></div>
+    <div class="sec-l">Your documents</div>
+    <div id="doclib" class="grid"></div>
   </section>
   <section id="designsys" hidden></section>
   <section id="pipelines" hidden><div class="grid" id="wfgrid"></div></section>
@@ -768,6 +788,25 @@ body.immersive #stage{display:block}
     <div class="row" style="justify-content:flex-end;gap:6px;margin-top:8px"><button type="button" class="mini" onclick="fbdlg.close()">Close</button><button type="submit" class="mini hot">Send</button></div>
   </form>
 </dialog>
+<dialog id="docdlg" aria-label="Create an office document">
+  <div class="row" style="justify-content:space-between;align-items:flex-start;gap:10px">
+    <h3 style="font-size:1rem" id="docdtitle">Document</h3>
+    <button class="mini" onclick="docdlg.close()">Close</button>
+  </div>
+  <p id="docddesc" style="color:var(--dim);font-size:.82rem;margin:4px 0 0"></p>
+  <label class="docl" id="docdesclabel">Describe it in one line</label>
+  <textarea id="docdesc" rows="2" placeholder="e.g. Invoice for Acme Corp, 3 line items totaling $5,000, net-30"></textarea>
+  <div class="row" style="justify-content:space-between;gap:8px">
+    <button class="mini" id="docformtoggle" onclick="docToggleForm()">Fill the form instead ▾</button>
+    <button class="mini hot" id="docgen" onclick="docGenerate('describe')">Generate with AI</button>
+  </div>
+  <div id="docform" hidden style="margin-top:12px;border-top:1px solid var(--line);padding-top:12px"></div>
+  <div id="docformactions" hidden class="row" style="justify-content:flex-end;margin-top:10px">
+    <button class="mini hot" id="docformgo" onclick="docGenerate('form')">Generate document</button>
+  </div>
+  <div id="docderr" class="dlgerr"></div>
+  <div id="docresult" hidden style="margin-top:14px;border-top:1px solid var(--line);padding-top:12px"></div>
+</dialog>
 <div id="live" class="sr-only" aria-live="polite" role="status"></div>
 <script defer src="https://analytics.hanzo.ai/script.js" data-website-id="2a8e455c-2b24-481b-860b-2499911ce2c2"></script>
 <script type="module" src="https://unpkg.com/@google/model-viewer@3.5.0/dist/model-viewer.min.js"></script>
@@ -789,10 +828,10 @@ const TEMPLATES=[
  {k:'social',    t:'Social / Ad',     d:'Posts · ads · campaigns',    ic:'megaphone', wf:'social', grp:'Marketing'},
  {k:'email',     t:'Marketing email', d:'HTML / MJML',                ic:'mail', wf:'email', grp:'Marketing'},
  {k:'deck',      t:'Deck',            d:'Sales · investor',           ic:'presentation', wf:'deck', grp:'Marketing'},
- // ── Documents ──
- {k:'doc',       t:'Document',        d:'Word · guide',               ic:'doc', wf:'doc', grp:'Documents'},
- {k:'sheet',     t:'Spreadsheet',     d:'xlsx · data',                ic:'table', wf:'sheet', grp:'Documents'},
- {k:'paper',     t:'Paper (LaTeX)',   d:'Academic · PDF',             ic:'grad', wf:'paper', grp:'Documents'},
+ // ── Office documents (PDF · Word · Excel · PowerPoint) — the non-GPU document subsystem.
+ //    One discovery card that opens the Documents tab; the real, searchable catalog of
+ //    22 templates is server-driven (GET /v1/documents). ──
+ {k:'office', t:'Office documents', d:'PDF · Word · Excel · deck', ic:'doc', grp:'Documents', office:true},
  // ── Web ──
  {k:'site',      t:'Website / App',   d:'From hanzo.app templates',   ic:'monitor', wf:'site', grp:'Web'},
 ];
@@ -868,14 +907,15 @@ const isVideo=p=>/\.(mp4|webm)$/i.test(p||'');
 const is3d=p=>/\.glb$/i.test(p||'');
 // The output-node in a graph, any medium — used to title runs by their real prefix.
 const saver=g=>Object.values(g||{}).find(n=>n&&['SaveImage','SaveVideo','SaveWEBM'].includes(n.class_type));
-function tcard(x){return `<button type="button" class="tcard" role="listitem" aria-label="${esc(x.t+' — '+x.d)}" onclick="pickTemplate('${x.k}','${x.t.replace(/'/g,"")}')"><span class="ic">${icon(x.ic)}</span><span class="tl">${esc(x.t)}</span><span class="td">${esc(x.d)}</span></button>`;}
+function tcard(x){const oc=x.office?"tab('documents')":`pickTemplate('${x.k}','${x.t.replace(/'/g,"")}')`;return `<button type="button" class="tcard" role="listitem" aria-label="${esc(x.t+' — '+x.d)}" onclick="${oc}"><span class="ic">${icon(x.ic)}</span><span class="tl">${esc(x.t)}</span><span class="td">${esc(x.d)}</span></button>`;}
 function tab(name){document.querySelectorAll('.tabs button').forEach(b=>b.classList.toggle('on',b.dataset.tab===name));
   // Leaving for another tab closes an open Stack detail (it lives over Assets).
   if(CURSTACK){CURSTACK=null;if(SELMODE){SELMODE=false;SEL.clear();updateBulk();}}
   $('stackview').hidden=true;
   const sec=name==='deleted'?'assets':name;   // Archive reuses the assets grid, filtered to archived (status==='deleted')
-  for(const s of ['assets','templates','pipelines','runs','designsys'])$(s).hidden=s!==sec;
+  for(const s of ['assets','documents','templates','pipelines','runs','designsys'])$(s).hidden=s!==sec;
   if(name==='designsys')renderDesignSystems();
+  if(name==='documents')loadDocuments();
   if(name==='deleted'){FILTER='deleted';}
   else if(name==='assets'&&(FILTER==='deleted'||FILTER==='flagged')){FILTER='all';}
   if(sec==='assets'){paintChips();render();updateBulk();}
@@ -905,6 +945,125 @@ async function renderTemplate(slug){
   toast(r.ok?'Render queued → see Queue & History':'Failed: '+(errMsg(j)||('error '+r.status)));
 }
 function editorCtx(){ if(CTX&&CTX.id)location.href='/?advanced=1&load='+encodeURIComponent(CTX.id); }
+
+// ── Office documents — the non-GPU document pipeline (server catalog + AI-fill + render) ──
+// Catalog is server-driven (/v1/documents); generated docs live per-org (/v1/documents/library).
+// The describe path is a layered enhancement — the form alone renders a real file, so a
+// broken/unauthorized LLM never blocks creating a document (422 needFields → reveal the form).
+// AI-fill reuses the SAME token the shipped Chat uses: window.HZ.pk (publishable pk- key),
+// sent as the bearer; the backend forwards it (pk- allowlist) or a server key, else falls back.
+let DOCCAT=null, DOCLIB=[], DOCTMPL=null, DOCID=null;
+const DOCFMT={pdf:'PDF',docx:'Word',xlsx:'Excel',pptx:'PowerPoint',md:'Markdown'};
+function docHeaders(){ const h=genHeaders(); try{const pk=window.HZ&&window.HZ.pk; if(pk)h['Authorization']='Bearer '+pk;}catch(_){} return h; }
+async function loadDocuments(){
+  if(!DOCCAT){ try{DOCCAT=await (await fetch('/v1/documents')).json();}catch(_){DOCCAT={categories:[]};} }
+  renderDocCatalog(); loadDocLib();
+}
+function docTmpl(id){ for(const c of (DOCCAT&&DOCCAT.categories)||[]) for(const t of c.templates) if(t.id===id) return t; return null; }
+function renderDocCatalog(){
+  const q=(($('docq')&&$('docq').value)||'').toLowerCase();
+  let html='';
+  for(const c of (DOCCAT&&DOCCAT.categories)||[]){
+    const ts=c.templates.filter(t=>!q||(t.name+' '+t.description).toLowerCase().includes(q));
+    if(!ts.length)continue;
+    html+=`<div style="grid-column:1/-1;color:var(--dim);font-size:.8rem;margin:8px 0 2px">${esc(c.name)}</div>`;
+    html+=ts.map(t=>`<button type="button" class="tcard" onclick="openDoc('${qq(t.id)}')"><span class="ic">${esc(t.icon)}</span><span class="tl">${esc(t.name)}</span><span class="td">${esc(t.description)}</span></button>`).join('');
+  }
+  const g=$('docgall'); if(g)g.innerHTML=html||'<div class="empty" style="grid-column:1/-1">No matching templates.</div>';
+}
+// Build the structured form from the template's typed fields. Complex fields (line items,
+// rows, sections, slides) use a friendly "cell | cell" line editor, not raw JSON.
+function docCellsToText(f,v){ return (Array.isArray(v)?v:[]).map(r=>f.of.map(s=>(r&&r[s.key]!=null?r[s.key]:'')).join(' | ')).join('\n'); }
+function docField(f,val){
+  const id='df_'+f.key, req=f.required?' *':'';
+  const lab=`<label class="docl">${esc(f.label)}${req}</label>`;
+  if(f.of){ const ph=f.of.map(s=>s.label).join(' | ');
+    return lab+`<textarea id="${id}" rows="4" placeholder="${esc(ph)}  (one per line)">${esc(docCellsToText(f,val))}</textarea>`; }
+  if(f.type==='textarea') return lab+`<textarea id="${id}" rows="3">${esc(val||'')}</textarea>`;
+  if(f.type==='list') return lab+`<textarea id="${id}" rows="3" placeholder="One per line">${esc(Array.isArray(val)?val.join('\n'):(val||''))}</textarea>`;
+  const typ=(f.type==='number'||f.type==='money')?'number':(f.type==='email'?'email':'text');
+  return lab+`<input id="${id}" type="${typ}" value="${esc(val==null?'':val)}">`;
+}
+function docBuildForm(t,values){ values=values||{}; $('docform').innerHTML=t.fields.map(f=>`<div class="docfield">${docField(f,values[f.key])}</div>`).join(''); }
+function docReadForm(){
+  const out={};
+  for(const f of DOCTMPL.fields){ const el=$('df_'+f.key); if(!el)continue; const raw=el.value;
+    if(f.of){ out[f.key]=raw.split('\n').map(l=>l.trim()).filter(Boolean).map(l=>{const c=l.split('|').map(x=>x.trim());const o={};f.of.forEach((s,i)=>o[s.key]=c[i]||'');return o;}); }
+    else if(f.type==='list'){ out[f.key]=raw.split('\n').map(x=>x.trim()).filter(Boolean); }
+    else { out[f.key]=raw; } }
+  return out;
+}
+function docResetDialog(){ $('docderr').style.display='none'; $('docresult').hidden=true; $('docresult').innerHTML='';
+  $('docform').hidden=true; $('docformactions').hidden=true; $('docformtoggle').style.display=''; $('docformtoggle').textContent='Fill the form instead ▾'; }
+function openDoc(id){
+  const t=docTmpl(id); if(!t){toast('Template unavailable');return;}
+  DOCTMPL=t; DOCID=null;
+  $('docdtitle').textContent=(t.icon?t.icon+' ':'')+t.name;
+  $('docddesc').textContent=t.description;
+  $('docdesc').value=''; $('docdesclabel').style.display=''; $('docdesc').style.display=''; $('docgen').style.display='';
+  docResetDialog(); docBuildForm(t,t.sample||{});
+  $('docdlg').showModal(); setTimeout(()=>$('docdesc').focus(),40);
+}
+async function editDoc(id){
+  let doc; try{doc=await (await fetch('/v1/documents/'+encodeURIComponent(id))).json();}catch(_){doc=null;}
+  if(!doc||!doc.template){toast('Could not open document');return;}
+  DOCTMPL=doc.template; DOCID=id;
+  $('docdtitle').textContent=(doc.icon?doc.icon+' ':'')+(doc.title||doc.template.name);
+  $('docddesc').textContent='Edit the details, then re-generate.';
+  $('docdesclabel').style.display='none'; $('docdesc').style.display='none';
+  docResetDialog(); docBuildForm(DOCTMPL,doc.fields||{});
+  $('docform').hidden=false; $('docformactions').hidden=false; $('docformtoggle').style.display='none';
+  docShowResult({download:doc.download,formats:doc.formats},true);
+  $('docdlg').showModal();
+}
+function docToggleForm(){ const show=$('docform').hidden; $('docform').hidden=!show; $('docformactions').hidden=!show;
+  $('docformtoggle').textContent=show?'Hide the form ▴':'Fill the form instead ▾'; }
+function docShowResult(j,quiet){
+  const dl=j.download||{}, formats=j.formats||(DOCTMPL&&DOCTMPL.formats)||[];
+  const btns=formats.map(f=>`<a class="mini hot" href="${dl[f]||('/v1/documents/'+DOCID+'/download?format='+f)}" style="text-decoration:none">⬇ ${DOCFMT[f]||f.toUpperCase()}</a>`).join(' ');
+  $('docresult').innerHTML=(quiet?'<div style="color:var(--dim);font-size:.8rem;margin-bottom:8px">Download:</div>'
+    :'<div style="color:var(--ok);font-size:.82rem;margin-bottom:8px">✓ Saved to your Documents — download:</div>')
+    +`<div class="row" style="gap:6px;flex-wrap:wrap">${btns}</div>`;
+  $('docresult').hidden=false;
+}
+async function docGenerate(mode){
+  if(!DOCTMPL)return;
+  const btn=mode==='describe'?$('docgen'):$('docformgo');
+  const body={templateId:DOCTMPL.id};
+  if(mode==='describe'){ const d=$('docdesc').value.trim(); if(d.length<3){toast('Describe the document first');return;} body.description=d; }
+  else { body.fields=docReadForm(); }
+  const err=$('docderr'); err.style.display='none';
+  const old=btn.textContent; btn.disabled=true; btn.textContent='Generating…';
+  try{
+    let r;
+    if(mode==='form' && DOCID){ r=await fetch('/v1/documents/'+encodeURIComponent(DOCID),{method:'PATCH',headers:docHeaders(),body:JSON.stringify(body)}); }
+    else { r=await fetch('/v1/documents/generate',{method:'POST',headers:docHeaders(),body:JSON.stringify(body)}); }
+    const j=await r.json().catch(()=>({}));
+    if(r.status===422 && j.needFields){   // AI unavailable — reveal the form so the user finishes it (never blocks)
+      docBuildForm(DOCTMPL,(j.template&&j.template.sample)||DOCTMPL.sample||{});
+      $('docform').hidden=false; $('docformactions').hidden=false; $('docformtoggle').textContent='Hide the form ▴';
+      err.textContent=(j.error||'AI fill unavailable')+' — fill the fields below and click Generate document.'; err.style.display='block'; return;
+    }
+    if(!r.ok){ err.textContent=errMsg(j)||('Error '+r.status); err.style.display='block'; return; }
+    if(j.id)DOCID=j.id;
+    if(j.note){ err.textContent=j.note; err.style.display='block'; }
+    if(j.fields){ docBuildForm(DOCTMPL,j.fields); }
+    $('docform').hidden=false; $('docformactions').hidden=false;
+    if($('docformtoggle').style.display!=='none')$('docformtoggle').textContent='Hide the form ▴';
+    docShowResult(j); loadDocLib(); track('document_generate',{template:DOCTMPL.id,mode});
+  }catch(e){ err.textContent='Network error — try again'; err.style.display='block'; }
+  finally{ btn.disabled=false; btn.textContent=old; }
+}
+async function loadDocLib(){ let d={documents:[]}; try{d=await (await fetch('/v1/documents/library')).json();}catch(_){}
+  DOCLIB=d.documents||[]; renderDocLib(); }
+function docLibCard(d){
+  const dl=(d.formats||[]).map(f=>`<a class="mini" href="/v1/documents/${encodeURIComponent(d.id)}/download?format=${f}" style="text-decoration:none" title="Download ${DOCFMT[f]||f}">⬇ ${DOCFMT[f]||f.toUpperCase()}</a>`).join(' ');
+  const dt=d.createdAt?new Date(d.createdAt*1000).toLocaleDateString():'';
+  return `<div class="card"><div class="doc" onclick="editDoc('${qq(d.id)}')" style="cursor:pointer" title="Edit"><div style="font-size:1.7rem">${esc(d.icon||'📄')}</div><div style="color:var(--txt);font-size:.82rem;padding:0 8px">${esc(d.title)}</div></div>`
+    +`<div style="padding:8px"><div class="sub">${esc(d.category||'')}${dt?' · '+dt:''}</div><div class="row" style="gap:5px;margin-top:6px;flex-wrap:wrap">${dl}<button class="mini" onclick="delDoc('${qq(d.id)}')" title="Delete">🗑</button></div></div></div>`;
+}
+function renderDocLib(){ const el=$('doclib'); if(el)el.innerHTML=DOCLIB.length?DOCLIB.map(docLibCard).join(''):'<div class="empty" style="grid-column:1/-1">No documents yet — create one above.</div>'; }
+async function delDoc(id){ if(!await ask('Delete this document? This cannot be undone.'))return; try{await fetch('/v1/documents/'+encodeURIComponent(id),{method:'DELETE',headers:genHeaders()});}catch(_){} loadDocLib(); }
 // ── Product usage → insights.hanzo.ai. sendBeacon to the capture endpoint; the
 // /v1 prefix is load-bearing (root /e/ is IAM-gated). The key is the project's
 // public write token. Fails silent — telemetry must never break the product.

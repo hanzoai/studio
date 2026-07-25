@@ -219,10 +219,58 @@ shared Hanzo IAM (standard OIDC code flow). No embedding.
   behind disabled API-nodes) are intentionally left. patch_frontend.py keeps its
   orthogonal concern (URLs/domains + `Comfy-Org` → `Hanzo AI`).
 
+## Office documents (the non-GPU pipeline)
+Studio's creative side is ComfyUI graphs → GPU. Office documents are the **orthogonal**
+subsystem: structured content (a template's typed fields, filled by a person OR by the AI)
+→ a pure-Python renderer → a real `.pdf/.docx/.xlsx/.pptx/.md`. No graph, no model, no GPU.
+NOT bolted onto graphs; its own module, store, endpoints, and Home tab.
+
+- **Renderers** (`middleware/doc_render.py`, pure — no HTTP/storage/org): one neutral IR
+  per archetype (`doc` prose blocks · `sheet` sheets · `deck` slides) and EXACTLY ONE
+  renderer per format. Adding a template = one `build(fields)->(kind,ir)`; adding a format =
+  one renderer. Deps imported lazily so the module loads stdlib-only. **PDF** prefers
+  WeasyPrint (full-CSS, monochrome print stylesheet); when its native pango/cairo stack is
+  absent (the light CI unit venv, model-less pods) a **built-in pure-Python PDF writer**
+  (base-14 Helvetica, WinAnsi/cp1252, auto-pagination, `/Info` title) produces a valid
+  `%PDF` — so every format renders with just the wheels. **DOCX/XLSX/PPTX** = python-docx /
+  openpyxl / python-pptx (real, always). Native libs in the `Dockerfile` (libpango/…).
+- **Catalog + AI-fill + store + REST** (`middleware/documents.py`): ONE declarative `CATALOG`
+  of 22 common templates (Documents 15 → pdf/docx/md · Spreadsheets 4 → xlsx/pdf/docx/md ·
+  Presentations 3 → pptx/pdf/md). Each template's typed `fields` drive the form, the AI-fill
+  JSON, AND the renderer inputs (one schema, three uses). Registered from within
+  `add_studio_home_routes` with the SAME injected tenancy resolvers as `stacks_store`
+  (`org_of`/`owner_of`). Per-org store `orgs/<org>/documents/` (atomic `index.json` +
+  `<id>/doc.json`), doc.json is the source of truth, files rendered on demand at download.
+  Endpoints (`/v1` house style): `GET /v1/documents` (grouped catalog),
+  `POST /v1/documents/generate` `{templateId, description?|fields?}`,
+  `GET /v1/documents/library`, `GET|PATCH|DELETE /v1/documents/{id}`,
+  `GET /v1/documents/{id}/download?format=`.
+- **AI-fill is a LAYERED ENHANCEMENT** — the structured-form path renders a valid document
+  with NO LLM, so a broken/unauthorized gateway can NEVER block creation (`422 needFields`
+  → the UI reveals the prefilled form). It reuses the SAME working token the shipped Chat
+  uses: the browser sends `window.HZ.pk` (the publishable `pk-` key `_publishable`/
+  `_hz_config_script` emit) as the bearer to `/v1/documents/generate`; the backend forwards
+  it, fail-closed, in order: (1) a **server-side gateway key** (`STUDIO_DOC_TOKEN`→
+  `STUDIO_COPILOT_TOKEN`→`STUDIO_COMMERCE_TOKEN`); (2) else the caller's own token, forwarded
+  ONLY when gateway-verifiable — a publishable `pk-` key or an asymmetric/JWKS JWT
+  (RS/ES/PS/EdDSA). A symmetric **HS256 hanzo.id session token is NEVER forwarded** (the
+  gateway rejects it: "unsupported signing method: HS256"), nor any secret `sk-`/`hk-` key.
+  Model = `STUDIO_DOC_MODEL`→`STUDIO_CHAT_MODEL`→`enso` (matches window.HZ.model).
+- **UI** (`middleware/studio_home.html`, vanilla JS, monochrome/Geist): a **📄 Documents**
+  Home tab — searchable server-driven catalog + "Your documents" grid with Download
+  PDF/Word/Excel/PowerPoint. The `docdlg` dialog: describe in one line → Generate with AI
+  (sends window.HZ.pk), or fill the short typed form → Generate; edit fields before/after;
+  re-open a saved doc to edit (PATCH). The dead `doc/sheet/paper` composer KIND placeholders
+  were replaced with one "Office documents" card that opens the tab.
+
 ## Tests
-`tests-unit/{folder_paths_test,middleware_test,app_test,prompt_server_test}` —
+`tests-unit/{folder_paths_test,middleware_test,app_test,prompt_server_test,studio_home_test,documents_test}` —
 run `uv run pytest tests-unit/folder_paths_test tests-unit/middleware_test
-tests-unit/app_test tests-unit/prompt_server_test -q`. The auth/tenancy work is
+tests-unit/app_test tests-unit/prompt_server_test tests-unit/studio_home_test
+tests-unit/documents_test -q`. The auth/tenancy work is
 covered by `middleware_test/iam_auth_test.py`,
 `middleware_test/session_test.py` and
-`folder_paths_test/org_scoping_test.py`.
+`folder_paths_test/org_scoping_test.py`. Office documents:
+`documents_test/test_documents.py` (catalog invariants, the full template×format render
+matrix asserted by magic numbers, AI-fill parse + fail-closed bearer allowlist, and the
+REST surface incl. per-org isolation on a real aiohttp app).

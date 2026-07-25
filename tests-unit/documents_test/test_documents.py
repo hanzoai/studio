@@ -1,0 +1,416 @@
+"""Office documents — the non-GPU document pipeline.
+
+Covers the four concerns end to end:
+  * catalog        — every template well-formed, formats within archetype capability,
+                     wire shape JSON-serializable (no build fn leaks).
+  * render         — schema -> IR -> real bytes for EVERY template in EVERY declared
+                     format, asserted by magic numbers (%PDF, OOXML zip, markdown).
+  * AI-fill parse  — a mocked gateway completion -> coerced, typed fields; the
+                     forwardable-bearer allowlist is fail-closed (JWT/pk- only).
+  * REST + tenancy — generate/library/get/patch/delete/download over a real aiohttp app,
+                     per-org isolation, honest 4xx, correct Content-Type/-Disposition.
+
+Runs without a GPU, without torch, and without the WeasyPrint native stack (the built-in
+PDF fallback produces a valid %PDF), so it is safe for the dependency-light CI unit gate.
+"""
+import io
+import json
+import sys
+import zipfile
+from pathlib import Path
+
+import pytest
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+
+from aiohttp import web
+
+import folder_paths
+from middleware import documents as D
+from middleware import doc_render as R
+
+
+# ── helpers ────────────────────────────────────────────────────────────────────────
+
+def _valid(fmt: str, b: bytes) -> bool:
+    if fmt == "pdf":
+        return b[:5] == b"%PDF-" and b"%%EOF" in b[-64:]
+    if fmt == "md":
+        try:
+            return len(b) > 10 and bool(b.decode("utf-8").strip())  # real, non-empty UTF-8 text
+        except UnicodeDecodeError:
+            return False
+    try:
+        return zipfile.ZipFile(io.BytesIO(b)).testzip() is None
+    except zipfile.BadZipFile:
+        return False
+
+
+def _jwt(alg: str) -> str:
+    """A JWT with the given header alg (payload/sig are inert — only the header matters
+    to the forwardable-bearer allowlist)."""
+    import base64
+    h = base64.urlsafe_b64encode(json.dumps({"alg": alg, "typ": "JWT"}).encode()).rstrip(b"=").decode()
+    return f"{h}.eyJzdWIiOiIxIn0.sig"
+
+
+_OOXML_PART = {"docx": "word/document.xml", "xlsx": "xl/workbook.xml", "pptx": "ppt/presentation.xml"}
+
+
+# ── catalog ─────────────────────────────────────────────────────────────────────────
+
+def test_catalog_has_all_common_templates():
+    ids = {t["id"] for t in D.CATALOG}
+    expected = {
+        # Documents
+        "resume", "cover_letter", "business_letter", "memo", "report", "proposal", "sow",
+        "meeting_notes", "invoice", "receipt", "contract", "press_release", "newsletter",
+        "one_pager", "certificate",
+        # Spreadsheets
+        "budget", "expense_tracker", "timesheet", "project_plan",
+        # Presentations
+        "pitch_deck", "business_review", "project_update",
+    }
+    assert expected <= ids, f"missing templates: {expected - ids}"
+    assert len(D.CATALOG) == len(ids), "duplicate template ids"
+
+
+def test_catalog_invariants():
+    for t in D.CATALOG:
+        assert t["category"] in D.CATEGORY_ORDER
+        assert t["formats"], f"{t['id']} has no formats"
+        # every template's declared formats are within its archetype's capability
+        kind, _ir = D.build_ir(t, t["sample"])
+        assert set(t["formats"]) <= set(R.KIND_FORMATS[kind]), \
+            f"{t['id']} ({kind}) declares formats outside {R.KIND_FORMATS[kind]}"
+        # the primary (first) format is the archetype's native format
+        assert t["formats"][0] == R.KIND_FORMATS[kind][0]
+        # fields typed and keyed
+        for f in t["fields"]:
+            assert f["key"] and f["label"] and f["type"]
+
+
+def test_public_catalog_is_json_serializable_without_build_fn():
+    grouped = D.catalog_grouped()
+    blob = json.dumps({"categories": grouped})  # must not raise (build fn stripped)
+    assert '"build"' not in blob
+    names = [g["name"] for g in grouped]
+    assert names == [c for c in D.CATEGORY_ORDER]  # grouped in the canonical order
+    total = sum(len(g["templates"]) for g in grouped)
+    assert total == len(D.CATALOG)
+
+
+# ── render matrix: every template × every declared format ───────────────────────────
+
+@pytest.mark.parametrize("tmpl", D.CATALOG, ids=[t["id"] for t in D.CATALOG])
+def test_every_template_renders_every_format(tmpl):
+    for fmt in tmpl["formats"]:
+        data, title = D.render_document(tmpl, tmpl["sample"], fmt)
+        assert isinstance(data, (bytes, bytearray)) and data, f"{tmpl['id']}/{fmt} produced no bytes"
+        assert _valid(fmt, data), f"{tmpl['id']}/{fmt} invalid magic bytes"
+        if fmt in _OOXML_PART:
+            names = zipfile.ZipFile(io.BytesIO(data)).namelist()
+            assert _OOXML_PART[fmt] in names, f"{tmpl['id']}/{fmt} missing {_OOXML_PART[fmt]}"
+        assert title
+
+
+def test_pdf_fallback_is_a_valid_pdf_without_weasyprint():
+    # The built-in writer must stand alone (CI/pods without pango). Assert directly.
+    ir = R.doc_ir("T", [R.title("Hello"), R.para("World " * 40),
+                        R.table(["A", "B"], [["1", "2"], ["3", "4"]], foot=[["", "sum"]]),
+                        R.bullets(["one", "two"]), R.signature("sig")])
+    pdf = R._builtin_pdf(ir)
+    assert pdf[:5] == b"%PDF-" and b"%%EOF" in pdf[-64:]
+    assert pdf.count(b" obj") == pdf.count(b"endobj")  # balanced objects
+    assert b"/Root 1 0 R" in pdf and b"startxref" in pdf
+
+
+def test_invoice_math_flows_into_the_document():
+    inv = D.get_template("invoice")
+    fields = dict(inv["sample"], tax_rate=10, items=[
+        {"description": "A", "qty": 2, "unit_price": 100},   # 200
+        {"description": "B", "qty": 1, "unit_price": 50},    # 50  -> subtotal 250, tax 25, total 275
+    ])
+    md = D.render_document(inv, fields, "md")[0].decode()
+    assert "Subtotal" in md and "250.00" in md
+    assert "275.00" in md  # total = subtotal + 10% tax
+
+
+# ── AI-fill: parse + coercion + fail-closed bearer allowlist ────────────────────────
+
+def test_parse_fill_from_tool_call_coerces_types():
+    inv = D.get_template("invoice")
+    completion = {"choices": [{"message": {"tool_calls": [{"function": {
+        "name": "fill_document",
+        "arguments": json.dumps({"fields": {
+            "number": "INV-9", "to_name": "Acme Corp", "tax_rate": "8.5",
+            "items": [{"description": "Consulting", "qty": "3", "unit_price": "$1,000"}],
+            "bogus_key": "dropped",
+        }}),
+    }}]}}]}
+    fields = D.parse_fill(completion, inv)
+    assert fields["number"] == "INV-9"
+    assert fields["tax_rate"] == 8.5 and isinstance(fields["tax_rate"], float)
+    assert fields["items"][0] == {"description": "Consulting", "qty": 3.0, "unit_price": 1000.0}
+    assert "bogus_key" not in fields                       # unknown keys dropped
+    assert "from_name" in fields                           # every declared field present
+
+
+def test_parse_fill_from_embedded_json_content():
+    memo = D.get_template("memo")
+    completion = {"choices": [{"message": {"content":
+        'Here you go: {"fields": {"subject": "Policy", "body": "Text"}}'}}]}
+    fields = D.parse_fill(completion, memo)
+    assert fields["subject"] == "Policy" and fields["body"] == "Text"
+
+
+def test_parse_fill_tolerates_garbage():
+    memo = D.get_template("memo")
+    assert D.parse_fill({}, memo) == {}
+    assert D.parse_fill({"choices": [{"message": {"content": "no json here"}}]}, memo) == {}
+
+
+class _Req:
+    def __init__(self, auth=None, cookies=None):
+        self.headers = {"Authorization": auth} if auth else {}
+        self.cookies = cookies or {}
+
+
+def test_forwardable_bearer_is_fail_closed(monkeypatch):
+    for env in D._SERVER_TOKEN_ENV:
+        monkeypatch.delenv(env, raising=False)
+    rs, hs = _jwt("RS256"), _jwt("HS256")
+    assert D._forwardable_bearer(_Req("Bearer " + rs)) == "Bearer " + rs   # JWKS-verifiable JWT
+    assert D._forwardable_bearer(_Req("Bearer " + hs)) == ""               # HS256 session token REFUSED
+    assert D._forwardable_bearer(_Req("Bearer pk-publishable")) == "Bearer pk-publishable"
+    assert D._forwardable_bearer(_Req("Bearer sk-secret")) == ""           # secret keys refused
+    assert D._forwardable_bearer(_Req("Bearer hk-secret")) == ""
+    assert D._forwardable_bearer(_Req("Bearer rk-secret")) == ""
+    assert D._forwardable_bearer(_Req(None)) == ""                          # no token
+    assert D._forwardable_bearer(_Req("Bearer notoken")) == ""              # opaque, not JWT/pk-
+    # session-cookie path (what the browser sends) is honored for a verifiable JWT
+    assert D._forwardable_bearer(_Req(None, {"access_token": rs})) == "Bearer " + rs
+
+
+def test_ai_token_prefers_server_gateway_key(monkeypatch):
+    for env in D._SERVER_TOKEN_ENV:
+        monkeypatch.delenv(env, raising=False)
+    hs = _jwt("HS256")
+    # No server key + only an HS256 session token → no usable AI token (fail-closed → form).
+    assert D._ai_token(_Req("Bearer " + hs)) == ""
+    # A configured server gateway key (server-side only, never page source) is used and wins.
+    monkeypatch.setenv("STUDIO_DOC_TOKEN", "hk-server-key")
+    assert D._ai_token(_Req("Bearer " + hs)) == "Bearer hk-server-key"
+
+
+
+# ── REST surface over a real aiohttp app ────────────────────────────────────────────
+# Driven on a self-managed event loop so these are plain SYNC tests — no dependency on
+# the pytest-asyncio / pytest-aiohttp async-mode configuration (which varies across
+# environments). One loop per test; the app + client live and die with the fixture.
+
+import asyncio
+
+from aiohttp.test_utils import TestClient, TestServer
+
+
+class _Resp:
+    """A fully-materialized response (body read eagerly) with sync accessors."""
+
+    def __init__(self, status, headers, body):
+        self.status = status
+        self.headers = headers
+        self._body = body
+
+    def json(self):
+        return json.loads(self._body)
+
+    def read(self):
+        return self._body
+
+    def text(self):
+        return self._body.decode("utf-8", "replace")
+
+
+class _SyncClient:
+    def __init__(self, tc, loop):
+        self._tc = tc
+        self._loop = loop
+
+    def _request(self, method, url, **kw):
+        async def go():
+            r = await self._tc.request(method, url, **kw)
+            body = await r.read()
+            return _Resp(r.status, dict(r.headers), body)
+        return self._loop.run_until_complete(go())
+
+    def get(self, url, **kw):
+        return self._request("GET", url, **kw)
+
+    def post(self, url, **kw):
+        return self._request("POST", url, **kw)
+
+    def patch(self, url, **kw):
+        return self._request("PATCH", url, **kw)
+
+    def delete(self, url, **kw):
+        return self._request("DELETE", url, **kw)
+
+
+@pytest.fixture
+def client(tmp_path, monkeypatch):
+    """A live app with the documents routes and a tmp per-org tree. ``X-Test-Org`` header
+    selects the tenant (the injected org_of), so one client exercises multi-tenancy."""
+    def outd(org=None):
+        d = tmp_path / "orgs" / (org or "default") / "output"
+        d.mkdir(parents=True, exist_ok=True)
+        return str(d)
+
+    monkeypatch.setattr(folder_paths, "get_org_output_directory", outd)
+
+    def org_of(request):
+        return request.headers.get("X-Test-Org", "default")
+
+    def owner_of(request):
+        return request.headers.get("X-Test-User", "")
+
+    app = web.Application()
+    routes = web.RouteTableDef()
+    D.add_documents_routes(routes, object(), org_of=org_of, owner_of=owner_of)
+    app.add_routes(routes)
+
+    loop = asyncio.new_event_loop()
+    tc = TestClient(TestServer(app), loop=loop)
+    loop.run_until_complete(tc.start_server())
+    try:
+        yield _SyncClient(tc, loop)
+    finally:
+        loop.run_until_complete(tc.close())
+        loop.close()
+
+
+def _gen(client, template_id, **body):
+    body["templateId"] = template_id
+    return client.post("/v1/documents/generate", json=body)
+
+
+def test_catalog_endpoint(client):
+    r = client.get("/v1/documents")
+    assert r.status == 200
+    cats = {g["name"] for g in r.json()["categories"]}
+    assert {"Documents", "Spreadsheets", "Presentations"} <= cats
+
+
+def test_generate_from_fields_then_download_pdf_and_docx(client):
+    """The guarantee: a document renders end-to-end with NO LLM — form fields only."""
+    inv = D.get_template("invoice")
+    r = _gen(client, "invoice", fields=inv["sample"])
+    assert r.status == 200, r.text()
+    doc = r.json()
+    assert doc["id"] and doc["title"].startswith("Invoice")
+    assert set(doc["download"]) == set(inv["formats"])
+
+    for fmt, want_ct in (("pdf", "application/pdf"),
+                         ("docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document")):
+        dl = client.get(doc["download"][fmt])
+        assert dl.status == 200
+        assert dl.headers["Content-Type"] == want_ct
+        assert "attachment;" in dl.headers["Content-Disposition"]
+        assert dl.headers["Content-Disposition"].endswith(f'.{fmt}"')
+        assert _valid(fmt, dl.read())
+
+
+def test_generate_each_archetype_native_format(client):
+    for tid, fmt in (("resume", "pdf"), ("budget", "xlsx"), ("pitch_deck", "pptx")):
+        t = D.get_template(tid)
+        doc = _gen(client, tid, fields=t["sample"]).json()
+        dl = client.get(doc["download"][fmt])
+        assert dl.status == 200
+        assert dl.headers["Content-Type"] == R.content_type(fmt)
+        assert _valid(fmt, dl.read())
+
+
+def test_generate_uses_ai_fill_when_description_given(client, monkeypatch):
+    # Mock the gateway call: description -> canned fields (no network).
+    async def fake_ai_fill(request, tmpl, description):
+        assert "Acme" in description
+        return D.coerce_fields(tmpl, {"to_name": "Acme Corp", "number": "INV-42",
+                                      "items": [{"description": "Work", "qty": 1, "unit_price": 5000}]})
+    monkeypatch.setattr(D, "ai_fill", fake_ai_fill)
+
+    doc = _gen(client, "invoice", description="Invoice for Acme Corp, $5,000, net-30").json()
+    assert doc["fields"]["to_name"] == "Acme Corp"
+    assert doc["title"] == "Invoice INV-42"
+    md = client.get(doc["download"]["md"]).read()
+    assert b"5,000.00" in md and b"Acme Corp" in md
+
+
+def test_explicit_fields_override_ai(client, monkeypatch):
+    async def fake_ai_fill(request, tmpl, description):
+        return D.coerce_fields(tmpl, {"subject": "AI subject", "body": "AI body"})
+    monkeypatch.setattr(D, "ai_fill", fake_ai_fill)
+    doc = _gen(client, "memo", description="anything", fields={"subject": "Human subject"}).json()
+    assert doc["fields"]["subject"] == "Human subject"   # explicit wins
+    assert doc["fields"]["body"] == "AI body"            # AI fills the gap
+
+
+def test_generate_fail_closed_without_token_or_fields(client, monkeypatch):
+    # description given, but no server key and no forwardable token -> AI unavailable, and
+    # no form fields to fall back to: honest 422 asking for fields, never a blank doc.
+    for env in D._SERVER_TOKEN_ENV:
+        monkeypatch.delenv(env, raising=False)
+    r = _gen(client, "invoice", description="Invoice for Acme")
+    assert r.status == 422
+    j = r.json()
+    assert j["needFields"] is True and j["template"]["id"] == "invoice"
+
+
+def test_generate_rejects_unknown_template_and_empty_body(client):
+    assert _gen(client, "nope", fields={}).status == 404
+    assert client.post("/v1/documents/generate", json={"templateId": "memo"}).status == 400
+
+
+def test_library_lists_generated_docs_newest_first(client):
+    _gen(client, "memo", fields={"subject": "One", "body": "b"})
+    _gen(client, "resume", fields=D.get_template("resume")["sample"])
+    docs = client.get("/v1/documents/library").json()["documents"]
+    assert len(docs) == 2
+    assert docs[0]["templateId"] == "resume"   # newest first
+    assert {"id", "title", "templateId", "formats", "createdAt"} <= set(docs[0])
+
+
+def test_get_patch_reflected_in_download(client):
+    doc_id = _gen(client, "memo", fields={"subject": "Before", "body": "b"}).json()["id"]
+    got = client.get(f"/v1/documents/{doc_id}").json()
+    assert got["fields"]["subject"] == "Before"
+    assert got["template"]["id"] == "memo"
+
+    assert client.patch(f"/v1/documents/{doc_id}", json={"fields": {"subject": "After"}}).status == 200
+    md = client.get(f"/v1/documents/{doc_id}/download?format=md").read()
+    assert b"After" in md and b"Before" not in md
+
+
+def test_delete_removes_document(client):
+    doc_id = _gen(client, "memo", fields={"subject": "x", "body": "b"}).json()["id"]
+    assert client.delete(f"/v1/documents/{doc_id}").status == 200
+    assert client.get(f"/v1/documents/{doc_id}").status == 404
+    assert client.get("/v1/documents/library").json()["documents"] == []
+
+
+def test_tenancy_isolation_between_orgs(client):
+    doc_id = client.post("/v1/documents/generate",
+                         json={"templateId": "memo", "fields": {"subject": "secret"}},
+                         headers={"X-Test-Org": "org-a"}).json()["id"]
+    # org-b cannot see or download org-a's document
+    assert client.get(f"/v1/documents/{doc_id}", headers={"X-Test-Org": "org-b"}).status == 404
+    assert client.get(f"/v1/documents/{doc_id}/download?format=pdf",
+                      headers={"X-Test-Org": "org-b"}).status == 404
+    assert client.get("/v1/documents/library", headers={"X-Test-Org": "org-b"}).json()["documents"] == []
+    # org-a still has it
+    assert client.get(f"/v1/documents/{doc_id}", headers={"X-Test-Org": "org-a"}).status == 200
+
+
+def test_download_rejects_bad_id_and_format(client):
+    assert client.get("/v1/documents/not-a-real-id/download").status == 404
+    doc_id = _gen(client, "memo", fields={"subject": "x", "body": "b"}).json()["id"]
+    assert client.get(f"/v1/documents/{doc_id}/download?format=xlsx").status == 400  # not in memo formats

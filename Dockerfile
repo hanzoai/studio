@@ -5,6 +5,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         build-essential \
         libgl1 \
         libglib2.0-0 \
+        # WeasyPrint native stack (office-document PDF renderer, middleware/doc_render.py):
+        # pango/cairo/gdk-pixbuf + a base font. Absent → the built-in PDF fallback is used.
+        libpango-1.0-0 \
+        libpangocairo-1.0-0 \
+        libgdk-pixbuf-2.0-0 \
+        shared-mime-info \
+        fonts-liberation \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app

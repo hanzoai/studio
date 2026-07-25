@@ -26,6 +26,15 @@ comfy-aimdo>=0.2.0
 requests
 PyJWT[crypto]>=2.7.0
 
+# Office-document renderers (middleware/doc_render.py) — pure-Python, no GPU. WeasyPrint
+# gives full-CSS PDFs when its native pango/cairo stack is present (see Dockerfile);
+# where it is not (the light CI unit venv), the built-in PDF fallback takes over, so
+# every format renders with just these wheels installed.
+weasyprint>=63
+python-docx>=1.1.0
+openpyxl>=3.1.0
+python-pptx>=1.0.0
+
 #non essential dependencies:
 kornia>=0.7.1
 spandrel

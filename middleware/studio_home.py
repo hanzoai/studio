@@ -1853,6 +1853,12 @@ def add_studio_home_routes(routes: web.RouteTableDef, server) -> None:
         routes, server, org_of=_org_of, owner_of=_owner_of,
         workspace_of=_workspace_of, soft_delete_assets=_soft_delete_assets)
 
+    # Office documents — the non-GPU pipeline (catalog + AI-fill + renderers) — are
+    # their own orthogonal subsystem, registered here through the same injected tenancy
+    # resolvers so the module stays decoupled (identical seam to stacks_store).
+    from middleware.documents import add_documents_routes
+    add_documents_routes(routes, server, org_of=_org_of, owner_of=_owner_of)
+
     @routes.get("/studio")
     async def studio_home(request: web.Request):
         # no-store: the home HTML changes every release; without this, browsers
