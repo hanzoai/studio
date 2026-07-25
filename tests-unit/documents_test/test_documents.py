@@ -193,16 +193,16 @@ def test_forwardable_bearer_is_fail_closed(monkeypatch):
     for env in D._SERVER_TOKEN_ENV:
         monkeypatch.delenv(env, raising=False)
     rs, hs = _jwt("RS256"), _jwt("HS256")
-    assert D._forwardable_bearer(_Req("Bearer " + rs)) == "Bearer " + rs   # JWKS-verifiable JWT
-    assert D._forwardable_bearer(_Req("Bearer " + hs)) == ""               # HS256 session token REFUSED
-    assert D._forwardable_bearer(_Req("Bearer pk-publishable")) == "Bearer pk-publishable"
-    assert D._forwardable_bearer(_Req("Bearer sk-secret")) == ""           # secret keys refused
-    assert D._forwardable_bearer(_Req("Bearer hk-secret")) == ""
-    assert D._forwardable_bearer(_Req("Bearer rk-secret")) == ""
-    assert D._forwardable_bearer(_Req(None)) == ""                          # no token
-    assert D._forwardable_bearer(_Req("Bearer notoken")) == ""              # opaque, not JWT/pk-
+    assert D._ai_token(_Req("Bearer " + rs)) == "Bearer " + rs   # JWKS-verifiable JWT
+    assert D._ai_token(_Req("Bearer " + hs)) == ""               # HS256 session token REFUSED
+    assert D._ai_token(_Req("Bearer pk-publishable")) == "Bearer pk-publishable"
+    assert D._ai_token(_Req("Bearer sk-secret")) == ""           # secret keys refused
+    assert D._ai_token(_Req("Bearer hk-secret")) == ""
+    assert D._ai_token(_Req("Bearer rk-secret")) == ""
+    assert D._ai_token(_Req(None)) == ""                          # no token
+    assert D._ai_token(_Req("Bearer notoken")) == ""              # opaque, not JWT/pk-
     # session-cookie path (what the browser sends) is honored for a verifiable JWT
-    assert D._forwardable_bearer(_Req(None, {"access_token": rs})) == "Bearer " + rs
+    assert D._ai_token(_Req(None, {"access_token": rs})) == "Bearer " + rs
 
 
 def test_ai_token_prefers_server_gateway_key(monkeypatch):
@@ -477,20 +477,24 @@ def test_control_chars_stripped_and_ooxml_stays_valid():
         assert _valid("xlsx", D.render_document(b, bf, "xlsx")[0])
 
 
-def test_crafted_jwt_alg_never_crashes_the_allowlist():
-    import base64
+def test_ai_token_delegates_to_canonical_gateway_auth(monkeypatch):
+    """After the decomplect, documents._ai_token routes through the ONE gateway_auth
+    allowlist (no private copy — they used to drift). Prove the fail-closed behavior via
+    the public _ai_token: a crafted non-string alg must not 500; HS256/secret refused;
+    pk-/asymmetric forwarded; a server key wins."""
+    for env in D._SERVER_TOKEN_ENV:
+        monkeypatch.delenv(env, raising=False)
 
     def jwt_with_alg(alg_value):  # a JWT header carrying an arbitrary (maybe non-string) alg
+        import base64
         h = base64.urlsafe_b64encode(json.dumps({"alg": alg_value}).encode()).rstrip(b"=").decode()
         return f"{h}.eyJzdWIiOiIxIn0.sig"
 
     for bad in (None, [], 123, {"x": 1}, True):
-        assert D._jwt_alg(jwt_with_alg(bad)) == "", "a non-string alg must yield '' (no exception)"
-    assert D._jwt_alg(jwt_with_alg("RS256")) == "RS256"  # real asymmetric alg still read
-    from aiohttp.test_utils import make_mocked_request
-    req = make_mocked_request("POST", "/v1/documents/generate",
-                              headers={"Authorization": "Bearer " + jwt_with_alg(None)})
-    assert D._forwardable_bearer(req) == ""  # crafted alg → not forwarded, no 500
-    ok = make_mocked_request("POST", "/v1/documents/generate",
-                             headers={"Authorization": "Bearer " + jwt_with_alg("RS256")})
-    assert D._forwardable_bearer(ok) == "Bearer " + jwt_with_alg("RS256")  # asymmetric still forwarded
+        assert D._ai_token(_Req("Bearer " + jwt_with_alg(bad))) == ""      # crafted alg → no 500
+    assert D._ai_token(_Req("Bearer " + jwt_with_alg("HS256"))) == ""      # HS256 session token refused
+    assert D._ai_token(_Req("Bearer sk-secret")) == ""                     # secret refused
+    assert D._ai_token(_Req("Bearer pk-x")) == "Bearer pk-x"               # publishable forwarded
+    assert D._ai_token(_Req("Bearer " + jwt_with_alg("RS256"))) == "Bearer " + jwt_with_alg("RS256")
+    monkeypatch.setenv("STUDIO_DOC_TOKEN", "sk-server")                    # server key wins
+    assert D._ai_token(_Req("Bearer pk-x")) == "Bearer sk-server"

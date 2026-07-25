@@ -756,64 +756,19 @@ def render_document(tmpl, fields, fmt):
 
 # ── AI-fill: description -> structured fields via the Hanzo gateway ─────────────────
 
-_SECRET_PREFIXES = ("sk-", "sk_", "hk-", "hk_", "rk-", "rk_")
 _SERVER_TOKEN_ENV = ("STUDIO_DOC_TOKEN", "STUDIO_COPILOT_TOKEN", "STUDIO_COMMERCE_TOKEN")
-
-
-def _jwt_alg(tok):
-    """The ``alg`` from a JWT header, or "" if not a decodable JWT. Used to distinguish a
-    JWKS-verifiable asymmetric token (gateway-acceptable) from an HS256 session token."""
-    import base64
-    try:
-        h = tok.split(".", 1)[0]
-        h += "=" * (-len(h) % 4)
-        alg = json.loads(base64.urlsafe_b64decode(h.encode())).get("alg", "")
-        # A crafted header can make alg a non-string (null/list/number/dict); the
-        # contract is "the alg string or ''", so a non-string is not a usable alg.
-        return alg if isinstance(alg, str) else ""
-    except Exception:
-        return ""
-
-
-def _forwardable_bearer(request):
-    """The caller's own token to forward to the gateway, or "" — fail-closed.
-
-    Reuses the app's one token path (``gpu_dispatch._bearer``: Authorization header or
-    the browser session cookie), then applies a strict allowlist:
-      * a publishable ``pk-`` key — allowed;
-      * a JWT — allowed ONLY when asymmetric/JWKS-verifiable (RS/ES/PS/EdDSA); a symmetric
-        HS256 hanzo.id session token is refused (the gateway rejects it, so forwarding it
-        only produces log noise and a 502);
-      * a secret ``sk-``/``hk-``/``rk-`` key — refused outright.
-    So a secret can never reach the gateway from the browser edge and none is in page source."""
-    from middleware.gpu_dispatch import _bearer  # lazy: keeps this module import light
-    raw = _bearer(request)
-    if not raw:
-        return ""
-    tok = raw[7:].strip() if raw[:7].lower() == "bearer " else raw.strip()
-    if not tok or tok.lower().startswith(_SECRET_PREFIXES):
-        return ""
-    if tok.startswith(("pk-", "pk_")):
-        return "Bearer " + tok
-    if tok.count(".") == 2:
-        # Exact JWS asymmetric set (a prefix match also admitted RSA-OAEP / "Edwina"…);
-        # `alg in <tuple>` is crash-safe for a non-string alg too.
-        if _jwt_alg(tok) in ("RS256", "RS384", "RS512", "ES256", "ES384", "ES512",
-                             "PS256", "PS384", "PS512", "EdDSA"):
-            return "Bearer " + tok
-    return ""
 
 
 def _ai_token(request):
     """The bearer AI-fill sends to the gateway, "" when none is usable (→ form fallback).
 
-    A server-side gateway key wins (the configured, working path; never in page source);
-    otherwise the caller's own gateway-verifiable token via the fail-closed allowlist."""
-    for env in _SERVER_TOKEN_ENV:
-        v = os.environ.get(env, "").strip()
-        if v:
-            return v if v[:7].lower() == "bearer " else "Bearer " + v
-    return _forwardable_bearer(request)
+    Delegates to the ONE canonical fail-closed allowlist (``middleware.gateway_auth``) —
+    NO private copy (they used to drift: the same crafted-alg hardening had to be applied
+    to both). A server-side gateway key wins (never in page source); else the caller's own
+    token ONLY when the gateway can verify it (a ``pk-`` key or an asymmetric/JWKS JWT) —
+    an HS256 session token and ``sk-``/``hk-``/``rk-`` secrets are refused."""
+    from middleware import gateway_auth  # lazy: keeps this module import light
+    return gateway_auth.ai_bearer(request, server_env=_SERVER_TOKEN_ENV)
 
 
 def _gateway_url():
