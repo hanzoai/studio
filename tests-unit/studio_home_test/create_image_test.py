@@ -109,3 +109,31 @@ def test_bars_are_opaque_and_dev_control_is_gated():
 
 def test_mobile_collapses_the_filter_pills():
     assert ".chips{flex-wrap:nowrap;overflow-x:auto" in _HTML
+
+
+# ── RED create-lane regressions (@c00384cf): F1 dedup identity, F2 dim coercion ──
+
+def test_dedup_key_is_stable_identity_not_the_random_prefix():
+    # F1: the key must be the STABLE render identity (org|kind|prompt|refs|uploads) —
+    # NOT output_prefix, which each lane stamps with a random _job_tag() so two
+    # identical submits used to miss and double-bill.
+    k = sh._dedup_key("acme", "image", "a jazz poster", [], [])
+    assert k == sh._dedup_key("acme", "image", "a jazz poster", [], []), "identical creates share a key"
+    assert k != sh._dedup_key("acme", "image", "a DIFFERENT poster", [], []), "different prompt → different key"
+    assert k != sh._dedup_key("other", "image", "a jazz poster", [], []), "different org → different key"
+    assert k != sh._dedup_key("acme", "video", "a jazz poster", [], []), "different lane → different key"
+    assert k != sh._dedup_key("acme", "image", "a jazz poster", ["ref.png"], []), "different refs → different key"
+
+
+def test_image_and_video_graphs_reject_non_numeric_dims():
+    # F2: a non-numeric width/height/length raises DispatchError (→ clean 400), never a bare ValueError (→ 500).
+    for bad in ("abc", "10px", [], {}):
+        with pytest.raises(sh.DispatchError):
+            sh._image_graph("a valid prompt", "image/x", width=bad)
+        with pytest.raises(sh.DispatchError):
+            sh._image_graph("a valid prompt", "image/x", height=bad)
+        with pytest.raises(sh.DispatchError):
+            sh._video_graph("a valid prompt", "video/x", width=bad)
+    # numeric strings still coerce and render
+    g = sh._image_graph("a valid prompt", "image/x", width="512", height="512")
+    assert g["7"]["inputs"]["width"] == 512 and g["7"]["inputs"]["height"] == 512

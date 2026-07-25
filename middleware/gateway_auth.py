@@ -66,8 +66,10 @@ def forwardable_bearer(request) -> str:
     if tok.startswith(("pk-", "pk_")):
         return "Bearer " + tok
     if tok.count(".") == 2:
-        alg = jwt_alg(tok)
-        if isinstance(alg, str) and (alg[:2] in ("RS", "ES", "PS") or alg.startswith("Ed")):
+        # Exact JWS asymmetric set — a prefix match ("RS"/"Ed") also admitted non-JWS
+        # names like RSA-OAEP / "Edwina"; `alg in <tuple>` is crash-safe for any type.
+        if jwt_alg(tok) in ("RS256", "RS384", "RS512", "ES256", "ES384", "ES512",
+                            "PS256", "PS384", "PS512", "EdDSA"):
             return "Bearer " + tok
     return ""
 

@@ -1368,7 +1368,7 @@ function render(){
     const vid=isVideo(a.path);
     const m3d=is3d(a.path);
     const media=img||vid||m3d;                             // shares votes / archive / Re-run / Versions
-    const prov=a.prov&&a.prov.workflow?` · ${a.prov.workflow}`:'';
+    const prov=a.prov&&a.prov.workflow?` · ${esc(a.prov.workflow)}`:'';  // esc: workflow = an embedded (crafted-upload) filename_prefix
     const picked=SEL.has(a.path);
     const cardClick=SELMODE?`onclick="pick(event,'${a.path.replace(/'/g,"\\'")}')"`:'';
     const inTray=trayHasLib(a.path);
@@ -1386,7 +1386,7 @@ function render(){
         :`<div class="doc">${esc((a.path||'').split('/').pop())}</div>`}
       <div class="meta">
         <span class="t">${esc((a.path||'').split('/').pop())}</span>
-        <span class="sub">${a.design||a.kind||''}${prov}</span>
+        <span class="sub">${esc(a.design||a.kind||'')}${prov}</span>
         ${((a.status==='deleted'||a.status==='flagged')||a.gate==='skipped')?`<div class="row">${(a.status==='deleted'||a.status==='flagged')?`<span class="st ${a.status}">${a.status==='deleted'?'archived':'flagged'}</span>`:''}${a.gate==='skipped'?`<span class="st" style="background:#7a6329;color:#ffd98a" title="Auto-judge could not sample this video — review manually">ungated</span>`:''}</div>`:''}
         ${media&&!SELMODE?`<div class="fbrow" onclick="event.stopPropagation()">
           <button class="vote up ${(RATINGS[a.path]||{}).vote===1?'on':''}" title="Good result — 👍 teaches the model" onclick="castVote('${pe}',1)">👍</button>

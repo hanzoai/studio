@@ -704,11 +704,14 @@ def _video_graph(prompt: str, prefix: str, *, ref_name: str | None = None,
     AND its start_image key are omitted, for pure text-to-video (proof caveat). VAEDecode →
     CreateVideo(24 fps) → SaveVideo(mp4/h264). Pure dict builder, same shape as _fix_graph;
     cross-checked against zen-video/zen_wan_workflow.py build_prompt (not imported)."""
-    w = max(256, min(1280, int(width)))
+    try:
+        w = max(256, min(1280, int(width)))
+        h = max(256, min(1280, int(height)))
+        n = max(9, min(121, int(length)))
+    except (TypeError, ValueError):
+        raise DispatchError("width, height and length must be numbers")  # → a clean 400
     w -= w % 32                                  # snap to the 32-px grid (proof caveat)
-    h = max(256, min(1280, int(height)))
     h -= h % 32
-    n = max(9, min(121, int(length)))
     n = ((n - 1) // 4) * 4 + 1                    # snap to 4n+1
     pos = prompt.strip()
     neg = _WAN_NEG
@@ -752,9 +755,12 @@ def _image_graph(prompt: str, prefix: str, *, width: int = 1024, height: int = 1
     same shape as _video_graph — the text-to-image analogue the composer's default lane
     dispatches. Unlike _fix_graph this DOES start from an EmptySD3LatentImage: it is a true
     text-to-image create, not an edit of an existing asset."""
-    w = max(256, min(2048, int(width)))
+    try:
+        w = max(256, min(2048, int(width)))
+        h = max(256, min(2048, int(height)))
+    except (TypeError, ValueError):
+        raise DispatchError("width and height must be numbers")  # → a clean 400, not a 500
     w -= w % 16
-    h = max(256, min(2048, int(height)))
     h -= h % 16
     pos = prompt.strip()
     if lessons:
@@ -1199,9 +1205,14 @@ _RECENT_DISPATCH: dict = {}          # key -> (ts, prompt_id)
 _DEDUP_WINDOW_S = 60
 
 
-def _dedup_key(org: str, output_prefix: str, prompt: str, refs: list) -> str:
+def _dedup_key(org: str, kind: str, prompt: str, refs: list, uploads: list) -> str:
+    # Identify a render by its STABLE inputs — NOT output_prefix, which every lane
+    # stamps with a random _job_tag() before dispatch (so keying on it made two
+    # identical submits always miss → the anti-double-bill guard never fired). This
+    # keys on what actually defines the render: org, lane, prompt, and its inputs.
     import hashlib
-    raw = "|".join([org, output_prefix or "", (prompt or "").strip(), ",".join(sorted(refs or []))])
+    raw = "|".join([org, kind or "", (prompt or "").strip(),
+                    ",".join(sorted(refs or [])), ",".join(sorted(uploads or []))])
     return hashlib.md5(raw.encode()).hexdigest()
 
 
@@ -1227,7 +1238,7 @@ async def _dispatch(request, server, org: str, graph: dict, *, kind: str, prompt
         params["lessons"] = lessons   # what the user's notes taught THIS job to avoid
     common = dict(kind=kind, prompt=prompt, refs=refs, uploads=uploads,
                   parents=parents, output_prefix=output_prefix, params=params)
-    key = _dedup_key(org, output_prefix, prompt, refs)
+    key = _dedup_key(org, kind, prompt, refs, uploads)
     dup = _recent_dispatch(key)
     if dup:
         return dup                    # identical render already in flight — reuse it

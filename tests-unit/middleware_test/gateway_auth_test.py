@@ -96,3 +96,12 @@ def test_forwardable_bearer_survives_crafted_non_string_alg():
         assert G.forwardable_bearer(_Req("Bearer " + jwt_bad_alg(bad))) == ""
     assert G.jwt_alg(jwt_bad_alg("RS256")) == "RS256"  # real asymmetric alg still read
     assert G.forwardable_bearer(_Req("Bearer " + jwt_bad_alg("RS256"))) == "Bearer " + jwt_bad_alg("RS256")
+
+
+def test_alg_allowlist_is_the_exact_jws_set_not_a_prefix_match():
+    """F3: a prefix match ("RS"/"Ed") admitted non-JWS names like RSA-OAEP / 'Edwina';
+    the allowlist is now the exact JWS asymmetric set."""
+    for good in ("RS256", "RS384", "RS512", "ES256", "ES384", "ES512", "PS256", "PS384", "PS512", "EdDSA"):
+        assert G.forwardable_bearer(_Req("Bearer " + _jwt(good))) == "Bearer " + _jwt(good)
+    for bad in ("RSA-OAEP", "RSA1_5", "Edwina", "ES", "RS", "none", "HS256", "PSK"):
+        assert G.forwardable_bearer(_Req("Bearer " + _jwt(bad))) == ""
