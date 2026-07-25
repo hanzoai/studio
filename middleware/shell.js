@@ -48,7 +48,7 @@
   var wallet = el("a", { class: "hz-pill", id: "hzwallet", href: "https://pay.hanzo.ai", target: "_blank", rel: "noopener",
     title: "Wallet — top up at pay.hanzo.ai" }, "wallet …");
   var gpus = el("button", { class: "hz-pill", id: "hzgpubtn", title: "GPUs" }, '<span class="hz-dot"></span><span class="hz-lbl">GPUs</span>');
-  var chatBtn = el("button", { class: "hz-pill hz-chat", title: "Chat" }, '💬<span class="hz-lbl"> Chat</span>');
+  var chatBtn = el("button", { class: "hz-pill hz-chat", title: "Chat" }, '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg><span class="hz-lbl"> Chat</span>');
   var devBtn = el("button", { class: "hz-pill", id: "hzdevbtn", title: "Developers workbench — queue, logs, and a read-only API shell" },
     '&gt;_<span class="hz-lbl"> Developers</span>');
   bar.appendChild(devBtn); bar.appendChild(toggle);

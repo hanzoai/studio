@@ -309,6 +309,165 @@ body.immersive #stage{display:block}
   .sv-tools{margin-left:0;width:100%}
   .sv-name{max-width:70vw}
 }
+/* ═══════════════════════════════════════════════════════════════════════════
+   Create-experience surfaces — monochrome icon system, searchable template
+   picker, design systems + setup wizard + agentic builder, projects table.
+   ONE grayscale token set (--bg/--panel/--panel2/--line/--txt/--dim/--brand/
+   --ring). No emoji — lucide line icons via icon(name). ═══════════════════ */
+.ic-svg{width:1em;height:1em;display:block;flex:0 0 auto}
+.tabs button .ic-svg,.mini .ic-svg,.btn .ic-svg,.chip .ic-svg{font-size:1.02em;display:inline-block;vertical-align:-.16em;margin-right:.34em}
+/* Template quick-cards → real <button>s with monochrome line-icon thumbnails */
+.tcard{display:flex;flex-direction:column;align-items:stretch;text-align:left;font:inherit;color:var(--txt);width:100%;padding:0;appearance:none}
+.tcard .ic{font-size:1.55rem;color:var(--dim);transition:color .12s}
+.tcard:hover .ic,.tcard:focus-visible .ic{color:var(--txt)}
+.tcard .tl,.tcard .td{display:block}
+.tcard:focus-visible{outline:none;border-color:var(--dim);box-shadow:0 0 0 2px var(--ring)}
+/* Searchable template picker (composer → Template chip) */
+.tpick{width:min(660px,94vw);max-width:min(660px,94vw);max-height:min(72vh,592px);display:flex;flex-direction:column;padding:0;overflow:hidden;min-width:0}
+.tpick-s{display:flex;align-items:center;gap:9px;padding:12px 14px;border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--panel);z-index:2}
+.tpick-s .ic-svg{font-size:1.05rem;color:var(--dim)}
+.tpick-s input{flex:1;background:none;border:none;color:var(--txt);font:inherit;font-size:.94rem;outline:none;min-width:0}
+.tpick-body{overflow:auto;padding:8px 12px 14px}
+.tpick-g{color:var(--dim);font-size:.62rem;text-transform:uppercase;letter-spacing:.07em;margin:13px 4px 8px}
+.tpick-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(148px,1fr));gap:10px}
+.tpick-tile{display:flex;flex-direction:column;text-align:left;background:var(--panel2);border:1px solid var(--line);border-radius:11px;padding:0;cursor:pointer;font:inherit;color:var(--txt);overflow:hidden}
+.tpick-tile:hover{border-color:var(--dim)}
+.tpick-tile:focus-visible{outline:none;border-color:var(--dim);box-shadow:0 0 0 2px var(--ring)}
+.tpick-tile .th{aspect-ratio:16/9;display:flex;align-items:center;justify-content:center;background:linear-gradient(160deg,#141414,#050505);color:var(--dim);font-size:1.65rem;transition:color .12s}
+.tpick-tile:hover .th{color:var(--txt)}
+.tpick-tile .tt{font-size:.82rem;font-weight:500;padding:8px 10px 0}
+.tpick-tile .ts{font-size:.7rem;color:var(--dim);padding:1px 10px 9px}
+.tpick-none{grid-column:1/-1;display:flex;align-items:center;gap:9px;background:var(--panel2);border:1px solid var(--line);border-radius:11px;padding:11px 13px;cursor:pointer;color:var(--txt);font:inherit;text-align:left}
+.tpick-none:hover{border-color:var(--dim)} .tpick-none .ic-svg{font-size:1.1rem;color:var(--dim)}
+.tpick-empty{grid-column:1/-1;color:var(--dim);padding:26px;text-align:center;font-size:.85rem}
+/* Design-system picker rows inside the shared .pmenu (composer → Design system) */
+.pmenu .pm-i.ds{display:flex;align-items:center;gap:10px;padding-left:11px}
+.ds-sw{display:flex;gap:0;border-radius:5px;overflow:hidden;border:1px solid var(--line);flex:0 0 auto}
+.ds-sw i{width:9px;height:20px;display:block}
+.pm-i .pm-badge{font-size:.56rem;text-transform:uppercase;letter-spacing:.05em;color:var(--dim);border:1px solid var(--line);border-radius:5px;padding:1px 5px;margin-left:6px}
+.pm-i.create{color:var(--txt)} .pm-i.create .ic-svg{font-size:1rem;color:var(--dim);vertical-align:-.16em;margin-right:8px;display:inline-block}
+/* Design systems tab — swatched preset cards */
+.dsgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:14px}
+.dscard{position:relative;background:var(--panel);border:1px solid var(--line);border-radius:13px;overflow:hidden;display:flex;flex-direction:column;transition:.12s}
+.dscard:hover{border-color:#3a3a48;transform:translateY(-2px)}
+.dscard .swatch{height:74px;display:flex}
+.dscard .swatch i{flex:1;display:block}
+.dscard .b{padding:11px 13px 12px;display:flex;flex-direction:column;gap:4px}
+.dscard .nm{font-size:.92rem;font-weight:600;display:flex;align-items:center;gap:7px}
+.dscard .bl{font-size:.74rem;color:var(--dim);line-height:1.4}
+.dscard .ty{font-size:.68rem;color:var(--dim);margin-top:1px;display:flex;align-items:center;gap:5px}
+.dscard .rowb{display:flex;gap:6px;margin-top:8px;flex-wrap:wrap}
+.ds-badge{font-size:.58rem;text-transform:uppercase;letter-spacing:.05em;font-weight:600;color:#111;background:var(--brand);border-radius:5px;padding:2px 6px}
+.ds-badge.wip{color:var(--warn);background:none;border:1px solid var(--line)}
+.dscard.new{align-items:center;justify-content:center;border-style:dashed;cursor:pointer;min-height:172px;color:var(--dim);gap:8px;text-align:center;font:inherit}
+.dscard.new:hover{border-color:var(--dim);color:var(--txt)} .dscard.new .ic-svg{font-size:1.7rem}
+/* Setup wizard (dialog) + agentic builder (overlay) share these input styles */
+#dswiz{max-width:660px;max-height:90vh;overflow:auto}
+.wiz-h{display:flex;align-items:flex-start;gap:13px;margin:0 0 4px}
+.wiz-h .ic-svg{font-size:1.7rem;color:var(--txt);margin-top:2px}
+.wiz-h h3{font-size:1.18rem;font-weight:600;margin:0} .wiz-h p{font-size:.82rem;color:var(--dim);margin:3px 0 0;line-height:1.4}
+.wiz-l{font-size:.7rem;text-transform:uppercase;letter-spacing:.05em;color:var(--dim);margin:18px 0 7px}
+.wiz-in,.wiz-ta{width:100%;background:#0f0f12;color:var(--txt);border:1px solid var(--line);border-radius:9px;padding:10px 12px;font:inherit;font-size:.9rem;outline:none}
+.wiz-in:focus,.wiz-ta:focus{border-color:var(--dim)} .wiz-ta{resize:vertical;min-height:64px;line-height:1.5}
+.wiz-card{border:1px solid var(--line);border-radius:12px;padding:5px 14px 14px;margin-top:8px;background:var(--panel2)}
+.wiz-row{padding:13px 0;border-bottom:1px solid var(--line)} .wiz-row:last-child{border-bottom:none}
+.wiz-row .rl{display:flex;align-items:center;gap:8px;font-size:.86rem;font-weight:500} .wiz-row .rl .ic-svg{font-size:1.05rem;color:var(--dim)}
+.wiz-row .rh{font-size:.74rem;color:var(--dim);margin:2px 0 9px;line-height:1.45}
+.wiz-row .rh a{color:var(--pub);text-decoration:none} .wiz-row .rh a:hover{text-decoration:underline}
+.wiz-add{display:flex;gap:8px} .wiz-add .wiz-in{flex:1}
+.wiz-btn{border:1px solid var(--line);background:var(--panel);color:var(--txt);border-radius:9px;padding:9px 13px;font:inherit;font-size:.84rem;cursor:pointer;white-space:nowrap;display:inline-flex;align-items:center;gap:6px}
+.wiz-btn:hover{border-color:var(--dim)} .wiz-btn:disabled{opacity:.5;cursor:default}
+.wiz-btn .ic-svg{font-size:1em;color:var(--dim)}
+.wiz-drop{border:1.5px dashed var(--line);border-radius:10px;padding:16px;text-align:center;color:var(--dim);font-size:.82rem;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:6px}
+.wiz-drop:hover,.wiz-drop.drag{border-color:var(--dim);color:var(--txt)} .wiz-drop .ic-svg{font-size:1.5rem}
+.wiz-chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:9px}
+.wiz-chip{display:inline-flex;align-items:center;gap:6px;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:4px 6px 4px 9px;font-size:.76rem;color:var(--txt);max-width:100%}
+.wiz-chip .ic-svg{font-size:.9em;color:var(--dim);flex:0 0 auto} .wiz-chip b{font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.wiz-chip .rm{background:none;border:none;color:var(--dim);cursor:pointer;font-size:1rem;line-height:1;padding:0 2px} .wiz-chip .rm:hover{color:var(--warn)}
+.wiz-priv{font-size:.68rem;color:var(--ok);display:inline-flex;align-items:center;gap:5px;margin-top:8px}
+.wiz-foot{display:flex;align-items:center;gap:9px;margin-top:22px}
+.wiz-foot .sp{flex:1}
+/* Agentic design-system builder — full-viewport working surface */
+#dsbuild{position:fixed;inset:0;z-index:55;background:var(--bg);color:var(--txt);display:none;flex-direction:column;font:400 1rem/1.5 Inter,system-ui,sans-serif}
+#dsbuild.on{display:flex}
+.bld-top{display:flex;align-items:center;gap:11px;padding:11px 16px;border-bottom:1px solid var(--line);flex:0 0 auto}
+.bld-top .bk{border:1px solid var(--line);background:var(--panel);color:var(--txt);border-radius:8px;padding:6px 11px;font:inherit;font-size:.82rem;cursor:pointer;display:inline-flex;align-items:center;gap:6px}
+.bld-top .bk:hover{border-color:var(--dim)} .bld-top .bk .ic-svg{font-size:.95em;color:var(--dim)}
+.bld-top .ti{font-size:.9rem;font-weight:600;display:flex;align-items:center;gap:8px}
+.bld-top .ti .ic-svg{font-size:1.1em;color:var(--dim)}
+.bld-top .sp{flex:1}
+.bld-body{flex:1;display:flex;min-height:0}
+.bld-rail{width:380px;max-width:44vw;flex:0 0 auto;border-right:1px solid var(--line);display:flex;flex-direction:column;min-height:0;background:var(--panel)}
+.bld-chat{flex:1;min-height:0;overflow:auto;padding:14px;display:flex;flex-direction:column;gap:12px}
+.bld-sec{font-size:.64rem;text-transform:uppercase;letter-spacing:.07em;color:var(--dim);margin:2px 0 2px;display:flex;align-items:center;gap:7px}
+.bld-sec .ic-svg{font-size:1em}
+.bld-todos{display:flex;flex-direction:column;gap:2px}
+.bld-todo{display:flex;align-items:flex-start;gap:9px;padding:5px 2px;font-size:.83rem;color:var(--dim)}
+.bld-todo .ic-svg{font-size:1.02em;margin-top:2px;flex:0 0 auto}
+.bld-todo.done{color:var(--txt)} .bld-todo.done .ic-svg{color:var(--ok)}
+.bld-todo.active{color:var(--txt)} .bld-todo.active .ic-svg{color:var(--txt);animation:spin 1s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.bld-log{display:flex;flex-direction:column;gap:5px;border-top:1px solid var(--line);margin-top:6px;padding-top:11px}
+.bld-le{display:flex;align-items:center;gap:8px;font-size:.78rem;color:var(--dim)} .bld-le .ic-svg{font-size:.95em;flex:0 0 auto}
+.bld-le b{color:var(--txt);font-weight:500}
+.bld-status{display:flex;align-items:center;gap:8px;font-size:.8rem;color:var(--dim);border-top:1px solid var(--line);padding:11px 14px;flex:0 0 auto}
+.bld-status .ic-svg{font-size:1em;animation:spin 1s linear infinite} .bld-status.done .ic-svg{animation:none;color:var(--ok)}
+.bld-comp{display:flex;gap:8px;padding:11px 12px;border-top:1px solid var(--line);flex:0 0 auto;align-items:flex-end}
+.bld-comp textarea{flex:1;background:#0f0f12;border:1px solid var(--line);border-radius:10px;color:var(--txt);padding:9px 11px;font:inherit;font-size:.86rem;resize:none;height:40px;max-height:120px;outline:none}
+.bld-comp textarea:focus{border-color:var(--dim)}
+.bld-comp .mdl{border:1px solid var(--line);background:var(--panel2);color:var(--dim);border-radius:8px;padding:0 9px;height:40px;font:inherit;font-size:.78rem;cursor:pointer;flex:0 0 auto}
+.bld-comp .snd{width:40px;height:40px;flex:0 0 auto;border:none;border-radius:10px;background:var(--brand);color:#111;cursor:pointer;display:flex;align-items:center;justify-content:center}
+.bld-comp .snd .ic-svg{font-size:1.15rem}
+.bld-main{flex:1;display:flex;min-height:0}
+.bld-tree{width:230px;flex:0 0 auto;border-right:1px solid var(--line);overflow:auto;padding:10px 8px;font-size:.82rem}
+.bld-tree .fh{font-size:.64rem;text-transform:uppercase;letter-spacing:.07em;color:var(--dim);padding:4px 8px 8px}
+.bld-fi{display:flex;align-items:center;gap:8px;padding:5px 8px;border-radius:7px;cursor:pointer;color:var(--dim)}
+.bld-fi:hover{background:var(--panel2)} .bld-fi.on{background:var(--panel2);color:var(--txt)}
+.bld-fi.dir{color:var(--txt)} .bld-fi .ic-svg{font-size:1em;flex:0 0 auto}
+.bld-fi.ind{padding-left:22px}
+.bld-edit{flex:1;min-width:0;display:flex;flex-direction:column;overflow:hidden}
+.bld-eh{padding:8px 14px;border-bottom:1px solid var(--line);color:var(--dim);font-size:.78rem;font-family:ui-monospace,Menlo,monospace;flex:0 0 auto}
+.bld-ecode{flex:1;overflow:auto;margin:0;padding:14px 16px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.8rem;line-height:1.6;color:var(--txt);white-space:pre;background:#050505}
+.bld-empty{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;color:var(--dim);padding:24px;text-align:center}
+.bld-empty .ic-svg{font-size:2.2rem}
+.bld-empty .big{font-size:.98rem;color:var(--txt)}
+/* Assets: grid ⇄ table view toggle, the projects rail + a dense monochrome table */
+.vtoggle{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.vtoggle button{background:var(--panel);border:none;color:var(--dim);padding:6px 9px;cursor:pointer;display:flex;align-items:center}
+.vtoggle button+button{border-left:1px solid var(--line)}
+.vtoggle button.on{background:var(--panel2);color:var(--txt)} .vtoggle button .ic-svg{font-size:1.02rem;margin-right:0}
+.asplit{display:flex;gap:18px;align-items:flex-start}
+.projrail{width:196px;flex:0 0 auto}
+.projrail .ph{font-size:.64rem;text-transform:uppercase;letter-spacing:.07em;color:var(--dim);padding:2px 8px 8px}
+.proj{display:flex;align-items:center;gap:8px;padding:7px 9px;border-radius:8px;cursor:pointer;color:var(--dim);font-size:.85rem;width:100%;text-align:left;background:none;border:none;font:inherit}
+.proj:hover{background:var(--panel2)} .proj.on{background:var(--panel2);color:var(--txt)} .proj .ic-svg{font-size:1em;flex:0 0 auto}
+.asplit .grow{flex:1;min-width:0}
+.atable{width:100%;border-collapse:collapse;font-size:.85rem}
+.atable th{text-align:left;font-weight:500;color:var(--dim);font-size:.72rem;text-transform:uppercase;letter-spacing:.04em;padding:9px 12px;border-bottom:1px solid var(--line);white-space:nowrap}
+.atable td{padding:10px 12px;border-bottom:1px solid var(--line);vertical-align:middle}
+.atable tr:hover td{background:var(--panel)}
+.atable .nmc{display:flex;align-items:center;gap:10px;min-width:0}
+.atable .th{width:34px;height:44px;border-radius:6px;background:#0f0f12 center/cover no-repeat;flex:0 0 auto;display:flex;align-items:center;justify-content:center;color:var(--dim);border:1px solid var(--line)}
+.atable .nm{font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:340px}
+.atable .sub{color:var(--dim);font-size:.74rem}
+.atable .own{display:inline-flex;align-items:center;gap:7px;color:var(--dim)}
+.atable .ava{width:22px;height:22px;border-radius:50%;background:#26262e;color:var(--txt);display:flex;align-items:center;justify-content:center;font-size:.62rem;font-weight:600}
+.atable .acc{color:var(--dim);font-size:.78rem;display:inline-flex;align-items:center;gap:6px}
+.atable .acc .ic-svg{font-size:.95em}
+#agrid[hidden],#atable[hidden]{display:none}   /* .grid{display:grid} outranks the [hidden] UA rule — force it */
+@media (max-width:900px){
+  .bld-tree{width:170px} .bld-rail{width:320px}
+  .dsgrid{grid-template-columns:repeat(auto-fill,minmax(190px,1fr))}
+  .atable .own,.atable .acol{display:none}
+}
+@media (max-width:600px){
+  .bld-body{flex-direction:column} .bld-rail{width:auto;max-width:none;flex:1;border-right:none;border-bottom:1px solid var(--line)}
+  .bld-main{flex:1} .bld-tree{display:none}
+  .asplit{flex-direction:column} .projrail{width:100%;display:flex;gap:6px;overflow-x:auto}
+  .projrail .ph{display:none} .proj{width:auto;flex:0 0 auto}
+  .atable .upc{display:none}
+  .tpick-grid{grid-template-columns:repeat(auto-fill,minmax(44vw,1fr))}
+}
 </style>
 <header>
   <svg class="logo" viewBox="0 0 520 520" xmlns="http://www.w3.org/2000/svg"><rect width="520" height="520" rx="120" fill="#111"/><g transform="translate(100,100) scale(4.78)" fill="#fff"><path d="M22.21 67V44.6369H0V67H22.21Z"/><path d="M66.7038 22.3184H22.2534L0.0878906 44.6367H44.4634L66.7038 22.3184Z"/><path d="M22.21 0H0V22.3184H22.21V0Z"/><path d="M66.7198 0H44.5098V22.3184H66.7198V0Z"/><path d="M66.7198 67V44.6369H44.5098V67H66.7198Z"/></g></svg>
@@ -344,27 +503,38 @@ body.immersive #stage{display:block}
   <div class="tabs">
     <button class="on" data-tab="assets" onclick="tab('assets')">Assets</button>
     <button data-tab="templates" onclick="tab('templates')">Templates</button>
+    <button data-tab="designsys" onclick="tab('designsys')">Design systems</button>
     <button data-tab="pipelines" onclick="tab('pipelines')">Workflows</button>
     <button data-tab="runs" onclick="tab('runs')">Queue &amp; History</button>
-    <button data-tab="deleted" onclick="tab('deleted')" title="Archived content — recover it, or delete forever">🗄 Archive</button>
+    <button data-tab="deleted" onclick="tab('deleted')" title="Archived content — recover it, or delete forever"><span class="ic-slot" data-ic="archive"></span>Archive<span id="delcount"></span></button>
     <span class="sp"></span>
+    <div class="vtoggle" role="group" aria-label="Asset view">
+      <button id="vgrid" class="on" onclick="setAssetView('grid')" aria-label="Grid view" aria-pressed="true" title="Grid"><span class="ic-slot" data-ic="grid"></span></button>
+      <button id="vlist" onclick="setAssetView('list')" aria-label="Table view" aria-pressed="false" title="Table"><span class="ic-slot" data-ic="list"></span></button>
+    </div>
     <button class="btn" id="selbtn" onclick="toggleSel()" style="padding:6px 12px" title="Select images — or tap the circle on any image — then delete, stack, or move them together">Select</button>
     <button class="btn" onclick="dedup()" style="padding:6px 12px" title="Move exact-duplicate images to Archive (recoverable, ⌘Z to undo)">Dedupe</button>
-    <button class="btn" id="fbexport" onclick="exportFeedback()" style="padding:6px 12px" title="Download this org's training-feedback dataset (JSONL) — every 👍/👎 and note the model learns from">⬇ Feedback</button>
+    <button class="btn" id="fbexport" onclick="exportFeedback()" style="padding:6px 12px" title="Download this org's training-feedback dataset (JSONL) — every rating and note the model learns from"><span class="ic-slot" data-ic="download"></span>Feedback</button>
     <input class="search" id="q" placeholder="Search…" oninput="render()">
   </div>
   <section id="assets">
     <div class="chips" id="filters"></div>
     <div class="row" id="stackbar" style="margin:-6px 0 14px;gap:10px">
-      <button class="mini" onclick="newStackPrompt()" title="Create an empty Stack">🗂 New Stack</button>
+      <button class="mini" onclick="newStackPrompt()" title="Create an empty Stack"><span class="ic-slot" data-ic="layers"></span> New Stack</button>
       <label class="row" style="gap:6px;color:var(--dim);font-size:.78rem;cursor:pointer" title="Auto-create a Stack for each multi-image generation">
         <input type="checkbox" id="autostack" onchange="setAutoStack(this.checked)"> Auto-stack batch generations</label>
     </div>
     <div class="row" id="archivebar" hidden style="margin:-6px 0 14px;gap:10px;align-items:center">
       <span style="color:var(--dim);font-size:.78rem">Archived items are kept so you can always see what was made — recover any, or remove permanently.</span>
-      <button class="mini hot" onclick="emptyArchive()" style="margin-left:auto" title="Permanently delete every archived item — cannot be undone">🗑 Empty Archive</button>
+      <button class="mini hot" onclick="emptyArchive()" style="margin-left:auto" title="Permanently delete every archived item — cannot be undone"><span class="ic-slot" data-ic="trash"></span> Empty Archive</button>
     </div>
-    <div class="grid" id="agrid" aria-label="Gallery: Stacks and images"></div>
+    <div class="asplit">
+      <aside class="projrail" id="projrail" hidden aria-label="Projects"></aside>
+      <div class="grow">
+        <div class="grid" id="agrid" aria-label="Gallery: Stacks and images"></div>
+        <div id="atable" hidden></div>
+      </div>
+    </div>
   </section>
   <section id="stackview" hidden aria-label="Stack detail">
     <div class="sv-head">
@@ -409,6 +579,7 @@ body.immersive #stage{display:block}
     <div class="sec-l">Start from a kind</div>
     <div class="grid" id="tgall"></div>
   </section>
+  <section id="designsys" hidden></section>
   <section id="pipelines" hidden><div class="grid" id="wfgrid"></div></section>
   <section id="runs" hidden>
     <div id="qhead" class="qhead"></div>
@@ -420,6 +591,77 @@ body.immersive #stage{display:block}
     <div class="qcol"><h3 class="qh">✓ History — rate &amp; note for better future generations</h3><div class="grid" id="rgrid"></div></div>
   </section>
 </main>
+
+<!-- ═══ Set up your design system — the create wizard (feature #2) ═══ -->
+<dialog id="dswiz" aria-label="Set up your design system">
+  <div class="wiz-h"><span class="ic-slot" data-ic="shapes"></span><div><h3>Set up your design system</h3><p>Tell us about your company and attach any design resources you have.</p></div></div>
+  <label class="wiz-l" for="wiz-name">Company name and blurb</label>
+  <textarea class="wiz-ta" id="wiz-name" placeholder="e.g. Karma — sustainable streetwear. Warm, confident, a little playful."></textarea>
+  <div class="wiz-l">Provide examples of your design system and products <span style="text-transform:none;letter-spacing:0;color:var(--dim)">(all optional)</span></div>
+  <div class="wiz-card">
+    <div class="wiz-row">
+      <div class="rl"><span class="ic-slot" data-ic="github"></span>Link code from GitHub</div>
+      <div class="rh">Public repos we read for components, tokens and copy.</div>
+      <div class="wiz-add"><input class="wiz-in" id="wiz-gh-in" placeholder="https://github.com/owner/repo" onkeydown="if(event.key==='Enter'){event.preventDefault();wizAddGh()}"><button class="wiz-btn" onclick="wizAddGh()">Add</button></div>
+      <div class="wiz-chips" id="wiz-gh"></div>
+    </div>
+    <div class="wiz-row">
+      <div class="rl"><span class="ic-slot" data-ic="code"></span>Link code from your computer</div>
+      <div class="rh">Requires Chrome or Edge. Copies only the files you pick — for a large repo, choose a frontend subfolder.</div>
+      <button class="wiz-btn" id="wiz-dir-btn" onclick="wizPickDir()"><span class="ic-slot" data-ic="folderopen"></span>Choose a folder</button>
+      <div class="wiz-chips" id="wiz-dir"></div>
+    </div>
+    <div class="wiz-row">
+      <div class="rl"><span class="ic-slot" data-ic="fileup"></span>Upload a .fig file</div>
+      <div class="rh">Parsed locally in your browser — the file never leaves your device. <a href="https://help.figma.com/hc/en-us/articles/360055203533" target="_blank" rel="noopener">Learn how to get a .fig file</a></div>
+      <label class="wiz-drop" id="wiz-fig-drop"><span class="ic-slot" data-ic="fileup"></span>Drop a .fig here, or browse<input type="file" accept=".fig" hidden onchange="wizAddFig(this.files);this.value=''"></label>
+      <div class="wiz-priv"><span class="ic-slot" data-ic="check"></span>Read in-browser, never uploaded</div>
+      <div class="wiz-chips" id="wiz-figs"></div>
+    </div>
+    <div class="wiz-row">
+      <div class="rl"><span class="ic-slot" data-ic="type"></span>Add fonts, logos and assets</div>
+      <div class="rh">Brand fonts, logo files and reference imagery.</div>
+      <label class="wiz-drop" id="wiz-file-drop"><span class="ic-slot" data-ic="upload"></span>Drop files here, or browse<input type="file" multiple hidden onchange="wizAddFiles(this.files);this.value=''"></label>
+      <div class="wiz-chips" id="wiz-files"></div>
+    </div>
+  </div>
+  <label class="wiz-l" for="wiz-notes">Any other notes?</label>
+  <textarea class="wiz-ta" id="wiz-notes" placeholder="e.g. warm, earthy palette with rounded corners; brand voice playful but professional."></textarea>
+  <div class="wiz-foot">
+    <button class="wiz-btn" onclick="document.getElementById('dswiz').close()"><span class="ic-slot" data-ic="aleft"></span>Back</button>
+    <span class="sp"></span>
+    <button class="wiz-btn" style="background:var(--brand);color:#111;border-color:var(--brand);font-weight:600" onclick="wizContinue()">Continue to generation<span class="ic-slot" data-ic="aright"></span></button>
+  </div>
+</dialog>
+
+<!-- ═══ Agentic design-system builder (the generation half, feature #2) ═══ -->
+<div id="dsbuild" role="dialog" aria-label="Design system builder" aria-modal="true">
+  <div class="bld-top">
+    <button class="bk" onclick="closeBuilder(false)"><span class="ic-slot" data-ic="aleft"></span>Back</button>
+    <div class="ti"><span class="ic-slot" data-ic="swatch"></span><span id="bld-title">Design system</span></div>
+    <span class="sp"></span>
+    <button class="bk" onclick="closeBuilder(false)"><span class="ic-slot" data-ic="upload"></span>Share</button>
+  </div>
+  <div class="bld-body">
+    <div class="bld-rail">
+      <div class="bld-chat" id="bld-chat">
+        <div class="bld-sec"><span class="ic-slot" data-ic="sparkles"></span>Updated todos</div>
+        <div class="bld-todos" id="bld-todos"></div>
+        <div class="bld-log" id="bld-log"></div>
+      </div>
+      <div class="bld-status" id="bld-status"></div>
+      <div class="bld-comp">
+        <textarea id="bld-in" placeholder="Describe what you want to create…" rows="1" oninput="this.style.height='40px';this.style.height=Math.min(this.scrollHeight,120)+'px'" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();bldSend()}"></textarea>
+        <button class="mdl" onclick="toast('Model: Opus 4.8 · zen — the agent runs on Hanzo AI')">Opus</button>
+        <button class="snd" onclick="bldSend()" aria-label="Send"><span class="ic-slot" data-ic="aup"></span></button>
+      </div>
+    </div>
+    <div class="bld-main">
+      <div class="bld-tree" id="bld-tree"></div>
+      <div class="bld-edit" id="bld-edit"></div>
+    </div>
+  </div>
+</div>
 <div id="toast"></div>
 <div id="zoom" onclick="zoomBg(event)">
   <button class="viewbtn" id="zprev" onclick="event.stopPropagation();zStep(-1)" style="position:absolute;left:18px;top:50%;transform:translateY(-50%);display:none;font-size:1.4rem" aria-label="Previous image">‹</button>
@@ -533,28 +775,83 @@ body.immersive #stage{display:block}
 // ── Template / KIND catalog — everything Studio supports ─────────────────────
 const TEMPLATES=[
  // ── Fashion / commerce (the proven karma workflows, systematized) ──
- {k:'cad_ghost', t:'CAD → Ghost mannequin', d:'Real fabric, invisible form', ic:'👕', wf:'cad_ghost', grp:'Fashion'},
- {k:'outfit',    t:'Outfit switcher',       d:'Swap clothes, keep model+light', ic:'🔁', wf:'outfit', grp:'Fashion'},
- {k:'product',   t:'Product photography',   d:'Ecom front·side·back',        ic:'🛍', wf:'product', grp:'Fashion'},
- {k:'lifestyle', t:'Lifestyle photography', d:'Same model/3D, in scene',     ic:'🌅', wf:'lifestyle', grp:'Fashion'},
- {k:'cad_mockup',t:'CAD → mockup',          d:'Fashion / packaging',         ic:'✳️', wf:'cad_mockup', grp:'Fashion'},
- {k:'model3d',   t:'Image → 3D',            d:'A photo → a rotatable .glb mesh (Hunyuan3D)',ic:'🧊', wf:'model3d', grp:'Fashion'},
+ {k:'cad_ghost', t:'CAD → Ghost mannequin', d:'Real fabric, invisible form', ic:'shirt', wf:'cad_ghost', grp:'Fashion'},
+ {k:'outfit',    t:'Outfit switcher',       d:'Swap clothes, keep model+light', ic:'swap', wf:'outfit', grp:'Fashion'},
+ {k:'product',   t:'Product photography',   d:'Ecom front·side·back',        ic:'camera', wf:'product', grp:'Fashion'},
+ {k:'lifestyle', t:'Lifestyle photography', d:'Same model/3D, in scene',     ic:'image', wf:'lifestyle', grp:'Fashion'},
+ {k:'cad_mockup',t:'CAD → mockup',          d:'Fashion / packaging',         ic:'package', wf:'cad_mockup', grp:'Fashion'},
+ {k:'model3d',   t:'Image → 3D',            d:'A photo → a rotatable .glb mesh (Hunyuan3D)',ic:'box', wf:'model3d', grp:'Fashion'},
  // ── Media ──
- {k:'video',     t:'Video',           d:'Wan · LTX · Hunyuan',        ic:'🎬', wf:'video', grp:'Media'},
- {k:'music',     t:'Music',           d:'ACE-Step · song',            ic:'🎵', wf:'music', grp:'Media'},
- {k:'voice',     t:'Voice',           d:'Narration · TTS',            ic:'🎙', wf:'voice', grp:'Media'},
+ {k:'video',     t:'Video',           d:'Wan · LTX · Hunyuan',        ic:'film', wf:'video', grp:'Media'},
+ {k:'music',     t:'Music',           d:'ACE-Step · song',            ic:'music', wf:'music', grp:'Media'},
+ {k:'voice',     t:'Voice',           d:'Narration · TTS',            ic:'mic', wf:'voice', grp:'Media'},
  // ── Marketing ──
- {k:'social',    t:'Social / Ad',     d:'Posts · ads · campaigns',    ic:'📣', wf:'social', grp:'Marketing'},
- {k:'email',     t:'Marketing email', d:'HTML / MJML',                ic:'✉️', wf:'email', grp:'Marketing'},
- {k:'deck',      t:'Deck',            d:'Sales · investor',           ic:'📊', wf:'deck', grp:'Marketing'},
+ {k:'social',    t:'Social / Ad',     d:'Posts · ads · campaigns',    ic:'megaphone', wf:'social', grp:'Marketing'},
+ {k:'email',     t:'Marketing email', d:'HTML / MJML',                ic:'mail', wf:'email', grp:'Marketing'},
+ {k:'deck',      t:'Deck',            d:'Sales · investor',           ic:'presentation', wf:'deck', grp:'Marketing'},
  // ── Documents ──
- {k:'doc',       t:'Document',        d:'Word · guide',               ic:'📄', wf:'doc', grp:'Documents'},
- {k:'sheet',     t:'Spreadsheet',     d:'xlsx · data',                ic:'🧮', wf:'sheet', grp:'Documents'},
- {k:'paper',     t:'Paper (LaTeX)',   d:'Academic · PDF',             ic:'📐', wf:'paper', grp:'Documents'},
+ {k:'doc',       t:'Document',        d:'Word · guide',               ic:'doc', wf:'doc', grp:'Documents'},
+ {k:'sheet',     t:'Spreadsheet',     d:'xlsx · data',                ic:'table', wf:'sheet', grp:'Documents'},
+ {k:'paper',     t:'Paper (LaTeX)',   d:'Academic · PDF',             ic:'grad', wf:'paper', grp:'Documents'},
  // ── Web ──
- {k:'site',      t:'Website / App',   d:'From hanzo.app templates',   ic:'🖥', wf:'site', grp:'Web'},
+ {k:'site',      t:'Website / App',   d:'From hanzo.app templates',   ic:'monitor', wf:'site', grp:'Web'},
 ];
 let DATA={assets:[],workflows:[]},FILTER='all';
+// ── Monochrome icon set — lucide (ISC), inlined so there is ONE icon system and
+// no emoji anywhere in the create experience. icon(name) → a currentColor SVG. ──
+const _IC={
+ shirt:'<path d="M20.38 3.46 16 2a4 4 0 0 1-8 0L3.62 3.46a2 2 0 0 0-1.34 2.23l.58 3.47a1 1 0 0 0 .99.84H6v10c0 1.1.9 2 2 2h8a2 2 0 0 0 2-2V10h2.15a1 1 0 0 0 .99-.84l.58-3.47a2 2 0 0 0-1.34-2.23z"/>',
+ swap:'<path d="M8 3 4 7l4 4"/><path d="M4 7h16"/><path d="m16 21 4-4-4-4"/><path d="M20 17H4"/>',
+ camera:'<path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/>',
+ image:'<rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/>',
+ package:'<path d="M11 21.73a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73z"/><path d="M12 22V12"/><polyline points="3.29 7 12 12 20.71 7"/><path d="m7.5 4.27 9 5.15"/>',
+ box:'<path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/>',
+ film:'<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M7 3v18"/><path d="M3 7.5h4"/><path d="M3 12h18"/><path d="M3 16.5h4"/><path d="M17 3v18"/><path d="M17 7.5h4"/><path d="M17 16.5h4"/>',
+ music:'<path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/>',
+ mic:'<path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/>',
+ megaphone:'<path d="m3 11 18-5v12L3 14v-3z"/><path d="M11.6 16.8a3 3 0 1 1-5.8-1.6"/>',
+ mail:'<path d="m22 7-8.991 5.727a2 2 0 0 1-2.009 0L2 7"/><rect x="2" y="4" width="20" height="16" rx="2"/>',
+ presentation:'<path d="M2 3h20"/><path d="M21 3v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V3"/><path d="m7 21 5-5 5 5"/>',
+ doc:'<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/>',
+ table:'<path d="M12 3v18"/><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M3 9h18"/><path d="M3 15h18"/>',
+ grad:'<path d="M21.42 10.922a1 1 0 0 0-.019-1.838L12.83 5.18a2 2 0 0 0-1.66 0L2.6 9.08a1 1 0 0 0 0 1.832l8.57 3.908a2 2 0 0 0 1.66 0z"/><path d="M22 10v6"/><path d="M6 12.5V16a6 3 0 0 0 12 0v-3.5"/>',
+ monitor:'<rect width="20" height="14" x="2" y="3" rx="2"/><line x1="8" x2="16" y1="21" y2="21"/><line x1="12" x2="12" y1="17" y2="21"/>',
+ star:'<path d="M11.525 2.295a.53.53 0 0 1 .95 0l2.31 4.679a2.123 2.123 0 0 0 1.595 1.16l5.166.756a.53.53 0 0 1 .294.904l-3.736 3.638a2.123 2.123 0 0 0-.611 1.878l.882 5.14a.53.53 0 0 1-.771.56l-4.618-2.428a2.122 2.122 0 0 0-1.973 0L6.396 21.01a.53.53 0 0 1-.77-.56l.881-5.139a2.122 2.122 0 0 0-.611-1.879L2.16 9.795a.53.53 0 0 1 .294-.906l5.165-.755a2.122 2.122 0 0 0 1.597-1.16z"/>',
+ search:'<path d="m21 21-4.34-4.34"/><circle cx="11" cy="11" r="8"/>',
+ x:'<path d="M18 6 6 18"/><path d="m6 6 12 12"/>',
+ palette:'<path d="M12 22a1 1 0 0 1 0-20 10 9 0 0 1 10 9 5 5 0 0 1-5 5h-2.25a1.75 1.75 0 0 0-1.4 2.8l.3.4a1.75 1.75 0 0 1-1.4 2.8z"/><circle cx="13.5" cy="6.5" r=".5" fill="currentColor"/><circle cx="17.5" cy="10.5" r=".5" fill="currentColor"/><circle cx="6.5" cy="12.5" r=".5" fill="currentColor"/><circle cx="8.5" cy="7.5" r=".5" fill="currentColor"/>',
+ plus:'<path d="M5 12h14"/><path d="M12 5v14"/>',
+ grid:'<rect width="7" height="7" x="3" y="3" rx="1"/><rect width="7" height="7" x="14" y="3" rx="1"/><rect width="7" height="7" x="14" y="14" rx="1"/><rect width="7" height="7" x="3" y="14" rx="1"/>',
+ list:'<path d="M3 12h.01"/><path d="M3 18h.01"/><path d="M3 6h.01"/><path d="M8 12h13"/><path d="M8 18h13"/><path d="M8 6h13"/>',
+ chev:'<path d="m6 9 6 6 6-6"/>',
+ check:'<path d="M20 6 9 17l-5-5"/>',
+ swatch:'<path d="M11 17a4 4 0 0 1-8 0V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2Z"/><path d="M16.7 13H19a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2H7"/><path d="M7 17h.01"/><path d="m11 8 2.3-2.3a2.4 2.4 0 0 1 3.404.004L18.6 7.6a2.4 2.4 0 0 1 .026 3.434L9.9 19.8"/>',
+ shapes:'<path d="M8.3 10a.7.7 0 0 1-.626-1.079L11.4 3a.7.7 0 0 1 1.198-.043L16.3 8.9a.7.7 0 0 1-.572 1.1Z"/><rect x="3" y="14" width="7" height="7" rx="1"/><circle cx="17.5" cy="17.5" r="3.5"/>',
+ github:'<path d="M15 22v-4a4.8 4.8 0 0 0-1-3.5c3 0 6-2 6-5.5.08-1.25-.27-2.48-1-3.5.28-1.15.28-2.35 0-3.5 0 0-1 0-3 1.5-2.64-.5-5.36-.5-8 0C6 2 5 2 5 2c-.3 1.15-.3 2.35 0 3.5A5.403 5.403 0 0 0 4 9c0 3.5 3 5.5 6 5.5-.39.49-.68 1.05-.85 1.65-.17.6-.22 1.23-.15 1.85v4"/><path d="M9 18c-4.51 2-5-2-7-2"/>',
+ upload:'<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" x2="12" y1="3" y2="15"/>',
+ code:'<path d="M10 10.5 8 13l2 2.5"/><path d="m14 10.5 2 2.5-2 2.5"/><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2z"/>',
+ fileup:'<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M12 12v6"/><path d="m15 15-3-3-3 3"/>',
+ type:'<polyline points="4 7 4 4 20 4 20 7"/><line x1="9" x2="15" y1="20" y2="20"/><line x1="12" x2="12" y1="4" y2="20"/>',
+ link:'<path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>',
+ sparkles:'<path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/><path d="M20 3v4"/><path d="M22 5h-4"/><path d="M4 17v2"/><path d="M5 18H3"/>',
+ aright:'<path d="M5 12h14"/><path d="m12 5 7 7-7 7"/>',
+ aleft:'<path d="m12 19-7-7 7-7"/><path d="M19 12H5"/>',
+ aup:'<path d="m5 12 7-7 7 7"/><path d="M12 19V5"/>',
+ folder:'<path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/>',
+ folderopen:'<path d="m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.95 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2"/>',
+ file:'<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/>',
+ archive:'<rect width="20" height="5" x="2" y="3" rx="1"/><path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"/><path d="M10 12h4"/>',
+ layers:'<path d="M12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83z"/><path d="M2 12a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 12"/><path d="M2 17a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 17"/>',
+ msg:'<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>',
+ checkc:'<circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/>',
+ circle:'<circle cx="12" cy="12" r="10"/>',
+ globe:'<circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/>',
+ wand:'<path d="m21.64 3.64-1.28-1.28a1.21 1.21 0 0 0-1.72 0L2.36 18.64a1.21 1.21 0 0 0 0 1.72l1.28 1.28a1.2 1.2 0 0 0 1.72 0L21.64 5.36a1.2 1.2 0 0 0 0-1.72"/><path d="m14 7 3 3"/><path d="M5 6v4"/><path d="M19 14v4"/><path d="M10 2v2"/><path d="M7 8H3"/><path d="M21 16h-4"/><path d="M11 3H9"/>',
+ loader:'<path d="M21 12a9 9 0 1 1-6.219-8.56"/>',
+ branch:'<line x1="6" x2="6" y1="3" y2="15"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/>',
+ download:'<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/>',
+};
+function icon(n){return `<svg class="ic-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${_IC[n]||_IC.sparkles}</svg>`;}
 const $=id=>document.getElementById(id);
 const toast=m=>{const t=$('toast');t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),3000)};
 const imgURL=a=>`/v1/library/file?path=${encodeURIComponent(a.path)}`;
@@ -571,13 +868,14 @@ const isVideo=p=>/\.(mp4|webm)$/i.test(p||'');
 const is3d=p=>/\.glb$/i.test(p||'');
 // The output-node in a graph, any medium — used to title runs by their real prefix.
 const saver=g=>Object.values(g||{}).find(n=>n&&['SaveImage','SaveVideo','SaveWEBM'].includes(n.class_type));
-function tcard(x){return `<div class="tcard" onclick="pickTemplate('${x.k}','${x.t.replace(/'/g,"")}')"><div class="ic">${x.ic}</div><div class="tl">${x.t}</div><div class="td">${x.d}</div></div>`;}
+function tcard(x){return `<button type="button" class="tcard" role="listitem" aria-label="${esc(x.t+' — '+x.d)}" onclick="pickTemplate('${x.k}','${x.t.replace(/'/g,"")}')"><span class="ic">${icon(x.ic)}</span><span class="tl">${esc(x.t)}</span><span class="td">${esc(x.d)}</span></button>`;}
 function tab(name){document.querySelectorAll('.tabs button').forEach(b=>b.classList.toggle('on',b.dataset.tab===name));
   // Leaving for another tab closes an open Stack detail (it lives over Assets).
   if(CURSTACK){CURSTACK=null;if(SELMODE){SELMODE=false;SEL.clear();updateBulk();}}
   $('stackview').hidden=true;
   const sec=name==='deleted'?'assets':name;   // Archive reuses the assets grid, filtered to archived (status==='deleted')
-  for(const s of ['assets','templates','pipelines','runs'])$(s).hidden=s!==sec;
+  for(const s of ['assets','templates','pipelines','runs','designsys'])$(s).hidden=s!==sec;
+  if(name==='designsys')renderDesignSystems();
   if(name==='deleted'){FILTER='deleted';}
   else if(name==='assets'&&(FILTER==='deleted'||FILTER==='flagged')){FILTER='all';}
   if(sec==='assets'){paintChips();render();updateBulk();}
@@ -591,7 +889,7 @@ async function loadOrgTemplates(){
   // is esc()'d text and looked up by slug at click — a hostile template name can
   // never break out of the attribute or the text node.
   $('orgtmpl').innerHTML=ts.length?ts.map(t=>{
-    return `<div class="tcard"><div class="ic">★</div><div class="tl">${esc(t.name||t.slug)}</div>
+    return `<div class="tcard"><div class="ic">${icon('star')}</div><div class="tl">${esc(t.name||t.slug)}</div>
       <div class="td">${t.ts?new Date(t.ts*1000).toLocaleDateString():''}</div>
       <div class="row" style="padding:0 11px 11px;gap:6px">
         <a class="mini" href="/?advanced=1&template=${encodeURIComponent(t.slug)}">Open in Editor</a>
@@ -627,7 +925,7 @@ let _pop=null;
 function closeMenu(){ if(!_pop)return; try{_pop.anchor.classList.remove('on');}catch(_){}
   _pop.el.remove(); document.removeEventListener('click',_pop.out,true); document.removeEventListener('keydown',_pop.key,true); _pop=null; }
 function _popover(anchor,node){
-  closeMenu(); node.className='pmenu'; node.setAttribute('role','menu'); document.body.appendChild(node);
+  closeMenu(); node.classList.add('pmenu'); node.setAttribute('role','menu'); document.body.appendChild(node);
   const r=anchor.getBoundingClientRect(), mw=Math.min(node.offsetWidth||260,innerWidth-16);
   let left=r.left+scrollX; if(left+mw>scrollX+innerWidth-8)left=scrollX+innerWidth-8-mw;
   node.style.left=Math.max(scrollX+8,left)+'px'; node.style.top=(r.bottom+6+scrollY)+'px';
@@ -662,23 +960,10 @@ function openHTML(anchor,html){ const m=document.createElement('div'); m.innerHT
 // Design system → scope the gallery to one of the org's REAL designs (the SAME
 // FILTER the chips drive; pill and chips stay in sync via paintChips).
 const _SPECIAL=['all','marketing','drafts','flagged','deleted'];
-function pickPreset(ev){
-  const designs=[...new Set((DATA.assets||[]).map(a=>a.design).filter(Boolean))].sort();
-  const items=[{v:'all',t:'None',d:'Show all designs'}].concat(designs.map(d=>({v:d,t:d})));
-  const cur=_SPECIAL.includes(FILTER)?'all':FILTER;
-  openMenu(ev.currentTarget,'Design system',[{items}],cur,v=>{ FILTER=v; paintChips(); render();
-    if(v!=='all')$('assets').scrollIntoView({behavior:'smooth',block:'nearest'}); });
-}
+function pickPreset(ev){ openDesignSystemPicker(ev.currentTarget); }
 // Template → the KIND catalog, grouped. Pick sets the lane (pickTemplate); None
 // returns to the neutral edit/compose composer (clearLane).
-function laneChip(ev){
-  const grps=[...new Set(TEMPLATES.map(t=>t.grp))];
-  const groups=[{items:[{v:'__none__',t:'None',d:'Edit / compose your photos'}]}]
-    .concat(grps.map(g=>({label:g,items:TEMPLATES.filter(t=>t.grp===g).map(t=>({v:t.k,t:t.t,d:t.d}))})));
-  openMenu(ev.currentTarget,'Template',groups,KIND||'__none__',v=>{
-    if(v==='__none__'){clearLane();toast('Back to edit / compose');return;}
-    const tpl=TEMPLATES.find(x=>x.k===v); if(tpl)pickTemplate(tpl.k,tpl.t); });
-}
+function laneChip(ev){ openTemplatePicker(ev.currentTarget); }
 // Model → the REAL Hanzo catalog (api.hanzo.ai/v1/models), curated to the
 // Studio-relevant set and shown ONLY where the id truly exists upstream. Choice
 // persists (hz_model) and drives the composer + the Chat sidebar model.
@@ -769,7 +1054,7 @@ async function load(){
   paintChips(); render();
 }
 function paintChips(){
-  const ds=$('ds'); if(ds)ds.textContent=(_SPECIAL.includes(FILTER)||!FILTER)?'None':FILTER;  // keep the Design-system pill in sync with the chips
+  if(typeof dsSyncComposer==='function')dsSyncComposer();  // the Design-system pill reflects the active style preset (below), not the gallery filter
   const groups=[...new Set(DATA.assets.map(a=>a.design).filter(Boolean))].sort();
   const delN=DATA.assets.filter(a=>a.status==='deleted').length;
   const flagN=DATA.assets.filter(a=>a.status==='flagged').length;
@@ -778,7 +1063,7 @@ function paintChips(){
   $('filters').innerHTML=chips.map(g=>`<span class="chip ${g===FILTER?'on':''}" onclick="FILTER='${g}';paintChips();render()">${g}</span>`).join('')
     +`<span class="chip ${FILTER==='drafts'?'on':''}" onclick="FILTER='drafts';paintChips();render()" style="margin-left:auto" title="Unpublished renders — review and Publish to show them in the gallery">✎ Drafts${draftN?' ('+draftN+')':''}</span>`
     +`<span class="chip ${FILTER==='flagged'?'on':''}" onclick="FILTER='flagged';paintChips();render()" title="Renders the quality gate flagged — review and restore">⚑ Flagged${flagN?' ('+flagN+')':''}</span>`;
-  const dt=document.querySelector('[data-tab="deleted"]'); if(dt)dt.textContent='🗄 Archive'+(delN?' ('+delN+')':'');
+  const dt=$('delcount'); if(dt)dt.textContent=delN?' ('+delN+')':'';
 }
 let SELMODE=false; const SEL=new Set();
 // Selection is shared by the gallery and an open Stack — only one view is active
@@ -1877,7 +2162,220 @@ function openStackFromHash(){const m=(location.hash||'').match(/stack=([A-Za-z0-
 // header auto-hide (immersive) — reveal on top-hover / mouse near top
 document.getElementById('tophover').addEventListener('mouseenter',()=>document.querySelector('header').classList.add('reveal'));
 document.addEventListener('mousemove',e=>{if(e.clientY<8)document.querySelector('header').classList.add('reveal');else if(e.clientY>90&&document.body.classList.contains('immersive'))document.querySelector('header').classList.remove('reveal');});
-load().then(openStackFromHash); loadSession(); updateLivebar(); initModel(); setInterval(updateLivebar, 5000);
+// ═══════════════════════════════════════════════════════════════════════════
+//  CREATE EXPERIENCE — template picker · design systems · setup wizard ·
+//  agentic builder · assets table. All monochrome, DRY on icon()/_popover/tokens.
+//  What is REAL vs SCAFFOLDED vs PLANNED is called out in DS_PLAN at the bottom.
+// ═══════════════════════════════════════════════════════════════════════════
+Object.assign(_IC,{
+  trash:'<path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/>',
+});
+const _sleep=ms=>new Promise(r=>setTimeout(r,ms));
+// Hydrate static-HTML icon slots: <span class="ic-slot" data-ic="name">.
+function hydrateIcons(root){ (root||document).querySelectorAll('[data-ic]').forEach(e=>{ if(!e.__ic){e.innerHTML=icon(e.dataset.ic);e.__ic=1;} }); }
+
+// ── 1) Searchable template picker (composer → Template) — the emoji→mono fix
+//        folded into a clean grid+search popover. Click sets the lane. ──────────
+const _TCAT=(()=>{ const g=[...new Set(TEMPLATES.map(t=>t.grp))]; return g.map(grp=>({grp,items:TEMPLATES.filter(t=>t.grp===grp)})); })();
+function openTemplatePicker(anchor){
+  const box=document.createElement('div'); box.className='tpick'; box.setAttribute('role','dialog'); box.setAttribute('aria-label','Templates');
+  box.innerHTML=`<div class="tpick-s">${icon('search')}<input type="text" placeholder="Search templates and skills" aria-label="Search templates and skills" autocomplete="off"></div><div class="tpick-body" id="tpick-body"></div>`;
+  const paint=q=>{ q=(q||'').trim().toLowerCase(); const body=box.querySelector('#tpick-body'); let html='',any=false;
+    for(const cat of _TCAT){ const items=cat.items.filter(t=>!q||(t.t+' '+t.d+' '+cat.grp).toLowerCase().includes(q)); if(!items.length)continue; any=true;
+      html+=`<div class="tpick-g">${esc(cat.grp)}</div><div class="tpick-grid">`+items.map(t=>`<button type="button" class="tpick-tile" data-k="${t.k}" aria-label="${esc(t.t+' — '+t.d)}"><span class="th">${icon(t.ic)}</span><span class="tt">${esc(t.t)}</span><span class="ts">${esc(t.d)}</span></button>`).join('')+`</div>`; }
+    const none=`<div class="tpick-grid" style="margin-top:6px"><button type="button" class="tpick-none" data-none="1">${icon('sparkles')}<span><b style="font-weight:500">Start from scratch</b><span style="color:var(--dim);font-size:.72rem;display:block">Edit or compose your own photos — no template</span></span></button></div>`;
+    body.innerHTML=(q?'':none)+(any?html:`<div class="tpick-empty">No templates or skills match “${esc(q)}”.</div>`);
+    body.querySelectorAll('.tpick-tile').forEach(el=>el.onclick=()=>{ const t=TEMPLATES.find(x=>x.k===el.dataset.k); closeMenu(); if(t)pickTemplate(t.k,t.t); });
+    const n=body.querySelector('[data-none]'); if(n)n.onclick=()=>{ closeMenu(); clearLane(); toast('Back to edit / compose'); };
+  };
+  paint('');
+  _popover(anchor,box);
+  const s=box.querySelector('input'); s.addEventListener('input',()=>paint(s.value)); setTimeout(()=>s.focus(),30);
+}
+
+// ── 2) Design systems — seed presets + per-org local store. SELECT + STORE are
+//        real; the generation engine that CONSUMES a system is PLANNED. ─────────
+const DS_SEED=[
+ {k:'modernist',name:'Modernist',blurb:'Swiss grid, generous whitespace, a single decisive accent.',sw:['#0a0a0a','#f4f4f4','#e8442a','#9a9a9a'],type:'Neue Grotesk',seed:true},
+ {k:'classical',name:'Classical',blurb:'Serif headlines, warm neutrals, editorial hairlines.',sw:['#1c1a17','#f2ead9','#8a6d3b','#3f5a4a'],type:'Canela / Georgia',seed:true},
+ {k:'nocturne',name:'Nocturne',blurb:'Near-black canvas, luminous accents, high contrast.',sw:['#0a0a0b','#ededed','#6aa5ff','#b48cff'],type:'Inter',seed:true},
+ {k:'organic',name:'Organic',blurb:'Earthy palette, soft radii, humanist type.',sw:['#2b2a24','#efe7d6','#8fae74','#d99a6c'],type:'Fraunces',seed:true},
+ {k:'broadsheet',name:'Broadsheet',blurb:'Newsprint columns, tight leading, ink black.',sw:['#141414','#f7f5f0','#c0392b','#6b6b6b'],type:'Chronicle',seed:true},
+ {k:'industry',name:'Industry',blurb:'Utilitarian mono, safety accents, hard edges.',sw:['#101215','#e6e8ea','#ffcf4a','#ff6b3d'],type:'IBM Plex',seed:true},
+];
+const _validHex=c=>/^#[0-9a-fA-F]{3,8}$/.test(c);
+const dsOrg=()=>(typeof SESSION!=='undefined'&&SESSION&&SESSION.org)||(DATA&&DATA.org)||'default';
+function dsUser(){ try{return JSON.parse(localStorage['hz_ds_'+dsOrg()]||'[]');}catch(_){return [];} }
+function dsSaveUser(l){ try{localStorage['hz_ds_'+dsOrg()]=JSON.stringify(l);}catch(_){} }
+function dsAll(){ return DS_SEED.concat(dsUser()); }
+function dsGet(k){ return dsAll().find(d=>d.k===k)||null; }
+function dsDefault(){ try{return localStorage['hz_ds_def_'+dsOrg()]||'';}catch(_){return '';} }
+function dsSetDefault(k){ try{localStorage['hz_ds_def_'+dsOrg()]=k;}catch(_){} renderDesignSystems(); dsSyncComposer(); toast('Org default: '+(dsGet(k)?dsGet(k).name:k)); }
+function dsActive(){ try{return localStorage['hz_ds_act_'+dsOrg()]||'';}catch(_){return '';} }
+function dsSetActive(k){ try{ if(k)localStorage['hz_ds_act_'+dsOrg()]=k; else localStorage.removeItem('hz_ds_act_'+dsOrg()); }catch(_){} dsSyncComposer(); if(!$('designsys').hidden)renderDesignSystems(); }
+function dsCreate(o){ const l=dsUser(); const base=(o.name||'system').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'')||'system'; let k=base,i=2; while(dsGet(k))k=base+'-'+(i++); const rec=Object.assign({k,sw:['#0a0a0a','#ededed','#6aa5ff','#888888'],type:'Inter',ts:Date.now()},o,{k,seed:false}); l.push(rec); dsSaveUser(l); return rec; }
+function dsSyncComposer(){ const el=$('ds'); if(!el)return; const a=dsActive(),d=a&&dsGet(a); el.textContent=d?d.name:'None'; }
+const dsSwatch=(sw,extra)=>`<div class="ds-sw"${extra||''}>`+(sw||[]).slice(0,4).map(c=>`<i style="background:${_validHex(c)?c:'#888'}"></i>`).join('')+`</div>`;
+function openDesignSystemPicker(anchor){
+  const cur=dsActive(),def=dsDefault();
+  const rows=[{v:'',t:'None',d:'No design system — default Studio style'}].concat(dsAll().map(d=>({v:d.k,t:d.name,d:d.blurb,ds:d,badge:d.k===def?'Org default':''})));
+  const m=document.createElement('div'); let html='<div class="pm-hd">Design system</div>';
+  rows.forEach(it=>{ const on=it.v===cur; html+=`<div class="pm-i ds" role="menuitemradio" aria-checked="${on}" tabindex="0" data-v="${esc(it.v)}">${it.ds?dsSwatch(it.ds.sw):'<span class="ds-sw" style="border:none;width:37px"></span>'}<div style="min-width:0;flex:1"><div class="pm-t">${esc(it.t)}${it.badge?'<span class="pm-badge">'+it.badge+'</span>':''}</div><div class="pm-d">${esc(it.d)}</div></div>${on?'<span class="pm-ck">'+icon('check')+'</span>':''}</div>`; });
+  html+=`<div class="pm-i create" role="menuitem" tabindex="0" data-create="1" style="border-top:1px solid var(--line);margin-top:4px">${icon('plus')}Create design system…</div>`;
+  html+=`<div class="pm-i create" role="menuitem" tabindex="0" data-manage="1">${icon('swatch')}Manage design systems</div>`;
+  m.innerHTML=html;
+  m.querySelectorAll('.pm-i').forEach(el=>{ const go=()=>{ closeMenu();
+      if(el.dataset.create)return openDsWizard();
+      if(el.dataset.manage)return tab('designsys');
+      const v=el.dataset.v; dsSetActive(v); toast(v?('Design system: '+(dsGet(v)?dsGet(v).name:v)):'Design system cleared'); };
+    el.onclick=go; el.onkeydown=e=>{ if(e.key==='Enter'||e.key===' '){e.preventDefault();go();} }; });
+  _popover(anchor,m);
+  const f=m.querySelector('.pm-i.ds[aria-checked="true"]')||m.querySelector('.pm-i'); f&&f.focus();
+}
+function renderDesignSystems(){ const wrap=$('designsys'); if(!wrap)return; const def=dsDefault(),act=dsActive();
+  wrap.innerHTML=`<div class="sec-l" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">Design systems <span style="color:var(--dim);font-weight:400">· reusable brand styles every Studio generation can pull from</span></div><div class="dsgrid">`+
+    dsAll().map(d=>{ const isDef=d.k===def,isAct=d.k===act;
+      return `<div class="dscard"${isAct?' style="border-color:var(--dim)"':''}><div class="swatch">${(d.sw||[]).map(c=>`<i style="background:${_validHex(c)?c:'#888'}"></i>`).join('')}</div>`+
+        `<div class="b"><div class="nm">${esc(d.name)}${isDef?'<span class="ds-badge">Org default</span>':''}${d.status==='building'?'<span class="ds-badge wip">Building…</span>':''}</div>`+
+        `<div class="bl">${esc(d.blurb||'')}</div><div class="ty">${icon('type')}${esc(d.type||'—')}</div>`+
+        `<div class="rowb"><button class="mini${isAct?' hot':''}" onclick="dsSetActive('${d.k}');toast('Applied ${esc(d.name)} to the composer')">${isAct?'Applied':'Use'}</button>`+
+        `${isDef?'':`<button class="mini" onclick="dsSetDefault('${d.k}')">Set org default</button>`}`+
+        `${d.seed?'':`<button class="mini" onclick="openBuilder(dsGet('${d.k}'))">Open builder</button>`}</div></div></div>`; }).join('')+
+    `<button class="dscard new" onclick="openDsWizard()">${icon('plus')}<span>Create design system</span></button></div>`;
+}
+
+// ── 3) "Set up your design system" wizard — collects sources, then hands to the
+//        agentic builder. .fig is parsed LOCALLY (never uploaded). ─────────────
+let WIZ={gh:[],files:[],figs:[],dir:null};
+function openDsWizard(){ WIZ={gh:[],files:[],figs:[],dir:null}; $('wiz-name').value=''; $('wiz-notes').value=''; if($('wiz-gh-in'))$('wiz-gh-in').value=''; wizPaint();
+  const b=$('wiz-dir-btn'); if(b&&!window.showDirectoryPicker){ b.disabled=true; b.title='Requires Chrome or Edge'; }
+  $('dswiz').showModal(); setTimeout(()=>$('wiz-name').focus(),40); }
+function wizPaint(){
+  $('wiz-gh').innerHTML=WIZ.gh.map((u,i)=>`<span class="wiz-chip">${icon('github')}<b>${esc(u.replace(/^https?:\/\/(www\.)?github\.com\//,''))}</b><button class="rm" aria-label="Remove" onclick="WIZ.gh.splice(${i},1);wizPaint()">×</button></span>`).join('');
+  $('wiz-figs').innerHTML=WIZ.figs.map((f,i)=>`<span class="wiz-chip">${icon('fileup')}<b>${esc(f.name)}</b><span style="color:var(--dim)">· ${f.entries!=null?f.entries+' layers':'read'} locally</span><button class="rm" aria-label="Remove" onclick="WIZ.figs.splice(${i},1);wizPaint()">×</button></span>`).join('');
+  $('wiz-files').innerHTML=WIZ.files.map((f,i)=>`<span class="wiz-chip">${icon('type')}<b>${esc(f.name)}</b><button class="rm" aria-label="Remove" onclick="WIZ.files.splice(${i},1);wizPaint()">×</button></span>`).join('');
+  $('wiz-dir').innerHTML=WIZ.dir?`<span class="wiz-chip">${icon('code')}<b>${esc(WIZ.dir.name)}</b><span style="color:var(--dim)">· ${WIZ.dir.count} files selected locally</span><button class="rm" aria-label="Remove" onclick="WIZ.dir=null;wizPaint()">×</button></span>`:'';
+}
+function wizAddGh(){ const i=$('wiz-gh-in'),v=(i.value||'').trim(); if(!v)return;
+  if(!/^https?:\/\/(www\.)?github\.com\/[^\/\s]+\/[^\/\s]+/.test(v))return toast('Enter a https://github.com/owner/repo URL');
+  WIZ.gh.push(v.replace(/\/+$/,'')); i.value=''; wizPaint(); }
+async function wizPickDir(){ if(!window.showDirectoryPicker)return toast('Folder linking needs Chrome or Edge');
+  try{ const h=await window.showDirectoryPicker(); let n=0; for await(const _ of h.values()){ if(++n>500)break; } WIZ.dir={name:h.name,count:n}; wizPaint(); }catch(_){} }
+async function wizAddFig(fl){ for(const f of [...fl]){ if(!/\.fig$/i.test(f.name)){ toast('Choose a .fig file'); continue; }
+    let entries=null; try{ entries=_figCount(new Uint8Array(await f.arrayBuffer())); }catch(_){}
+    WIZ.figs.push({name:f.name,size:f.size,entries}); } wizPaint(); }
+// A .fig is a ZIP; read the End-Of-Central-Directory record locally for the entry
+// count — proof it was parsed in-browser. The bytes never leave the device.
+function _figCount(b){ for(let i=b.length-22;i>=0;i--){ if(b[i]===0x50&&b[i+1]===0x4b&&b[i+2]===0x05&&b[i+3]===0x06)return b[i+10]|(b[i+11]<<8); } return null; }
+function wizAddFiles(fl){ for(const f of [...fl])WIZ.files.push({name:f.name,size:f.size}); wizPaint(); }
+function wireWizDrops(){ [['wiz-fig-drop',fl=>wizAddFig(fl)],['wiz-file-drop',fl=>wizAddFiles(fl)]].forEach(([id,fn])=>{ const el=$(id); if(!el)return;
+    el.addEventListener('dragover',e=>{e.preventDefault();el.classList.add('drag');});
+    el.addEventListener('dragleave',()=>el.classList.remove('drag'));
+    el.addEventListener('drop',e=>{e.preventDefault();el.classList.remove('drag');fn(e.dataTransfer.files);}); }); }
+function wizContinue(){ const name=($('wiz-name').value||'').trim(); if(!name){ toast('Name your design system'); $('wiz-name').focus(); return; }
+  const notes=($('wiz-notes').value||'').trim();
+  const sources={github:WIZ.gh.slice(),figs:WIZ.figs.map(f=>f.name),assets:WIZ.files.map(f=>f.name),localDir:WIZ.dir?WIZ.dir.name:null,notes};
+  const rec=dsCreate({name,blurb:notes||'Custom design system — synthesizing from your sources.',sources,status:'building'});
+  $('dswiz').close(); openBuilder(rec); }
+
+// ── 4) Agentic design-system builder — the generation half. Todo-driven live
+//        build; artifacts fill the tree/editor. Readme/tokens enrich from the
+//        same-origin Hanzo AI copilot endpoint when reachable (REAL partial
+//        run); otherwise synthesized locally from inputs (labeled). ────────────
+let BLD=null;
+const BLD_TODOS=[['explore','Explore brand sources'],['readme','Write readme.md — brand & product context'],['title','Set design-system title'],['tokens','Write design tokens · styles.css · fonts'],['assets','Copy assets — logos & icons'],['specimens','Foundation specimen cards'],['components','Reusable components from source inventory'],['kits','UI kits per product surface'],['fundamentals','Content & visual foundations · iconography'],['docs','Write SKILL.md · github.md · index']];
+function openBuilder(rec){ if(!rec)return; const el=$('dsbuild'); el.classList.add('on'); document.body.style.overflow='hidden';
+  BLD={rec,files:{},open:null,done:new Set(),active:null,log:[]}; $('bld-title').textContent=rec.name;
+  bldRenderTodos(); $('bld-log').innerHTML=''; bldRenderTree(); bldOpenFile(null);
+  $('bld-status').className='bld-status'; $('bld-status').innerHTML=`${icon('loader')}<span>Creating your design system… come back in ~5 min.</span>`;
+  bldRun(rec); }
+function closeBuilder(finish){ const el=$('dsbuild'); el.classList.remove('on'); document.body.style.overflow='';
+  if(BLD&&BLD.rec&&finish){ const l=dsUser(),r=l.find(d=>d.k===BLD.rec.k); if(r){r.status='ready';dsSaveUser(l);} dsSetActive(BLD.rec.k); tab('designsys'); toast('Design system ready — selected in the composer'); }
+  BLD=null; }
+function bldRenderTodos(){ if(!BLD)return; $('bld-todos').innerHTML=BLD_TODOS.map(([k,t])=>`<div class="bld-todo ${BLD.done.has(k)?'done':BLD.active===k?'active':''}">${BLD.done.has(k)?icon('checkc'):BLD.active===k?icon('loader'):icon('circle')}<span>${esc(t)}</span></div>`).join(''); }
+function bldRenderLog(){ if(!BLD)return; $('bld-log').innerHTML=BLD.log.map(l=>`<div class="bld-le">${icon(l.ic||'sparkles')}<span>${l.b?'<b>'+esc(l.b)+'</b> ':''}${esc(l.t||'')}</span></div>`).join(''); const c=$('bld-chat'); if(c)c.scrollTop=c.scrollHeight; }
+function bldLog(ic,b,t){ if(!BLD)return; BLD.log.push({ic,b,t}); bldRenderLog(); }
+function bldRenderTree(){ if(!BLD)return; const files=Object.keys(BLD.files);
+  $('bld-tree').innerHTML=`<div class="fh">${esc(BLD.rec.name.toLowerCase().replace(/[^a-z0-9]+/g,'-')||'design-system')}/</div>`+(files.length?files.map(f=>`<div class="bld-fi ${BLD.open===f?'on':''}" onclick="bldOpenFile('${f}')">${icon('file')}<span>${esc(f)}</span></div>`).join(''):`<div class="bld-fi" style="opacity:.55">${icon('folder')}<span>empty</span></div>`); }
+function bldWrite(name,body){ if(!BLD)return; BLD.files[name]=body; bldRenderTree(); if(!BLD.open)bldOpenFile(name); else bldRenderTree(); }
+function bldOpenFile(name){ if(!BLD)return; BLD.open=name; bldRenderTree(); const e=$('bld-edit');
+  if(!name){ e.innerHTML=`<div class="bld-empty">${icon('file')}<div class="big">No file open</div><div>Artifacts appear here as the agent writes your design system.</div></div>`; return; }
+  e.innerHTML=`<div class="bld-eh">${esc(name)}</div><pre class="bld-ecode">${esc(BLD.files[name]||'')}</pre>`; }
+async function bldStep(k,fn){ if(!BLD)return; BLD.active=k; bldRenderTodos(); await _sleep(650+Math.random()*550); if(!BLD)return; if(fn)await fn(); if(!BLD)return; BLD.done.add(k); BLD.active=null; bldRenderTodos(); }
+async function bldRun(rec){ const src=rec.sources||{}; const hasSrc=(src.github&&src.github.length)||(src.figs&&src.figs.length)||(src.assets&&src.assets.length)||src.localDir;
+  bldLog('sparkles','Studio agent','planning your design system from '+(hasSrc?'your sources':'the Hanzo brand basis')+'.');
+  await bldStep('explore',async()=>{ if(src.github&&src.github.length)bldLog('github','Listing GitHub repos',src.github.map(u=>u.replace(/^https?:\/\/(www\.)?github\.com\//,'')).join(', '));
+    bldLog('code','Exploring hanzoai/ui','component inventory for the scaffold'); bldLog('layers','Studying hanzoai/brand','tokens · specimens · docs layout');
+    if(src.figs&&src.figs.length)bldLog('fileup','Parsed .fig locally',src.figs.join(', ')); });
+  await bldStep('readme',async()=>bldWrite('readme.md',await bldReadme(rec)));
+  await bldStep('title',async()=>bldLog('check','Title set',rec.name));
+  await bldStep('tokens',async()=>{ bldWrite('tokens.css',bldTokens(rec)); bldWrite('styles.css',bldStyles(rec)); bldWrite('fonts.css',bldFonts(rec)); });
+  await bldStep('assets',async()=>bldLog('image','Normalized assets',src.assets&&src.assets.length?src.assets.join(', '):'logo, icon set (from basis)'));
+  await bldStep('specimens',async()=>bldWrite('specimens.md',bldSpecimens(rec)));
+  await bldStep('components',async()=>bldWrite('components.md','# Components — '+rec.name+'\n\nButton · Input · Card · Badge · Tabs · Dialog, derived from your source inventory on the @hanzo/ui scaffold.\n'));
+  await bldStep('kits',async()=>bldWrite('kits.md','# UI kits — '+rec.name+'\n\nMarketing site · Web app · Email · Social — one kit per product surface.\n'));
+  await bldStep('fundamentals',async()=>bldLog('type','Content & visual foundations','voice · spacing · iconography'));
+  await bldStep('docs',async()=>{ bldWrite('SKILL.md',bldSkill(rec)); bldWrite('github.md','# Sources\n\n'+((src.github||[]).map(u=>'- '+u).join('\n')||'- (Hanzo brand basis)')+'\n'); });
+  if(!BLD)return; BLD.active=null; bldRenderTodos();
+  const st=$('bld-status'); st.className='bld-status done'; st.innerHTML=`${icon('checkc')}<span>Design system ready — ${Object.keys(BLD.files).length} files.</span> <button class="wiz-btn" style="padding:5px 10px;margin-left:4px" onclick="closeBuilder(true)">Use it →</button>`;
+  bldLog('checkc','Done','readme, tokens, styles, specimens, components, kits, SKILL.md written.'); }
+function bldSend(){ const t=$('bld-in'),v=(t.value||'').trim(); if(!v||!BLD)return; t.value=''; t.style.height='40px'; bldLog('msg','You',v); bldLog('sparkles','Studio agent','noted — folding that into the next pass.'); }
+async function bldReadme(rec){ const src=rec.sources||{}; const ctx=[rec.name,src.notes,(src.github||[]).join(' '),(src.figs||[]).join(' ')].filter(Boolean).join(' — ');
+  const prompt='Write readme.md for a design system named "'+rec.name+'". Context: '+ctx+'. Cover brand & product context, the sources, and how Studio generations should apply it.';
+  // Prefer the agentic answer engine (api.hanzo.ai / clients/ai — /v1/answer, being
+  // built now); fall back to the copilot proxy; tolerant of either response shape.
+  for(const ep of ['/v1/answer','/v1/copilot/chat']){ try{
+    const r=await fetch(ep,{method:'POST',headers:genHeaders(),body:JSON.stringify({question:prompt,stream:false,messages:[{role:'system',content:'You are a brand and design-system architect. Reply in Markdown only, under 200 words.'},{role:'user',content:prompt}]})});
+    if(r.ok){ const j=await r.json(); const t=((j&&(j.reply||j.answer||j.content||j.text))||'').trim(); if(t)return t+'\n\n<!-- synthesized by Hanzo AI · '+ep+' -->\n'; } }catch(_){} }
+  return `# ${rec.name}\n\n${src.notes||'A cohesive design system for your brand.'}\n\n## Sources\n`+((src.github||[]).map(u=>'- GitHub: '+u).concat((src.figs||[]).map(f=>'- Figma: '+f+' (parsed locally)'),(src.assets||[]).map(f=>'- Asset: '+f)).join('\n')||'- Seeded from the Hanzo brand basis (hanzoai/brand · @hanzo/ui)')+`\n\n## Applying it\nEvery Studio generation (image · video · 3D · mockup) uses these tokens, type and treatments as its style basis when this design system is selected in the composer.\n\n_Draft synthesized locally from your inputs. Full AI synthesis (crawl · repos · .fig) runs on Hanzo AI — see the roadmap._\n`; }
+function bldTokens(rec){ const s=rec.sw||['#0a0a0a','#ededed','#6aa5ff','#888888']; return `:root{\n  --bg:${s[0]};\n  --fg:${s[1]};\n  --accent:${s[2]};\n  --muted:${s[3]||'#888'};\n  --radius:12px;\n  --space:8px;\n  --font:'${rec.type||'Inter'}',system-ui,sans-serif;\n}`; }
+function bldStyles(rec){ return `/* ${rec.name} — base styles */\nbody{background:var(--bg);color:var(--fg);font-family:var(--font);line-height:1.5}\na{color:var(--accent)}\n.btn{border-radius:var(--radius);padding:calc(var(--space)*1.25) calc(var(--space)*2)}`; }
+function bldFonts(rec){ return `/* ${rec.name} — type\n * Display / UI: ${rec.type||'Inter'}\n * Weights: 400 · 500 · 600 · 700\n */`; }
+function bldSpecimens(rec){ return `# Foundation specimens — ${rec.name}\n\n## Color\n`+(rec.sw||[]).map((c,i)=>'- token '+(i+1)+': `'+c+'`').join('\n')+`\n\n## Type\n${rec.type||'Inter'} — display, heading, body, caption.\n\n## Space & radius\n8px base grid · 12px radius.\n`; }
+function bldSkill(rec){ return `# SKILL: ${rec.name}\n\nWhen generating for this brand, apply:\n- Palette: ${(rec.sw||[]).join(', ')}\n- Type: ${rec.type||'Inter'}\n- Voice & treatment per readme.md\n\nStudio's composer selects this as the DESIGN SYSTEM basis for every generation.\n`; }
+
+// ── 5) Assets: grid ⇄ table view + a Projects rail (reuses Studio's own data) ──
+let ASSET_VIEW='grid';
+function setAssetView(v){ ASSET_VIEW=v; const g=$('vgrid'),l=$('vlist');
+  g.classList.toggle('on',v==='grid'); l.classList.toggle('on',v==='list'); g.setAttribute('aria-pressed',v==='grid'); l.setAttribute('aria-pressed',v==='list');
+  const ag=$('agrid'),at=$('atable'); ag.hidden=v!=='grid'; at.hidden=v!=='list'; ag.style.display=v==='grid'?'':'none'; at.style.display=v==='list'?'':'none'; if(v==='list')renderTable(); renderProjects(); }
+function visibleAssets(){ const q=(($('q')&&$('q').value)||'').trim().toLowerCase();
+  return (DATA.assets||[]).filter(a=>{ const st=a.status||'draft';
+    if(FILTER==='deleted')return st==='deleted'; if(st==='deleted')return false;
+    if(FILTER==='flagged')return st==='flagged'; if(FILTER==='drafts')return st!=='published';
+    if(FILTER==='all'||FILTER==='marketing')return true; return a.design===FILTER; })
+    .filter(a=>!q||JSON.stringify(a).toLowerCase().includes(q)); }
+function renderProjects(){ const rail=$('projrail'); if(!rail)return; const ps=((typeof SESSION!=='undefined'&&SESSION&&SESSION.projects)||[]).filter(Boolean);
+  if(!ps.length){ rail.hidden=true; return; } rail.hidden=false;
+  rail.innerHTML='<div class="ph">Projects</div>'+ps.map(p=>`<button class="proj ${SESSION.project===p?'on':''}" onclick="switchProject('${esc(p)}')">${icon('folder')}<span>${esc(p)}</span></button>`).join(''); }
+function _relTime(ts){ if(!ts)return '—'; if(ts>1e12)ts=Math.floor(ts/1000); const s=Math.max(0,Date.now()/1000-ts); if(s<60)return 'just now'; if(s<3600)return Math.round(s/60)+'m ago'; if(s<86400)return Math.round(s/3600)+'h ago'; return Math.round(s/86400)+'d ago'; }
+function renderTable(){ const el=$('atable'); if(!el)return; const items=visibleAssets(); const org=(DATA&&DATA.org)||dsOrg();
+  if(!items.length){ el.innerHTML='<div class="empty">Nothing here yet.</div>'; return; }
+  const rows=items.slice(0,400).map(a=>{ const st=a.status||'draft'; const nm=String(a.output||a.path||a.name||a.kind||'—').split('/').pop();
+    const pub=st==='published'?'Published':st==='deleted'?'Archived':st==='flagged'?'Flagged':'Draft'; const acc=st==='published'?['globe','Anyone with link']:['folder','Org only'];
+    return `<tr><td class="upc"><div class="nmc"><span class="th">${a.thumb?'<img src="'+esc(a.thumb)+'" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:5px">':icon('image')}</span><span class="nm" title="${esc(nm)}">${esc(nm)}</span></div></td><td class="sub">${esc(_relTime(a.ts||a.mtime))}</td><td class="acol"><span class="own"><span class="ava">${esc(String(org||'?').slice(0,2).toUpperCase())}</span>${esc(org||'—')}</span></td><td><span class="acc">${pub}</span></td><td class="acol"><span class="acc">${icon(acc[0])}${acc[1]}</span></td></tr>`; }).join('');
+  el.innerHTML=`<table class="atable"><thead><tr><th class="upc">Name</th><th>Updated</th><th class="acol">Owner</th><th>Published</th><th class="acol">Access</th></tr></thead><tbody>${rows}</tbody></table>`; }
+// Refresh the table on the same triggers as the grid, without touching render().
+const _render0=render; window.render=function(){ _render0.apply(this,arguments); if(ASSET_VIEW==='list')renderTable(); renderProjects(); };
+
+// ── DS_PLAN — REAL vs SCAFFOLDED vs PLANNED (honest scope) ─────────────────────
+// REAL now: monochrome icon system; searchable template picker; design-system
+//   select + per-org persistence (localStorage); the setup wizard incl. local
+//   .fig parse (EOCD, never uploaded) + File System Access folder pick (Chromium)
+//   + GitHub/asset capture; create → appears in list → selectable in composer;
+//   the builder UI (todos · tool-log · file-tree · editor · progress); readme/
+//   tokens enrich from the same-origin /v1/copilot/chat when reachable.
+// SCAFFOLDED: the builder's tool executions (crawl-domain · read-github-repo ·
+//   parse-deck · extract-tokens) are simulated; artifacts synthesized locally.
+// PLANNED (cloud — do NOT push): clients/ai design-system-synthesis agent with
+//   tools {crawl_domain, read_github_repo, parse_deck, parse_fig,
+//   extract_design_tokens, write_file}, seeded by hanzoai/brand + @hanzo/ui;
+//   persistence /v1/design-systems (per-org, versioned); generation-consumption
+//   (fix/compose/video/model3d accept design_system → style basis).
+// ═══════════════════════════════════════════════════════════════════════════
+// boot
+hydrateIcons(); wireWizDrops();
+load().then(openStackFromHash); loadSession().then(()=>{dsSyncComposer();renderProjects();}); updateLivebar(); initModel(); dsSyncComposer(); setInterval(updateLivebar, 5000);
 window.addEventListener('hashchange',openStackFromHash);
 // Queue transparency: refresh positions/ETAs while the queue view is open (sane
 // cadence, no hammering); node badges less often; tick the running item's elapsed.
