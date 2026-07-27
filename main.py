@@ -314,7 +314,9 @@ def prompt_worker(q, server_instance):
             # in the same place. Written as the requesting user via their IAM token
             # from `sensitive`, so it lands in their org. Assets land draft; a human
             # moves them through the lifecycle, and published is what a storefront
-            # shows. Fire-and-forget: a render is never failed if the lane is down.
+            # shows. Fire-and-forget: the publisher logs every refusal itself (its result
+            # is for the Library's on-demand Publish to CMS), and a render is NEVER failed
+            # if the lane is down.
             if content_publish.enabled() and e.success:
                 asyncio.run_coroutine_threadsafe(
                     content_publish.publish_render(

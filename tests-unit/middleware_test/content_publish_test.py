@@ -13,8 +13,10 @@ Asset per output artifact, in the SAME field shape clients/content itself writes
 (so a studio-initiated render is indistinguishable from a lane-initiated one); that
 `file` is the org-scoped output key (the bytes Studio already persisted — this
 module uploads nothing); that every call is authenticated AS THE REQUESTING USER;
-that assets land as drafts (never auto-published to a storefront); and that a
-render is never failed when the lane is unreachable.
+that assets land as drafts (never auto-published to a storefront); that a refusal
+comes back WHOLE (a 403 from a role-less principal is propagated with its remedy,
+never swallowed into a plausible success); and that a render is never failed when
+the lane is unreachable.
 """
 import pytest
 from aiohttp import web
@@ -98,7 +100,7 @@ async def test_kind_must_be_a_valid_select_value():
 
 async def test_records_one_asset_per_artifact(aiohttp_client, monkeypatch):
     content = Content()
-    assert await _publish(content, aiohttp_client, monkeypatch) == 2
+    assert await _publish(content, aiohttp_client, monkeypatch) == {"landed": 2, "errors": []}
     assert len(content.assets) == 2
     assert [a["title"] for a in content.assets] == ["life1_00001_.png", "life1_00002_.png"]
 
@@ -135,12 +137,27 @@ async def test_written_as_the_requesting_user(aiohttp_client, monkeypatch):
     # The stub 403s any call without the user's exact bearer, so a full publish is
     # itself proof every write carried it.
     content = Content()
-    assert await _publish(content, aiohttp_client, monkeypatch) == 2
+    assert (await _publish(content, aiohttp_client, monkeypatch))["landed"] == 2
+
+
+async def test_forbidden_is_propagated_never_swallowed(aiohttp_client, monkeypatch):
+    """The lane refuses `create on Asset` unless the principal holds Content Editor.
+    Studio cannot grant that (the write runs as the caller, by design), so the 403 must
+    come back WHOLE — real status, upstream body, and the one action that resolves it."""
+    content = Content()
+    res = await _publish(content, aiohttp_client, monkeypatch, iam_token="a-role-less-principal")
+    assert res["landed"] == 0 and content.assets == []
+    err = res["errors"][0]
+    assert err["status"] == 403                                  # not degraded to 200/0
+    assert "valid principal required" in err["message"]          # the upstream body, verbatim
+    assert content_publish.FORBIDDEN_REMEDY in err["message"]    # …and how to fix it
+    assert err["path"] == "orgs/karma/output/swimwear/lifestyle2/valentina/life1_00001_.png"
 
 
 async def test_without_a_user_token_nothing_is_written(aiohttp_client, monkeypatch):
     content = Content()
-    assert await _publish(content, aiohttp_client, monkeypatch, iam_token=None) == 0
+    res = await _publish(content, aiohttp_client, monkeypatch, iam_token=None)
+    assert res["landed"] == 0 and res["errors"][0]["status"] == 401
     assert content.assets == []
 
 
@@ -151,30 +168,35 @@ async def test_disabled_is_a_no_op(aiohttp_client, monkeypatch):
     monkeypatch.delenv("STUDIO_CONTENT_PUBLISH", raising=False)
     monkeypatch.setattr(content_publish, "CLOUD_URL", "http://127.0.0.1:1")
     # enabled() reads the env directly, so call the real entrypoint with it unset.
-    assert await content_publish.publish_render(
+    res = await content_publish.publish_render(
         org_id="karma", prompt_id=PROMPT_ID, workflow=WORKFLOW,
         history_result=HISTORY, iam_token=TOKEN, extra_data=EXTRA,
-    ) == 0
+    )
+    assert res["landed"] == 0 and res["errors"][0]["status"] == 503
     assert content.assets == []
 
 
 async def test_lane_error_is_survivable(aiohttp_client, monkeypatch):
     content = Content(fail=True)
-    assert await _publish(content, aiohttp_client, monkeypatch) == 0  # nothing landed, no raise
+    res = await _publish(content, aiohttp_client, monkeypatch)        # nothing landed, no raise
+    assert res["landed"] == 0
+    assert [e["status"] for e in res["errors"]] == [500, 500]         # one per artifact, reported
 
 
 async def test_unreachable_lane_never_raises(monkeypatch):
     monkeypatch.setenv("STUDIO_CONTENT_PUBLISH", "1")
     monkeypatch.setattr(content_publish, "CLOUD_URL", "http://127.0.0.1:1")  # nothing listening
-    assert await content_publish.publish_render(
+    res = await content_publish.publish_render(
         org_id="karma", prompt_id=PROMPT_ID, workflow=WORKFLOW,
         history_result=HISTORY, iam_token=TOKEN, extra_data=EXTRA,
-    ) == 0
+    )
+    assert res["landed"] == 0 and res["errors"][0]["status"] == 502
 
 
 async def test_empty_render_writes_nothing(aiohttp_client, monkeypatch):
     content = Content()
-    assert await _publish(content, aiohttp_client, monkeypatch, history_result={"outputs": {}}) == 0
+    assert await _publish(content, aiohttp_client, monkeypatch,
+                          history_result={"outputs": {}}) == {"landed": 0, "errors": []}
     assert content.assets == []
 
 

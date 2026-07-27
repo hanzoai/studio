@@ -10,6 +10,10 @@ storage or lifecycle:
     GET  /studio                 the home page (auth-gated like everything else)
     GET  /v1/library             org's library.json + per-asset workflow provenance
     POST /v1/library/status      {path, status}  draft|approved|queued|published
+                                 — this workspace's OWN curation state, nothing else
+    POST /v1/library/publish     {path}  push it to the Hanzo content lane (cms.hanzo.ai)
+                                 as a draft Asset — a DIFFERENT system, hence a different
+                                 verb; the upstream status/body comes back verbatim
     POST /v1/library/rerun       {path, count?}  re-queue the EXACT embedded graph, new seed
     POST /v1/library/fix         {path, instruction}  chat-fix: Qwen edit pass on that output
     POST /v1/library/compose     {paths[], uploads[]?, instruction}  multi-reference render
@@ -51,7 +55,7 @@ import aiohttp
 from aiohttp import web
 
 import folder_paths
-from middleware import quality_gate, stacks_store, worklog
+from middleware import content_publish, quality_gate, stacks_store, worklog
 
 log = logging.getLogger("studio.home")
 
@@ -181,8 +185,21 @@ def _poster(p: Path):
         return frame.to_image()
 
 
+def _asset_graph(abs_path: Path) -> dict:
+    """The API graph the saver embedded in an output — the reproducibility record.
+    The ONE source both the provenance panel and the CMS publish read; {} when the
+    file carries none (a hand-uploaded reference, a truncated write)."""
+    try:
+        g = json.loads(_embedded(abs_path).get("prompt", "null"))
+    except Exception:  # non-Comfy output, truncated file — provenance is optional
+        return {}
+    return g if isinstance(g, dict) else {}
+
+
 def _provenance(abs_path: Path) -> dict:
-    """What made this output, from the graph the saver embeds in it — PNG or video."""
+    """What made this output, distilled from its embedded graph — PNG or video.
+    ONE distiller (``_graph_params``, shared with the dispatch record) plus the two
+    facts only a finished artifact carries: the saver's prefix and the model."""
     try:
         mtime = abs_path.stat().st_mtime
     except OSError:
@@ -191,27 +208,14 @@ def _provenance(abs_path: Path) -> dict:
     hit = _PROV_CACHE.get(key)
     if hit and hit[0] == mtime:
         return hit[1]
-    prov: dict = {}
-    try:
-        graph = json.loads(_embedded(abs_path).get("prompt", "null"))
-        if isinstance(graph, dict) and graph:
-            for node in graph.values():
-                if not isinstance(node, dict):
-                    continue
-                ct = node.get("class_type", "")
-                ins = node.get("inputs", {})
-                if ct in _SAVERS:
-                    prov["workflow"] = ins.get("filename_prefix", "")
-                elif "KSampler" in ct:
-                    prov.update(steps=ins.get("steps"), cfg=ins.get("cfg"),
-                                seed=ins.get("seed", ins.get("noise_seed")))
-                elif ct == "Wan22ImageToVideoLatent":
-                    prov["length"] = ins.get("length")
-                elif ct == "CreateVideo":
-                    prov["fps"] = ins.get("fps")
-            prov["nodes"] = len(graph)
-    except Exception:  # non-Comfy output, truncated file — provenance is optional
-        prov = {}
+    graph = _asset_graph(abs_path)
+    prov = _graph_params(graph)
+    for node in graph.values():
+        if isinstance(node, dict) and node.get("class_type") in _SAVERS:
+            prov["workflow"] = (node.get("inputs") or {}).get("filename_prefix", "")
+    if graph:
+        prov["model"] = content_publish.model_of(graph)
+        prov["nodes"] = len(graph)
     _PROV_CACHE[key] = (mtime, prov)
     return prov
 
@@ -1841,6 +1845,13 @@ def _resolve_outputs(org: str, root: Path | None, rows: list[dict], now: int) ->
         r["output"] = _row_output(root, r.get("output_prefix")) if r.get("status") == "done" else None
 
 
+def _producer(rows: list[dict], rel: str) -> dict | None:
+    """The work-log row whose landed output IS this library asset — the ONE join
+    between a gallery card and the dispatch that made it. Rows must already have been
+    through ``_resolve_outputs``."""
+    return next((r for r in rows if r.get("output") == rel), None)
+
+
 _CORRUPT = ("flagged", "deleted")
 
 
@@ -2377,6 +2388,50 @@ def add_studio_home_routes(routes: web.RouteTableDef, server) -> None:
                 return web.json_response({"ok": True, "path": rel, "status": status})
         return web.json_response({"error": "asset not in library"}, status=404)
 
+    @routes.post("/v1/library/publish")
+    async def publish_to_cms(request: web.Request):
+        """Push ONE library asset into the Hanzo content lane (cms.hanzo.ai) as a draft
+        Asset — ``content_publish``, the one writer, on demand instead of only at render
+        completion. A DIFFERENT system from ``/v1/library/status`` ``published`` (that is
+        this workspace's own curation state), hence its own route and its own verb.
+
+        The upstream status and body are returned VERBATIM. A 403 means the caller's IAM
+        principal holds no Content Editor role — Studio cannot fix that (the write runs as
+        the caller, by design), so it is reported with its remedy and never retried, never
+        degraded into a local status change."""
+        body = await request.json()
+        rel = body.get("path", "")
+        org = _org_of(request)
+        root = _library_root(org)
+        p = _safe_asset(root, rel) if root is not None else None
+        if p is None:
+            return web.json_response({"error": "unknown asset"}, status=404)
+        a = next((x for x in _load_library(root).get("assets", []) if x.get("path") == rel), {})
+        rows = worklog.load(org)
+        _resolve_outputs(org, root, rows, int(time.time()))
+        job = _producer(rows, rel) or {}
+        tags = a.get("tags") or ""
+        # Exactly one artifact, in the {filename, subfolder, type} shape
+        # content_publish.artifacts() reads — ORG-relative, because object_key() re-prefixes
+        # orgs/<org>/output, so the record lands on the bytes the library holds. (_view_params
+        # answers a different question — how /view addresses the file — and is relative to the
+        # FLAT output dir in the dev layout.)
+        lib_rel = p.relative_to(root.resolve())
+        res = await content_publish.publish_render(
+            org_id=org, prompt_id=job.get("id", ""), workflow=_asset_graph(p),
+            history_result={"outputs": {"library": {"images": [
+                {"filename": lib_rel.name, "type": "output",
+                 "subfolder": "" if lib_rel.parent == Path(".") else str(lib_rel.parent)}]}}},
+            iam_token=request.get("iam_token"),
+            extra_data={"design": a.get("design"), "kind": a.get("kind"), "role": a.get("role"),
+                        "prompt": job.get("prompt", ""),
+                        "tags": ",".join(tags) if isinstance(tags, list) else tags},
+        )
+        if res["landed"]:
+            return web.json_response({"ok": True, "path": rel, "status": "draft"})
+        err = res["errors"][0]
+        return web.json_response({"error": err["message"], "path": rel}, status=err["status"])
+
     @routes.post("/v1/library/dedup")
     async def dedup(request: web.Request):
         """Soft-delete exact-content duplicates — keep one per byte-identical cluster,
@@ -2665,14 +2720,17 @@ def add_studio_home_routes(routes: web.RouteTableDef, server) -> None:
     @routes.get("/v1/worklog/lineage")
     async def get_lineage(request: web.Request):
         """The version chain for one library asset — ancestors (what it was derived
-        from, with the prompt at each step) and descendants (later fixes of it).
+        from, with the prompt at each step) and descendants (later fixes of it), plus
+        the ``job`` row that PRODUCED it so the context panel can show real provenance
+        (prompt, references, params, process trail) instead of an empty shell.
         Pure over THIS org's rows; cross-tenant lineage is impossible by construction."""
         org = _org_of(request)
         root = _library_root(org)
         target = request.query.get("path", "")
         rows = worklog.load(org)
         _resolve_outputs(org, root, rows, int(time.time()))
-        return web.json_response(worklog.build_lineage(rows, target))
+        return web.json_response({**worklog.build_lineage(rows, target),
+                                  "job": _producer(rows, target)})
 
     @routes.post("/v1/library/fix")
     async def fix(request: web.Request):

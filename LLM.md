@@ -148,6 +148,40 @@ shared Hanzo IAM (standard OIDC code flow). No embedding.
   (`studio_home.html`): layered cards, drag/multi-select/mobile-tap parity (no DnD ever
   required), a11y labels + live region. Tested: `studio_home_test/test_stacks.py`
   (routes, tenancy, one-per-asset, order persistence, delete/unstack, ingest→absorb).
+- **Library QC gallery — provenance + Publish to CMS** (`middleware/{studio_home.py,
+  studio_home.html,content_publish.py}`): the Assets tab IS the QC gallery (grid `#agrid`
+  fed by the ONE `GET /v1/library`, filter chips + search + bulk bar + full-size viewer);
+  this closes its two gaps without adding a surface.
+  **Provenance is a JOIN, never a new store.** Both records already existed — the API
+  graph the saver embeds in the output, and the dispatch row in `worklog.json`. They are
+  now joined: `_producer(rows, rel)` (the row whose landed `output` IS this asset) is
+  returned as `lineage.job` by `GET /v1/worklog/lineage`, and `openLineage()` hydrates
+  `CTX` from it, so a gallery item's context panel shows the same prompt · references ·
+  versions · process trail as a queue item and **Open in Editor** works for it.
+  `_provenance()` is no longer a second graph distiller: it is `_graph_params()` (the one
+  the dispatch record uses) plus what only a finished artifact carries — the saver's
+  prefix, `content_publish.model_of()` and the graph size — rendered as a **Provenance**
+  block linking `/v1/workflow?id=`.
+  **`POST /v1/library/publish`** pushes ONE asset into the Hanzo content lane
+  (cms.hanzo.ai = framework DocTypes; `POST {STUDIO_CLOUD_API_URL}/v1/framework/Asset`)
+  as a **draft** `Asset` carrying its graph — `content_publish`, the one writer, on demand
+  instead of only at render completion (`main.py`). Distinct from `POST /v1/library/status`
+  `published`, which is this workspace's OWN curation state — different systems, so a
+  different route and the distinct label **☁ Publish to CMS** (card · bulk bar · viewer).
+  `publish_render()` returns `{landed, errors:[{status, message, path}]}` (still never
+  raises) and the route returns the REAL upstream status: **403** (`FORBIDDEN_REMEDY`
+  appended), 401 signed-out, 503 switched off, 404 unknown/other-tenant asset. The UI
+  shows failures verbatim in a dialog that STAYS UP (`#pubdlg`), never a toast.
+  **Known cloud-side blocker**: the lane refuses `create on Asset` unless the caller holds
+  **Content Editor** (or SuperAdmin/System Manager) — cloud `clients/content` `contentPerms()`.
+  Studio cannot fix it (the Asset is written as the caller's own IAM principal, by design —
+  no service account, no cross-org write path); an org owner grants the role via
+  `POST /v1/framework/roles`. There is **no commerce publish API** to wire: the content
+  lane's commerce link is a `product` handle on `Campaign`, and `billing_middleware` only
+  meters usage — so the action is scoped to the Asset lane rather than inventing one.
+  Tested: `studio_home_test/publish_test.py` (route success/403-propagation/401/503/404 +
+  tenant isolation on a real aiohttp app, the lineage join, the one distiller, and the
+  served-HTML invariants) and `middleware_test/content_publish_test.py`.
 - **Engine selector** (`middleware/engine_selector.py`): `/v1/engines` lists
   execution targets for the org (`local` + registered compute_config workers) and
   `PUT /v1/engines/default` sets a per-org default (stored on
@@ -323,4 +357,5 @@ auth: `middleware_test/gateway_auth_test.py` (the fail-closed allowlist — HS25
 and `studio_home_test/create_image_test.py` (the Z-Image-Turbo graph shape, `dispatch_image`
 validation, and served-HTML invariants: default-model-is-image, text→image route,
 Create-always-shows-a-state, first-class Download, no ARCHIVED badge on active items, opaque
-bars, gated `</>`, collapsed mobile filters).
+bars, gated `</>`, collapsed mobile filters). Library provenance + CMS publish:
+`studio_home_test/publish_test.py`.

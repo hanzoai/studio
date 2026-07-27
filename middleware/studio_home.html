@@ -594,6 +594,7 @@ body.immersive #stage{display:block}
     <button class="mini" id="bulktags" onclick="tagSel()">Add tags</button>
     <button class="mini" id="bulkapprove" onclick="bulk('approved')">Approve</button>
     <button class="mini" id="bulkpublish" onclick="bulk('published')">Publish</button>
+    <button class="mini" id="bulkcms" onclick="bulkCMS()" title="Send the selected assets to the Hanzo content lane (cms.hanzo.ai) as drafts">☁ Publish to CMS</button>
     <button class="mini" id="bulkdelete" onclick="bulk('deleted')">🗄 Archive selected</button>
     <button class="mini hot" id="bulkpurge" onclick="purgeSel()" style="display:none" title="Permanently delete the selected items — cannot be undone">🗑 Delete forever</button>
     <button class="mini" onclick="clearSel()">Cancel</button>
@@ -712,6 +713,7 @@ body.immersive #stage{display:block}
     <button class="vote down" id="zrdown" title="Wrong result — 👎 teaches the model" aria-label="Downvote" onclick="zVote(-1)">👎</button>
     <button class="vote note" id="zrnote" title="Critique this — the AI sees it, replies, and learns" aria-label="Add a comment" onclick="if(ZPATH)openFeedback(ZPATH)">💬 Comment</button>
     <button class="vote dl" id="zrdl" title="Download — PNG, JPG or WebP" aria-label="Download this image" onclick="if(ZPATH)dlMenu(event,ZPATH)">⬇ Download</button>
+    <button class="vote" id="zrcms" title="Send this asset to the Hanzo content lane (cms.hanzo.ai) as a draft" aria-label="Publish to CMS" onclick="if(ZPATH)publishCMS(ZPATH,this)">☁ Publish to CMS</button>
   </div>
 </div>
 <dialog id="fixdlg">
@@ -792,6 +794,14 @@ body.immersive #stage{display:block}
   <h3 id="askttl" style="font-size:1rem"></h3>
   <input id="askin" aria-label="Value" style="width:100%;margin-top:12px;background:#0f0f12;border:1px solid var(--line);border-radius:8px;padding:8px 10px;color:inherit;font:inherit">
   <div class="row" style="justify-content:flex-end;gap:6px;margin-top:14px"><button class="mini" id="askno">Cancel</button><button class="mini hot" id="askok">OK</button></div>
+</dialog>
+<!-- Publish to CMS failed. A cross-system push fails for reasons only a human can clear
+     (a 403 = no Content Editor role, which only an org owner grants), so the upstream
+     status and body are shown verbatim and STAY on screen — never a 3-second toast. -->
+<dialog id="pubdlg" aria-label="Publish to CMS failed">
+  <h3 id="pubttl" style="font-size:1rem">Publish to CMS failed</h3>
+  <div id="puberr" class="dlgerr" style="display:block"></div>
+  <div class="row" style="justify-content:flex-end;margin-top:14px"><button class="mini hot" onclick="$('pubdlg').close()">Close</button></div>
 </dialog>
 <dialog id="fbdlg" aria-label="Critique this image to train the model">
   <h3 style="font-size:1rem">Critique — trains the model</h3>
@@ -1346,7 +1356,7 @@ function updateBulk(){const on=SELMODE&&SEL.size>0, del=FILTER==='deleted'&&!CUR
   $('svbulk').hidden=!(on&&CURSTACK);$('svbulkn')&&($('svbulkn').textContent=SEL.size+' selected');
   $('bulkrecover').style.display=del?'':'none';                                  // archive: recover + delete-forever only
   $('bulkpurge').style.display=del?'':'none';
-  ['bulkstack','bulkmove','bulkcompose','bulkdownload','bulktags','bulkapprove','bulkpublish','bulkdelete'].forEach(id=>{const el=$(id);if(el)el.style.display=del?'none':'';});
+  ['bulkstack','bulkmove','bulkcompose','bulkdownload','bulktags','bulkapprove','bulkpublish','bulkcms','bulkdelete'].forEach(id=>{const el=$(id);if(el)el.style.display=del?'none':'';});
 }
 function pick(ev,path){ev.stopPropagation();if(SEL.has(path))SEL.delete(path);else SEL.add(path);if(!SEL.size){clearSel();return;}updateBulk();drawSel();}
 // The ○ on any image: selects it and enters selection implicitly — no mode hunt.
@@ -1413,6 +1423,7 @@ function render(){
           ${review?`<button class="mini" onclick="setSt(${i},'draft')">${showDel?'Recover':'Restore'}</button>${showDel?`<button class="mini hot" onclick="purgeOne('${pe}')" title="Permanently delete — cannot be undone">🗑 Delete forever</button>`:''}`:`
           ${a.status!=='approved'?`<button class="mini" onclick="setSt(${i},'approved')">Approve</button>`:''}
           ${a.status!=='published'?`<button class="mini" onclick="setSt(${i},'published')">Publish</button>`:''}
+          ${media?`<button class="mini" onclick="publishCMS('${pe}',this)" title="Send this asset to the Hanzo content lane (cms.hanzo.ai) as a DRAFT — a different system from this gallery; a human publishes it there">${CMSLBL}</button>`:''}
           <button class="mini" onclick="addToStackPrompt('${pe}',event)" title="Add this image to a Stack">🗂 Stack</button>
           ${media?`<button class="mini" onclick="rerun(${i},this)" title="Regenerate: a fresh interpretation from the same recipe with a new seed (does NOT preserve this image)">Regenerate</button><button class="mini" onclick="openLineage('${pe}')" title="Show this item's versions (what it came from + later edits)">Versions</button>`:''}${img?`<button class="mini hot" onclick="openFix(${i})" title="Edit this image — preserve composition, colors and subject; apply only your change">Edit</button>`:''}
           <button class="mini" onclick="setSt(${i},'deleted')" title="Move to Archive (recoverable)">🗑</button>`}
@@ -1435,6 +1446,34 @@ async function bulk(status){
   for(const p of paths){await fetch('/v1/library/status',{method:'POST',headers:genHeaders(),body:JSON.stringify({path:p,status})});
     const a=DATA.assets.find(x=>x.path===p);if(a)a.status=status;}
   toast(paths.length+(status==='deleted'?' archived — ⌘Z to undo':status==='draft'?' recovered':' → '+status)); clearSel(); paintChips();
+}
+// ── Publish to CMS — a DIFFERENT system from the gallery's own Publish (which is this
+// workspace's curation state). This pushes the asset into the Hanzo content lane
+// (cms.hanzo.ai) as a DRAFT Asset carrying its graph; a human publishes it from there.
+// Failures are never swallowed: the upstream HTTP status and body are shown verbatim,
+// because a 403 (no Content Editor role) is only fixable by an org owner. ──
+const CMSLBL='☁ Publish to CMS';
+async function pubOne(path){
+  try{ const r=await fetch('/v1/library/publish',{method:'POST',headers:genHeaders(),body:JSON.stringify({path})});
+       const j=await r.json().catch(()=>({}));
+       return {ok:r.ok,status:r.status,msg:errMsg(j)||('HTTP '+r.status)}; }
+  catch(e){ return {ok:false,status:0,msg:'could not reach Studio — '+e}; }
+}
+function pubFailed(title,detail){ $('pubttl').textContent='Publish to CMS failed — '+title; $('puberr').textContent=detail; $('pubdlg').showModal(); }
+async function publishCMS(path,btn){
+  if(btn){btn.disabled=true;btn.textContent='Publishing…';}
+  const r=await pubOne(path);
+  if(btn){btn.disabled=false;btn.textContent=CMSLBL;}
+  if(r.ok)toast('✓ Sent to CMS as a draft — publish it from cms.hanzo.ai');
+  else pubFailed(r.status?('HTTP '+r.status):'no response',r.msg);
+}
+async function bulkCMS(){
+  if(!SEL.size)return;
+  const paths=[...SEL],fails=[]; let ok=0;
+  for(const p of paths){ const r=await pubOne(p); if(r.ok)ok++; else fails.push(p.split('/').pop()+' — HTTP '+r.status+': '+r.msg); }
+  clearSel();
+  if(ok)toast('✓ '+ok+' sent to CMS as draft'+(ok>1?'s':''));
+  if(fails.length)pubFailed(fails.length+' of '+paths.length+' refused',fails.join('\n\n'));
 }
 // ── Undo: soft-deletes (and any status change) are reversible. Each change stacks
 // the prior state; ⌘Z / Ctrl+Z pops it and writes the status back — no dialogs. ──
@@ -1658,12 +1697,20 @@ function ctxMediaEl(path){
   if(isVideo(path)) return `<video src="${esc(u)}" poster="${esc(thumbURL({path}))}" controls playsinline preload="metadata"></video>`;
   return `<img src="${esc(u)}" onclick="zoom('${qq(u)}')" alt="result">`;
 }
+// What the asset's own file records about its making — /v1/library already distilled it
+// per asset (studio_home._provenance), so the panel reads it instead of re-deriving.
+const provOf=path=>((DATA.assets||[]).find(a=>a.path===path)||{}).prov||{};
 function ctxHTML(it,lin){
   const parents=(it.parents||[]).map(p=>pv(thumbURL({path:p}),'from',`openLibItem('${p.replace(/'/g,"\\'")}')`)).join('');
   const refs=(it.refs||[]).map(n=>pv(inputThumb(n),(it.uploads||[]).includes(n)?'upload':'ref')).join('');
   const hero=it.output?`<div class="ctxlabel">Result</div><div class="hero3">${ctxMediaEl(it.output)}</div>`:'';
   const refsHTML=(parents||refs)?`<div class="ctxlabel">References</div><div class="refrow">${parents}${refs}</div>`:'';
-  const params=it.params&&Object.keys(it.params).length?Object.entries(it.params).filter(([k])=>k!=='lessons').map(([k,v])=>k+':'+v).join(' · '):'';
+  // Provenance = the graph the artifact itself embeds (authoritative, and the only
+  // record an ingested render has), over the params we dispatched with. ONE block for
+  // render settings — model · seed · steps · sampler · size · graph size.
+  const prov=Object.assign({},Object.fromEntries(Object.entries(it.params||{}).filter(([k])=>k!=='lessons')),provOf(it.output));
+  const params=Object.entries(prov).filter(([,v])=>v!==''&&v!=null).map(([k,v])=>k+': '+esc(String(v))).join(' · ');
+  const graphLink=(it.id&&!String(it.id).startsWith('failed-'))?` · <a href="/v1/workflow?id=${encodeURIComponent(it.id)}" target="_blank" rel="noopener">full graph</a>`:'';
   const lessons=(it.params&&it.params.lessons)||[];
   const trail=(it.events||[]).map(e=>`${e.s}${e.ts?(' '+new Date(e.ts*1000).toLocaleTimeString()):''}${e.note?(' — '+e.note.replace(/</g,'&lt;')):''}`).join('  →  ');
   const chain=[...lin.ancestors.map(a=>[a,a.kind||'ancestor']),...(it.output?[[{path:it.output},'● this']]:[]),...lin.descendants.map(d=>[d,d.kind||'later'])];
@@ -1672,7 +1719,8 @@ function ctxHTML(it,lin){
    ${it.prompt?`<div class="ctxlabel">Prompt</div><div style="font-size:.86rem;background:#0f0f12;border:1px solid var(--line);border-radius:8px;padding:9px 11px">${it.prompt.replace(/</g,'&lt;')}</div>`:''}
    ${lessons.length?`<div class="ctxlabel">Learning from your notes</div><div style="font-size:.82rem;background:#0f0f12;border:1px solid var(--line);border-radius:8px;padding:9px 11px">${lessons.map(l=>'• '+String(l).replace(/</g,'&lt;')).join('<br>')}</div>`:''}
    ${refsHTML}
-   <div class="ctxlabel">Workflow</div><div style="font-size:.82rem;color:var(--dim)">${it.kind} · ${it.status||''}${it.lane&&it.lane!=='local'?(' · '+it.lane):''}${params?(' · '+params):''}</div>
+   <div class="ctxlabel">Workflow</div><div style="font-size:.82rem;color:var(--dim)">${esc(it.kind||'')} · ${esc(it.status||'')}${it.lane&&it.lane!=='local'?(' · '+esc(it.lane)):''}</div>
+   ${(params||graphLink)?`<div class="ctxlabel">Provenance</div><div style="font-size:.78rem;color:var(--dim)">${params}${graphLink}</div>`:''}
    ${trail?`<div class="ctxlabel">Process</div><div style="font-size:.78rem;color:var(--dim)">${trail}</div>`:''}
    ${it.error?`<div class="dlgerr" style="display:block">${it.error.replace(/</g,'&lt;')}</div>`:''}${chainHTML}`;
 }
@@ -1692,10 +1740,20 @@ async function openContext(id){
 }
 function cancelCtx(){ if(!CTX)return; ctxdlg.close(); cancelJob(CTX.id); }
 function editCtx(){ if(!CTX)return; ctxdlg.close(); openAmend(CTX.id); }
+// A library asset's context = the row that PRODUCED it (lineage.job), so a gallery item
+// shows the same prompt / references / params / process trail as a queue item — and Open
+// in Editor works. Without a producing row (pre-worklog or hand-uploaded) the panel still
+// opens on the asset's embedded provenance.
 async function openLineage(path){
-  CTX={output:path,parents:[],refs:[],uploads:[],prompt:'',kind:'asset',status:''};
-  $('ctxtitle').textContent='Versions'; $('ctxbody').innerHTML=ctxHTML(CTX, await lineageFor(path));
-  $('ctxreuse').style.display='none'; $('ctxfix').style.display=''; $('ctxeditor').style.display='none'; $('ctxdlg').showModal();
+  const lin=await lineageFor(path);
+  CTX=Object.assign({parents:[],refs:[],uploads:[],prompt:'',kind:'asset',status:''},lin.job||{},{output:path});
+  $('ctxtitle').textContent=lin.job?(CTX.kind+' — '+(CTX.status||'')):'Versions'; $('ctxbody').innerHTML=ctxHTML(CTX,lin);
+  $('ctxreuse').style.display=lin.job?'':'none'; $('ctxfix').style.display='';
+  // A library asset has landed, so it is never live — the queue-only actions stay hidden
+  // (they persist across opens, and CTX.id is now a REAL job id).
+  $('ctxcancel').style.display='none'; $('ctxedit').style.display='none';
+  $('ctxeditor').style.display=(CTX.id&&!String(CTX.id).startsWith('failed-'))?'':'none';
+  $('ctxdlg').showModal();
 }
 function openLibItem(path){ ctxdlg.close(); zoom(imgURL({path}),null,path); }
 async function primeFix(base,prompt,libRefs,upRefs){
