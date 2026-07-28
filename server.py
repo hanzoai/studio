@@ -1455,6 +1455,8 @@ class PromptServer():
         add_copilot_routes(self.routes, self)
         from middleware.session import add_session_routes
         add_session_routes(self.routes, self)
+        from middleware.design import add_design_routes
+        add_design_routes(self.routes, self)
         from middleware.studio_home import add_studio_home_routes
         add_studio_home_routes(self.routes, self)
         from middleware.mcp import add_mcp_routes

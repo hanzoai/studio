@@ -378,6 +378,18 @@ body.immersive #stage{display:block}
 .ds-badge.wip{color:var(--warn);background:none;border:1px solid var(--line)}
 .dscard.new{align-items:center;justify-content:center;border-style:dashed;cursor:pointer;min-height:172px;color:var(--dim);gap:8px;text-align:center;font:inherit}
 .dscard.new:hover{border-color:var(--dim);color:var(--txt)} .dscard.new .ic-svg{font-size:1.7rem}
+/* The canon — the design system on disk. Marks read-only, every value an input. */
+.canon{margin-bottom:28px}
+.canon .marks{display:flex;gap:10px;flex-wrap:wrap;margin:10px 0 4px}
+.canon .marks figure{background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:13px;margin:0}
+.canon .marks svg{height:38px;width:auto;max-width:150px;display:block;margin:0 auto 8px}
+.canon .marks figcaption{font-size:.62rem;color:var(--dim);text-align:center}
+.canon .vals{display:grid;grid-template-columns:repeat(auto-fill,minmax(268px,1fr));gap:7px}
+.canon .v{display:flex;align-items:center;gap:8px;background:var(--panel);border:1px solid var(--line);border-radius:9px;padding:6px 10px}
+.canon .v .k{font-size:.68rem;color:var(--dim);flex:0 0 43%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.canon .v i{width:15px;height:15px;border-radius:4px;border:1px solid var(--line);flex:0 0 auto}
+.canon .v input{flex:1;min-width:0;background:none;border:none;color:var(--txt);font:inherit;font-size:.74rem;padding:2px 3px;border-radius:4px}
+.canon .v input:focus{outline:none;background:#ffffff12}
 /* Setup wizard (dialog) + agentic builder (overlay) share these input styles */
 #dswiz{max-width:660px;max-height:90vh;overflow:auto}
 .wiz-h{display:flex;align-items:flex-start;gap:13px;margin:0 0 4px}
@@ -2558,8 +2570,28 @@ function openDesignSystemPicker(anchor){
   _popover(anchor,m);
   const f=m.querySelector('.pm-i.ds[aria-checked="true"]')||m.querySelector('.pm-i'); f&&f.focus();
 }
-function renderDesignSystems(){ const wrap=$('designsys'); if(!wrap)return; const def=dsDefault(),act=dsActive();
-  wrap.innerHTML=`<div class="sec-l" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">Design systems <span style="color:var(--dim);font-weight:400">· reusable brand styles every Studio generation can pull from</span></div><div class="dsgrid">`+
+// ── The canon — the design system Studio itself ships, read from disk through
+//        /v1/design: brand.json's identity, design/tokens/*.css, the rendered
+//        marks. Changing a value writes it back to the file it came from; the
+//        marks are generated, so they are shown, not edited. ─────────────────────
+let CANON=null;
+const _isColor=v=>/^(#|rgb|hsl)/i.test(String(v).trim());
+function canonHTML(){
+  const of=k=>Object.entries((CANON&&CANON[k])||{});
+  const marks=of('marks'); if(!marks.length&&!of('brand').length&&!of('tokens').length)return '';
+  const row=(n,v)=>`<div class="v"><span class="k" title="${esc(n)}">${esc(n)}</span>${_isColor(v)?`<i style="background:${esc(v)}"></i>`:''}<input value="${esc(v)}" data-n="${esc(n)}" aria-label="${esc(n)}"></div>`;
+  const grp=(t,k)=>of(k).length?`<div class="sec-l">${t} <span style="color:var(--dim);font-weight:400">· ${of(k).length}</span></div><div class="vals">`+of(k).map(([n,v])=>row(n,v)).join('')+`</div>`:'';
+  return `<div class="canon"><div class="sec-l">Hanzo <span style="color:var(--dim);font-weight:400">· the design system on disk — an edit is written back to hanzoai/brand and hanzoai/design</span></div>`+
+    (marks.length?`<div class="marks">`+marks.map(([n,s])=>`<figure>${s}<figcaption>${esc(n)}</figcaption></figure>`).join('')+`</div>`:'')+
+    grp('Brand','brand')+grp('Tokens','tokens')+`</div>`;
+}
+async function canonSet(el){ const n=el.dataset.n;
+  let r,d; try{ r=await fetch('/v1/design',{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({[n]:el.value})}); d=await r.json(); }catch(_){}
+  if(!r||!r.ok){ el.value=el.defaultValue; return toast((d&&d.error)||'Could not save '+n); }
+  CANON=d; el.defaultValue=el.value; toast(n+' saved'); }
+async function renderDesignSystems(){ const wrap=$('designsys'); if(!wrap)return; const def=dsDefault(),act=dsActive();
+  if(!CANON){ try{CANON=await (await fetch('/v1/design')).json();}catch(_){CANON={};} }
+  wrap.innerHTML=canonHTML()+`<div class="sec-l" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">Design systems <span style="color:var(--dim);font-weight:400">· reusable brand styles every Studio generation can pull from</span></div><div class="dsgrid">`+
     dsAll().map(d=>{ const isDef=d.k===def,isAct=d.k===act;
       return `<div class="dscard"${isAct?' style="border-color:var(--dim)"':''}><div class="swatch">${(d.sw||[]).map(c=>`<i style="background:${_validHex(c)?c:'#888'}"></i>`).join('')}</div>`+
         `<div class="b"><div class="nm">${esc(d.name)}${isDef?'<span class="ds-badge">Org default</span>':''}${d.status==='building'?'<span class="ds-badge wip">Building…</span>':''}</div>`+
@@ -2568,6 +2600,7 @@ function renderDesignSystems(){ const wrap=$('designsys'); if(!wrap)return; cons
         `${isDef?'':`<button class="mini" onclick="dsSetDefault('${d.k}')">Set org default</button>`}`+
         `${d.seed?'':`<button class="mini" onclick="openBuilder(dsGet('${d.k}'))">Open builder</button>`}</div></div></div>`; }).join('')+
     `<button class="dscard new" onclick="openDsWizard()">${icon('plus')}<span>Create design system</span></button></div>`;
+  wrap.querySelectorAll('.canon input').forEach(i=>i.onchange=()=>canonSet(i));
 }
 
 // ── 3) "Set up your design system" wizard — collects sources, then hands to the
@@ -2685,7 +2718,9 @@ function renderTable(){ const el=$('atable'); if(!el)return; const items=visible
 const _render0=render; window.render=function(){ _render0.apply(this,arguments); if(ASSET_VIEW==='list')renderTable(); renderProjects(); };
 
 // ── DS_PLAN — REAL vs SCAFFOLDED vs PLANNED (honest scope) ─────────────────────
-// REAL now: monochrome icon system; searchable template picker; design-system
+// REAL now: monochrome icon system; searchable template picker; the canon —
+//   Studio's own design system read and edited on disk through /v1/design
+//   (brand.json · design/tokens/*.css · the rendered marks); design-system
 //   select + per-org persistence (localStorage); the setup wizard incl. local
 //   .fig parse (EOCD, never uploaded) + File System Access folder pick (Chromium)
 //   + GitHub/asset capture; create → appears in list → selectable in composer;
