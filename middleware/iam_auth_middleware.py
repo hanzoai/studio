@@ -77,7 +77,7 @@ _STATE_TTL = 600  # seconds a pending login may take
 _token_cache: dict[str, tuple[dict, float]] = {}
 
 
-def _is_loopback_request(request: web.Request) -> bool:
+def is_loopback_request(request: web.Request) -> bool:
     peername = request.transport.get_extra_info("peername") if request.transport else None
     if peername is None:
         return False
@@ -502,7 +502,7 @@ def create_iam_auth_middleware(iam_url: str, localhost_bypass: bool = True):
         if _is_public_path(path):
             return await handler(request)
 
-        if localhost_bypass and _is_loopback_request(request):
+        if localhost_bypass and is_loopback_request(request):
             local_org = os.environ.get("STUDIO_ORG_ID", "default")
             local_user = {
                 "sub": "local", "name": "Local User", "email": "",

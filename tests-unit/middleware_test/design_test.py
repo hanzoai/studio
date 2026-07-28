@@ -234,3 +234,27 @@ def test_patch_refuses_a_list_of_pairs(checkout):
     for one operation."""
     assert _patch([["--background", "#ABCDEF"]])[0] == 400
     assert "#ABCDEF" not in colors(checkout)
+
+
+def test_patch_is_refused_off_loopback(checkout, monkeypatch):
+    """A write lands in two other git repos on this machine. Reading is open;
+    editing is not a tenant operation, and there is only one design system."""
+    monkeypatch.setattr(d, "is_loopback_request", lambda request: False)
+    status, body = _patch({"--background": "#0A0A0A"})
+    assert status == 403
+    assert "  --background: #000000;\n" in colors(checkout)
+
+
+def test_get_is_open_off_loopback(checkout, monkeypatch):
+    monkeypatch.setattr(d, "is_loopback_request", lambda request: False)
+
+    async def go():
+        app = web.Application()
+        routes = web.RouteTableDef()
+        d.add_design_routes(routes, None)
+        app.add_routes(routes)
+        async with TestClient(TestServer(app)) as c:
+            r = await c.get("/v1/design")
+            return r.status
+
+    assert _run(go()) == 200

@@ -31,6 +31,8 @@ from pathlib import Path
 
 from aiohttp import web
 
+from middleware.iam_auth_middleware import is_loopback_request
+
 _ROOT = Path(__file__).resolve().parents[2]     # the checkout studio sits in
 _BRAND = _ROOT / "brand" / "brand.json"
 _TOKENS = _ROOT / "design" / "tokens"
@@ -142,7 +144,18 @@ def add_design_routes(routes: web.RouteTableDef, server) -> None:
     @routes.patch("/v1/design")
     async def edit_design(request):
         """``{name: value}``. A mark, or a name the design system does not already
-        carry, is refused — so a rendered artifact can never be written through."""
+        carry, is refused — so a rendered artifact can never be written through.
+
+        Loopback only. A write lands in two OTHER git repositories on the machine
+        running Studio, so this is an authoring action on someone's own checkout,
+        not a tenant operation: there is one design system and it is not org-scoped,
+        which would otherwise let any signed-in member of any org rewrite it for
+        everyone. Reading stays open to whoever the auth middleware already lets in.
+        """
+        if not is_loopback_request(request):
+            return web.json_response(
+                {"error": "the design system is edited on the machine that holds it"},
+                status=403)
         try:
             edit = await request.json()
         except Exception:
