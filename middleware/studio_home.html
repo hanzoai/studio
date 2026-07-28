@@ -381,9 +381,10 @@ body.immersive #stage{display:block}
 /* The canon — the design system on disk. Marks read-only, every value an input. */
 .canon{margin-bottom:28px}
 .canon .marks{display:flex;gap:10px;flex-wrap:wrap;margin:10px 0 4px}
-.canon .marks figure{background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:13px;margin:0}
-.canon .marks svg{height:38px;width:auto;max-width:150px;display:block;margin:0 auto 8px}
-.canon .marks figcaption{font-size:.62rem;color:var(--dim);text-align:center}
+/* Mid grey, the one backdrop a black and a white mark both read on (currentColor too) */
+.canon .marks figure{background:var(--dim);color:#111;border-radius:11px;padding:13px;margin:0}
+.canon .marks figure>svg{height:38px;width:auto;max-width:150px;display:block;margin:0 auto 8px}
+.canon .marks figcaption{font-size:.62rem;text-align:center}
 .canon .vals{display:grid;grid-template-columns:repeat(auto-fill,minmax(268px,1fr));gap:7px}
 .canon .v{display:flex;align-items:center;gap:8px;background:var(--panel);border:1px solid var(--line);border-radius:9px;padding:6px 10px}
 .canon .v .k{font-size:.68rem;color:var(--dim);flex:0 0 43%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}

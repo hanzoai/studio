@@ -206,3 +206,31 @@ def test_patch_refuses_a_mark(checkout):
 
 def test_patch_refuses_a_body_that_is_not_a_map(checkout):
     assert _patch(["--background", "#000000"])[0] == 400
+
+
+def test_patch_refuses_a_value_that_smuggles_a_second_declaration(checkout):
+    """`[^;\\n]+` bounds what a write REPLACES, never what it inserts. A value
+    carrying `;` used to append a whole extra declaration: the read reported the
+    value that was sent while the cascade resolved the smuggled one."""
+    status, body = _patch({"--background": "#000; --neutral-50:#FF0000; x:y"})
+    assert status == 400
+    assert body["names"] == ["--background"]
+    css = colors(checkout)
+    assert "#FF0000" not in css
+    assert "x:y" not in css
+    assert "  --background: #000000;\n" in css     # untouched
+
+
+def test_patch_refuses_a_value_that_re_cuts_the_file(checkout):
+    before = colors(checkout)
+    status, _ = _patch({"--background": "#000;\n}\n:root{ --neutral-50:#FF0000;"})
+    assert status == 400
+    assert colors(checkout) == before
+    assert before.count("{") == 2 and before.count("}") == 2
+
+
+def test_patch_refuses_a_list_of_pairs(checkout):
+    """dict() happily builds a mapping out of one, which made two request shapes
+    for one operation."""
+    assert _patch([["--background", "#ABCDEF"]])[0] == 400
+    assert "#ABCDEF" not in colors(checkout)

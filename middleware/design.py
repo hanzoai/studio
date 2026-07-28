@@ -117,6 +117,14 @@ def _decl(name: str) -> re.Pattern:
     return re.compile("(" + re.escape(name) + r"\s*:[ \t]*)[^;\n]+")
 
 
+# One value, and only the one declaration it belongs to. `[^;\n]+` bounds what a
+# write REPLACES but not what it inserts, so a value carrying `;` appends a second
+# declaration and one carrying a brace re-cuts the file. Either way the reader
+# still reports the value that was sent — first-wins, like gen-tokens.mjs — while
+# the cascade resolves the smuggled one, so what you read stops being what renders.
+_UNSAFE = re.compile(r"[;{}\r\n]|/\*")
+
+
 def _save(p: Path, text: str) -> None:
     """Atomic tmp+replace, the one write pattern for a file Studio owns."""
     tmp = p.with_name(p.name + ".tmp")
@@ -136,8 +144,10 @@ def add_design_routes(routes: web.RouteTableDef, server) -> None:
         """``{name: value}``. A mark, or a name the design system does not already
         carry, is refused — so a rendered artifact can never be written through."""
         try:
-            edit = dict(await request.json())
+            edit = await request.json()
         except Exception:
+            edit = None
+        if not isinstance(edit, dict):
             return web.json_response({"error": "expected a JSON object of name: value"},
                                      status=400)
         current = read()
@@ -145,5 +155,10 @@ def add_design_routes(routes: web.RouteTableDef, server) -> None:
         unknown = sorted(n for n in edit if n not in names)
         if unknown:
             return web.json_response({"error": "unknown names", "names": unknown}, status=400)
+        unsafe = sorted(n for n, v in edit.items() if _UNSAFE.search(str(v)))
+        if unsafe:
+            return web.json_response(
+                {"error": "a value may not close its declaration or open a block",
+                 "names": unsafe}, status=400)
         write(edit)
         return web.json_response(read())
