@@ -11,31 +11,33 @@
        bundle built from web/shell (@hanzogui/shell), served at /marketing. -->
   <link rel="stylesheet" href="/marketing/shell.css">
   <style>
-    /* Hanzo Studio sign-in — matches console.hanzo.ai's design system:
-     * monochrome true-black surfaces, hairline borders, 9px radii, a white
-     * primary action, and the 5-path Hanzo "H" mark in currentColor. Basel is
-     * console's UI face; it is a licensed font we do not redistribute in this
-     * GPL-3 repo, so we use console's own system-grotesk fallback stack here. */
-    :root {
-      --bg: #000000;
-      --surface: #050505;      /* console --color1: card / panel */
-      --surface-hover: #171717;/* console --backgroundHover */
-      --border: #23262b;       /* console --borderColor */
-      --border-hover: #363b40; /* console --borderColorHover */
-      --text: #eef0f3;         /* console --color12 */
-      --text-2: #cdd2da;       /* console --color11 */
-      --muted: #848a93;        /* console --color9 */
-      --primary: #fbfcfd;      /* console light --background (white fill) */
-      --primary-text: #181d25; /* console light --color12 (near-black) */
-      --radius: 9px;           /* console radius $4 / $true */
-    }
+    /* Hanzo Studio sign-in. Every colour, every radius and the focus ring come
+     * from @hanzo/design, which /marketing/shell.css loads above. This page
+     * declares NO palette of its own, so a token fix or a brand fork reaches it
+     * with no edit here.
+     *
+     * It used to hand-copy eleven console.hanzo.ai hex values into a private
+     * :root. Seven of the eleven were blue-tinted while the comment claimed
+     * "monochrome" (--muted #848a93 carried +15 blue over red, --text-2 +13),
+     * and the card border #23262b measured 1.38:1 against the page — a boundary
+     * you cannot see. Those names also SHADOWED design's own --border/--muted/
+     * --primary/--radius, so aliasing them here would have formed a var() cycle;
+     * referencing design directly is the only non-shadowing way to do this.
+     *
+     * Each var() carries design's own authored value as its literal fallback, so
+     * the page stays legible if /marketing/shell.css ever fails to load. That is
+     * the same pattern @hanzo/iam ships and it is why this page cannot go blank.
+     *
+     * Basel is console's UI face; it is a licensed font we do not redistribute
+     * in this GPL-3 repo, so we keep console's system-grotesk fallback stack and
+     * do NOT import @hanzo/design's self-hosted Geist. */
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
     body {
       font-family: 'Basel', system-ui, -apple-system, BlinkMacSystemFont,
         'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-      background: var(--bg);
-      color: var(--text);
+      background: var(--background, #000000);
+      color: var(--foreground, #ededed);
       min-height: 100vh;
       display: flex;
       flex-direction: column;
@@ -58,9 +60,9 @@
     .card {
       width: 100%;
       max-width: 380px;
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
+      background: var(--card, #0a0a0a);
+      border: 1px solid var(--border, #1f1f1f);
+      border-radius: var(--radius-lg, 0.75rem);
       padding: 24px;
       display: flex;
       flex-direction: column;
@@ -75,12 +77,12 @@
       text-align: center;
     }
 
-    .mark { width: 40px; height: 40px; color: var(--text); }
+    .mark { width: 40px; height: 40px; color: var(--foreground, #ededed); }
     .mark path { fill: currentColor; }
 
     .titles { display: flex; flex-direction: column; align-items: center; gap: 4px; }
-    .title { font-size: 22px; font-weight: 500; letter-spacing: -0.01em; color: var(--text); }
-    .subtitle { font-size: 14px; font-weight: 400; color: var(--text-2); max-width: 300px; }
+    .title { font-size: 22px; font-weight: 500; letter-spacing: -0.01em; color: var(--foreground, #ededed); }
+    .subtitle { font-size: 14px; font-weight: 400; color: var(--text-secondary, rgb(255 255 255 / .80)); max-width: 300px; }
 
     .btn {
       display: inline-flex;
@@ -91,7 +93,7 @@
       height: 44px;
       padding: 0 18px;
       border: 1px solid transparent;
-      border-radius: var(--radius);
+      border-radius: var(--radius, 0.5rem);
       font-family: inherit;
       font-size: 15px;
       font-weight: 500;
@@ -99,13 +101,22 @@
       text-decoration: none;
       transition: background 0.15s ease, border-color 0.15s ease, opacity 0.15s ease;
     }
-    .btn-primary { background: var(--primary); color: var(--primary-text); }
+    .btn-primary { background: var(--primary, #ffffff); color: var(--primary-foreground, #000000); }
     .btn-primary:hover { opacity: 0.9; }
     .btn-primary svg { width: 16px; height: 16px; }
 
-    .footnote { font-size: 12px; color: var(--muted); text-align: center; }
-    .footnote a { color: var(--text-2); text-decoration: none; transition: color 0.15s; }
-    .footnote a:hover { color: var(--text); }
+    .footnote { font-size: 12px; color: var(--muted-foreground, #888888); text-align: center; }
+    .footnote a { color: var(--text-secondary, rgb(255 255 255 / .80)); text-decoration: none; transition: color 0.15s; }
+    .footnote a:hover { color: var(--foreground, #ededed); }
+
+    /* The keyboard focus indicator. This page had none and fell through to the
+       UA default; @hanzo/design ships this exact rule in tokens/base.css, which
+       we cannot import here without its element defaults overriding the reset
+       and Basel stack above, so the one rule is restated. --ring is #737373 as
+       of @hanzo/design 0.3.0 — 4.43:1 on the page and 4.18:1 on the card, where
+       WCAG 2.4.11 needs 3:1. It was #333333 (1.66:1) and could not have carried
+       an indicator at all. */
+    :focus-visible { outline: 2px solid var(--ring, #737373); outline-offset: 2px; }
   </style>
 </head>
 <body>

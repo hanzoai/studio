@@ -11,6 +11,9 @@ importers:
       '@hanzo/brand':
         specifier: ^1.4.1
         version: 1.4.1(react@18.3.1)
+      '@hanzo/design':
+        specifier: ^0.3.0
+        version: 0.3.0
       '@hanzogui/shell':
         specifier: ^7.4.2
         version: 7.4.2(@hanzo/iam@0.13.8(react@18.3.1))(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
@@ -189,6 +192,9 @@ packages:
       react:
         optional: true
 
+  '@hanzo/design@0.3.0':
+    resolution: {integrity: sha512-shUf5kU/p5VYmb3P4s02HFAyCOS6Z/XyonAxFiU1hJiqSWBz5NJEXHAVQIiL2Hl2F2yEUrSw43EF+I/WIp7y1w==}
+
   '@hanzo/iam@0.13.8':
     resolution: {integrity: sha512-6D4lZSSuTBWV/bof5u5l6VEE0VZhNnpF99svirmHTRko5MsZ5sEd3+7xZ28KH0UL0oquvHwRJ6tkvn+E+f5YuQ==}
     engines: {node: '>=18'}
@@ -347,6 +353,8 @@ snapshots:
       '@hanzo/logo': 1.0.13(react@18.3.1)
     optionalDependencies:
       react: 18.3.1
+
+  '@hanzo/design@0.3.0': {}
 
   '@hanzo/iam@0.13.8(react@18.3.1)':
     dependencies:
