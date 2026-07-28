@@ -35,8 +35,10 @@ so it is never persisted into history. The Asset is written AS that user, into t
 user's org — the framework derives the tenant from the token's `owner` claim. No
 service account, no impersonation, no cross-org write path.
 
-Fire-and-forget: a publish failure only logs. A render is NEVER failed for it.
-Env-gated; absent locally = no-op.
+Two callers, one writer: the prompt worker at render completion (fire-and-forget — a
+publish failure only logs, a render is NEVER failed for it) and the Library's
+"Publish to CMS" action (a human is watching, so the result carries the REAL upstream
+status and body — see ``publish_render``). Env-gated; absent locally = no-op.
 
     STUDIO_CLOUD_API_URL   Hanzo Cloud base URL (default https://api.hanzo.ai)
     STUDIO_CONTENT_PUBLISH "1"/"true" to enable
@@ -55,6 +57,13 @@ _TIMEOUT = aiohttp.ClientTimeout(total=float(os.environ.get("STUDIO_CONTENT_TIME
 # clients/content declares Asset.kind as a Select; anything else would 422.
 KINDS = ("ecom", "product", "lifestyle", "hover", "hero", "thumbnail")
 DEFAULT_KIND = "product"
+
+# The lane refuses `create on Asset` unless the caller holds Content Editor (or is
+# SuperAdmin / System Manager) — cloud clients/content contentPerms(). Studio cannot
+# fix that: the write runs as the caller's OWN principal, by design. So the 403 is
+# reported with the only action that resolves it.
+FORBIDDEN_REMEDY = ("your Hanzo account holds no Content Editor role in this org — "
+                    "an org owner grants it (POST /v1/framework/roles), then publish again")
 
 
 def enabled() -> bool:
@@ -100,8 +109,9 @@ def kind_of(extra_data: dict) -> str:
     return k if k in KINDS else DEFAULT_KIND
 
 
-def _model(workflow: dict | None) -> str:
-    """Best-effort model name off the graph's first checkpoint/UNet loader."""
+def model_of(workflow: dict | None) -> str:
+    """Best-effort model name off the graph's first checkpoint/UNet loader. Public:
+    the Library's provenance panel names the same model this record does."""
     for node in (workflow or {}).values():
         if not isinstance(node, dict):
             continue
@@ -119,7 +129,7 @@ def asset_doc(*, org_id: str, prompt_id: str, workflow: dict, ref: dict, extra_d
     `status` is omitted on purpose: the DocType defaults it to draft, and the
     lifecycle hook owns every transition from there.
     """
-    model = _model(workflow)
+    model = model_of(workflow)
     return {
         "title": ref["filename"],
         "kind": kind_of(extra_data),
@@ -145,28 +155,39 @@ async def publish_render(
     history_result: dict | None,
     iam_token: str | None,
     extra_data: dict | None = None,
-) -> int:
+) -> dict:
     """
-    Publish a completed render's artifacts as draft Assets. Returns how many landed.
+    Publish a completed render's artifacts as draft Assets. Returns
+    ``{"landed": n, "errors": [{"status", "message", "path"}]}`` — every refusal
+    carried out whole, with the REAL upstream HTTP status and body, so the caller
+    that has a human in front of it can show a 403 AS a 403. Nothing is swallowed
+    into a plausible-looking success.
 
-    Never raises: the caller is the prompt worker, and a render must not fail
+    Never raises: the other caller is the prompt worker, and a render must not fail
     because the content lane was unreachable.
     """
+    out: dict = {"landed": 0, "errors": []}
+
+    def refused(status: int, message: str, path: str = "") -> None:
+        logging.warning("content_publish: prompt %s not published (%s): %s",
+                        prompt_id, status, message)
+        out["errors"].append({"status": status, "message": message, "path": path})
+
     if not enabled():
-        return 0
+        refused(503, "publishing to the Hanzo content lane is switched off on this instance")
+        return out
     if not iam_token:
         # No verified user principal on this execution. We refuse to invent one:
         # writing via a service account would be a cross-org write path.
-        logging.warning("content_publish: no IAM token on prompt %s — not published", prompt_id)
-        return 0
+        refused(401, "sign in with Hanzo — an Asset is written as YOU, never as a service account")
+        return out
 
     refs = artifacts(history_result)
     if not refs:
-        return 0
+        return out
     extra = extra_data or {}
     url = f"{CLOUD_URL.rstrip('/')}/v1/framework/Asset"
     headers = {"Authorization": f"Bearer {iam_token}"}
-    landed = 0
 
     try:
         async with aiohttp.ClientSession(timeout=_TIMEOUT) as session:
@@ -177,13 +198,13 @@ async def publish_render(
                 )
                 async with session.post(url, json=doc, headers=headers) as resp:
                     if resp.status in (200, 201):
-                        landed += 1
-                    else:
-                        logging.warning(
-                            "content_publish: POST /v1/framework/Asset -> %s: %s",
-                            resp.status, (await resp.text())[:200],
-                        )
+                        out["landed"] += 1
+                        continue
+                    body = (await resp.text())[:400].strip() or f"HTTP {resp.status}"
+                    refused(resp.status,
+                            f"{body} — {FORBIDDEN_REMEDY}" if resp.status == 403 else body,
+                            doc["file"])
     except Exception as e:  # unreachable cloud / timeout — a render is never failed for this
-        logging.warning("content_publish: prompt %s not published: %s", prompt_id, e)
+        refused(502, f"the Hanzo content lane is unreachable ({e})")
 
-    return landed
+    return out
