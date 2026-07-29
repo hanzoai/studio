@@ -15,9 +15,10 @@ DRY, one source of truth per concern:
                      the structured-form path renders a valid document with NO LLM at all,
                      so a broken/unauthorized gateway can never block document creation.
                      Token, fail-closed and in priority order:
-                       1. a server-side gateway key (STUDIO_DOC_TOKEN / STUDIO_COPILOT_TOKEN
-                          / STUDIO_COMMERCE_TOKEN) — the configured, working path; server-side
-                          only, NEVER in page source.
+                       1. a server-side gateway key (STUDIO_DOC_TOKEN / STUDIO_COPILOT_TOKEN)
+                          — the configured, working path; server-side only, NEVER in page
+                          source. A commerce service token is a different audience and is
+                          not consulted.
                        2. else the caller's own token, forwarded ONLY when it is
                           gateway-verifiable: a JWKS/asymmetric-signed JWT (RS/ES/PS/EdDSA)
                           or a publishable ``pk-`` key. A symmetric HS256 hanzo.id *session*
@@ -756,7 +757,9 @@ def render_document(tmpl, fields, fmt):
 
 # ── AI-fill: description -> structured fields via the Hanzo gateway ─────────────────
 
-_SERVER_TOKEN_ENV = ("STUDIO_DOC_TOKEN", "STUDIO_COPILOT_TOKEN", "STUDIO_COMMERCE_TOKEN")
+# AI-gateway server keys only — a commerce service token is a different audience (it used
+# to be listed here and would 502 every AI-fill; see gateway_auth).
+_SERVER_TOKEN_ENV = ("STUDIO_DOC_TOKEN", "STUDIO_COPILOT_TOKEN")
 
 
 def _ai_token(request):

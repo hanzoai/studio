@@ -8,11 +8,19 @@ HS256") — so forwarding the raw session token produces a 502, not a chat. Secr
 the one client-safe family the gateway accepts from the edge.
 
 So the rule, fail-closed, in ONE place every gateway caller reuses:
-  1. a server-side gateway key (configured, never in page source) wins;
+  1. a server-side gateway key (configured, never in page source) wins — but ONLY when it
+     is not provably unverifiable. A symmetric-JWT server key is refused for the same
+     reason a session token is: the gateway rejects it. A "winning" key that can only 502
+     is worse than no key, because it MASKS the caller's own working token (this is
+     exactly how an HS256 *commerce* credential in the AI slot took studio chat down:
+     every request 502'd while the user's own RS256 IAM token would have been accepted).
   2. else the caller's own token — forwarded ONLY when the gateway can verify it: a
      publishable ``pk-`` key, or an asymmetric/JWKS JWT (RS/ES/PS/EdDSA);
   3. an HS256 session token or any secret key is refused → "" (the caller then degrades
      honestly instead of emitting a 502).
+
+One credential, one audience: a service token for commerce (or any other service) is NOT
+an AI-gateway credential and must never be listed in an ``server_env`` here.
 
 This is the same shape the office-documents AI-fill proved (documents.py); it lives here
 so copilot and any future gateway caller share exactly one implementation.
@@ -65,22 +73,42 @@ def forwardable_bearer(request) -> str:
         return ""
     if tok.startswith(("pk-", "pk_")):
         return "Bearer " + tok
-    if tok.count(".") == 2:
-        # Exact JWS asymmetric set — a prefix match ("RS"/"Ed") also admitted non-JWS
-        # names like RSA-OAEP / "Edwina"; `alg in <tuple>` is crash-safe for any type.
-        if jwt_alg(tok) in ("RS256", "RS384", "RS512", "ES256", "ES384", "ES512",
-                            "PS256", "PS384", "PS512", "EdDSA"):
-            return "Bearer " + tok
+    # Exact JWS asymmetric set — a prefix match ("RS"/"Ed") also admitted non-JWS names
+    # like RSA-OAEP / "Edwina"; `alg in <tuple>` is crash-safe for any type.
+    if tok.count(".") == 2 and jwt_alg(tok) in _ASYMMETRIC:
+        return "Bearer " + tok
     return ""
 
 
+_ASYMMETRIC = ("RS256", "RS384", "RS512", "ES256", "ES384", "ES512",
+               "PS256", "PS384", "PS512", "EdDSA")
+
+
+def unverifiable(tok: str) -> bool:
+    """True when the gateway PROVABLY cannot verify this token: a JWT whose ``alg`` is not
+    in the JWKS-verifiable asymmetric set (an HS256 session or service token). An opaque
+    non-JWT key (a raw gateway/publishable key) is not provably unverifiable, so it is not
+    refused here — only the gateway can judge it."""
+    return tok.count(".") == 2 and jwt_alg(tok) not in _ASYMMETRIC
+
+
 def server_token(env_names) -> str:
-    """The first configured server-side gateway key from ``env_names``, as a full
-    ``Bearer <tok>`` value, or "". Server-side only — never emitted to page source."""
+    """The first configured server-side gateway key from ``env_names`` that the gateway
+    could actually accept, as a full ``Bearer <tok>`` value, or "". Server-side only —
+    never emitted to page source.
+
+    A configured key that is a symmetric JWT is SKIPPED, not returned: it can only produce
+    "unsupported signing method: HS256" at the gateway, and returning it would mask the
+    caller's own verifiable token. Misconfiguration degrades to the working path instead of
+    taking the feature down."""
     for env in env_names:
         v = os.environ.get(env, "").strip()
-        if v:
-            return v if v[:7].lower() == "bearer " else "Bearer " + v
+        if not v:
+            continue
+        tok = v[7:].strip() if v[:7].lower() == "bearer " else v
+        if unverifiable(tok):
+            continue
+        return "Bearer " + tok
     return ""
 
 

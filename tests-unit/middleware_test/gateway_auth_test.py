@@ -85,6 +85,38 @@ def test_ai_bearer_server_key_wins_else_forwardable(monkeypatch):
     assert G.ai_bearer(_Req("Bearer " + rs), server_env=envs) == "Bearer hk-server-key"
 
 
+def test_symmetric_jwt_server_key_is_skipped_not_returned(monkeypatch):
+    """THE CHAT OUTAGE: an HS256 *commerce* service token sat in the AI server-key slot.
+    It "won" precedence and every chat 502'd ("unsupported signing method: HS256") while
+    the caller's own RS256 IAM token — which the gateway accepts — was never tried. A
+    provably-unverifiable server key must be SKIPPED so the working path takes over."""
+    envs = ("BAD_TOK", "GOOD_TOK")
+    for e in envs:
+        monkeypatch.delenv(e, raising=False)
+    hs, rs = _jwt("HS256"), _jwt("RS256")
+    assert G.unverifiable(hs) is True
+    assert G.unverifiable(rs) is False
+    assert G.unverifiable("hk-opaque-gateway-key") is False   # opaque: only the gateway judges
+    # An HS256 server key alone: skipped → the caller's verifiable token is used instead.
+    monkeypatch.setenv("BAD_TOK", hs)
+    assert G.server_token(envs) == ""
+    assert G.ai_bearer(_Req("Bearer " + rs), server_env=envs) == "Bearer " + rs
+    # …and with no usable caller token either, it degrades honestly (never a doomed 502).
+    assert G.ai_bearer(_Req("Bearer " + _jwt("HS256")), server_env=envs) == ""
+    # A verifiable later key is still found past the skipped one.
+    monkeypatch.setenv("GOOD_TOK", "pk-live-abc")
+    assert G.server_token(envs) == "Bearer pk-live-abc"
+
+
+def test_ai_lanes_never_consult_a_commerce_token():
+    """One credential, one audience: the commerce service token is not an AI credential.
+    Listing it in an AI server_env is what caused the outage above."""
+    from middleware import copilot, documents
+    for envs in (copilot._SERVER_TOKEN_ENV, documents._SERVER_TOKEN_ENV):
+        assert "STUDIO_COMMERCE_TOKEN" not in envs, envs
+        assert envs, "an AI lane still needs its own server-key env"
+
+
 def test_forwardable_bearer_survives_crafted_non_string_alg():
     """A JWT header with a non-string alg (null/list/number/dict) must yield "" — never
     a self-inflicted 500 from alg[:2]/alg.startswith. Mirrors the documents.py RED fix."""

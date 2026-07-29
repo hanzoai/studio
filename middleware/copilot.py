@@ -18,8 +18,10 @@ Env (all optional):
                           http://127.0.0.1:1234/v1/chat/completions if that port
                           is open, else https://api.hanzo.ai/v1/chat/completions.
     STUDIO_COPILOT_MODEL  model id (default "enso" — the Hanzo flagship assistant).
-    STUDIO_COPILOT_TOKEN  bearer for the gateway. Falls back to
-                          STUDIO_COMMERCE_TOKEN, then any bearer on the request.
+    STUDIO_COPILOT_TOKEN  bearer for the gateway — the ONLY server key for this lane.
+                          Falls back to the caller's own token when the gateway can
+                          verify it (gateway_auth). A COMMERCE service token is NOT an
+                          AI credential and is deliberately not consulted.
 
 The op schema is small and explicit — the frontend applier mirrors it exactly:
 
@@ -65,7 +67,10 @@ _LOCAL_URL = "http://127.0.0.1:1234/v1/chat/completions"
 # Server-side gateway keys, in precedence order (never in page source). When none is set
 # the caller's own token is forwarded ONLY when the gateway can verify it (pk-/asymmetric
 # JWT) — see gateway_auth. This is why a browser HS256 session token no longer 502s.
-_SERVER_TOKEN_ENV = ("STUDIO_COPILOT_TOKEN", "STUDIO_COMMERCE_TOKEN")
+# One credential, one audience: the AI gateway's server key ONLY. STUDIO_COMMERCE_TOKEN
+# used to sit here — it is an HS256 *commerce* token, so it "won" this slot and made every
+# chat 502 while masking the caller's own gateway-verifiable IAM token.
+_SERVER_TOKEN_ENV = ("STUDIO_COPILOT_TOKEN",)
 
 # Single tool: the model calls it to both reply and edit the graph.
 _EDIT_TOOL = {
