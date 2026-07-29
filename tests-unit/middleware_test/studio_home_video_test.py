@@ -162,10 +162,10 @@ def test_video_graph():
     assert g["6"]["inputs"]["text"] == sh._WAN_NEG
     assert sh._WAN_NEG.startswith("色调艳丽") and "倒着走" in sh._WAN_NEG
 
-    # lessons condition BOTH encoders, exactly like _fix_graph
+    # lessons steer the NEGATIVE encoder only, exactly like _fix_graph — the
+    # positive never carries the words being avoided
     gl = sh._video_graph("beach", "video/z", lessons=["hair morphs between frames"])
-    assert "do not repeat" in gl["5"]["inputs"]["text"]
-    assert "hair morphs between frames" in gl["5"]["inputs"]["text"]
+    assert "hair morphs between frames" not in gl["5"]["inputs"]["text"]
     assert "hair morphs between frames" in gl["6"]["inputs"]["text"]
 
 

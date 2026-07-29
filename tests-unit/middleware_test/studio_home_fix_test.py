@@ -219,18 +219,21 @@ def test_mistakes_selects_corrections_not_praise():
     assert len(out) <= 4
 
 
-def test_fix_graph_injects_lessons_into_both_encoders():
+def test_fix_graph_lessons_steer_negative_only():
+    # Lessons ride ONLY the negative encoder. Putting "do not repeat: lifestyle
+    # scene" in the POSITIVE handed the model the very tokens to avoid — diffusion
+    # weighs tokens, not negation — which re-caused the drift being critiqued.
     g = sh._fix_graph("x.png", "redo the sleeves", "fixes/x",
                       lessons=["sleeves way too wide", "color washed out"])
     pos, neg = g["6"]["inputs"]["prompt"], g["7"]["inputs"]["prompt"]
-    assert "do not repeat" in pos and "sleeves way too wide" in pos
+    assert "sleeves way too wide" not in pos and "do not repeat" not in pos
     assert "sleeves way too wide" in neg and "color washed out" in neg
 
 
 def test_compose_graph_injects_lessons():
     g = sh._compose_graph(["x.png", "y.png"], "combine them", "composes/x",
                           lessons=["strap should be thinner"])
-    assert "strap should be thinner" in g["6"]["inputs"]["prompt"]
+    assert "strap should be thinner" not in g["6"]["inputs"]["prompt"]
     assert "strap should be thinner" in g["7"]["inputs"]["prompt"]
 
 

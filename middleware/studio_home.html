@@ -1281,11 +1281,15 @@ function composerPlan(){
     return{kind:'video',url:'/v1/library/video',body:b}; }
   // Text only, no photo → text-to-image: the DEFAULT create. Words in, an image out —
   // never the old "attach a photo first" dead end.
+  // The picked template lane rides as body.kind — the server's FLOWS policy is the
+  // ONE place it shapes the render (frame + negative + denoise). Unknown kinds are
+  // ignored server-side, so non-render cards can never break a create.
+  const lane=KIND?{kind:KIND}:{};
   if(!n){ if(t.length<3)return{error:'Describe what you want to create'};
-    return{kind:'image',url:'/v1/library/image',body:{prompt:t}}; }
+    return{kind:'image',url:'/v1/library/image',body:{prompt:t,...lane}}; }
   if(t.length<3)return{error:'Describe what to make from your photo'+(n>1?'s':'')};
-  if(n===1)return{kind:'fix',url:'/v1/library/fix',body:libs.length?{path:libs[0],instruction:t}:{upload:ups[0],instruction:t}};
-  return{kind:'compose',url:'/v1/library/compose',body:{paths:libs,uploads:ups,instruction:t}};
+  if(n===1)return{kind:'fix',url:'/v1/library/fix',body:libs.length?{path:libs[0],instruction:t,...lane}:{upload:ups[0],instruction:t,...lane}};
+  return{kind:'compose',url:'/v1/library/compose',body:{paths:libs,uploads:ups,instruction:t,...lane}};
 }
 // The ONE create path: the top composer's ↑ generates from its prompt + the photos
 // attached to it (via + / drag / paste / a gallery card's +). 1 photo → edit (fix),
@@ -1313,7 +1317,9 @@ async function create(){
       const noun=plan.kind==='model3d'?'3D model':plan.kind==='video'?'Video':'Image';
       toast(online?(noun+' generating → Queue & History'):(noun+' queued — starts when a GPU connects'));
       track(plan.kind,{from:'composer'}); $('pin').value=''; clearTray();
-      if(plan.kind==='model3d'||plan.kind==='video')clearLane();
+      // The lane is consumed by THIS create — a sticky lane silently restyling
+      // every later render is exactly the "random lifestyle" bug. One pick, one run.
+      clearLane();
       updateLivebar().catch(()=>{});       // reflect the new job now, not on the next 5s poll
     } else if(!(await healStale(j))) createFailed(errMsg(j)||('error '+r.status));
   });
@@ -1622,6 +1628,7 @@ let TARGET_GPU=null;        // null = any GPU (shared "gpu-jobs" lane); else a m
 // ONE header factory for every generation POST: forwards the picked GPU so the render
 // lands on THAT machine (dispatch → taskQueue "gpu:<id>"). Harmless on non-render routes.
 function genHeaders(){const h={'Content-Type':'application/json'};if(TARGET_GPU)h['X-Target-GPU']=TARGET_GPU;return h;}
+function esc(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
 function pickGPU(name){TARGET_GPU=name||null;toast(TARGET_GPU?('Next render → '+TARGET_GPU):'Next render → any available GPU');renderQhead();}
 const WSTATUS={queued:['⏳','queued'],running:['●','running'],done:['✓','done'],failed:['⚠','failed'],cancelled:['✕','cancelled']};
 const fmtDur=s=>{ s=Math.max(0,Math.round(s)); if(s<60)return s+'s'; const m=Math.floor(s/60),r=s%60; if(s<3600)return m+'m'+(r?(' '+r+'s'):''); return Math.floor(s/3600)+'h '+Math.floor((s%3600)/60)+'m'; };
@@ -2216,10 +2223,18 @@ async function updateLivebar(){
   const name=it=>{try{return (saver(it[2])?.inputs?.filename_prefix||'render').split('/').pop();}catch(_){return 'render';}};
   if(gpuJobs.length){
     lb.classList.remove('idle');
-    const first=gpuJobs[0], more=gpuJobs.length-1;
-    st.innerHTML=`<span class="lb-run"><span class="spin"></span>Generating on your GPU: <b>${first.prefix||'render'}</b></span>`
-      + (more>0?` <span class="lb-q">· ${more} more</span>`:'')
-      + ` <span class="lb-eta">· ~${ETA_MIN} min each</span>`;
+    // HONEST state: "Generating" ONLY when a worker actually claimed and is
+    // running the job. A merely-SCHEDULED job with no worker says so — the old
+    // unconditional "Generating on your GPU" was a lie that hid the real state.
+    const running=gpuJobs.find(j=>j.status==='running');
+    const first=running||gpuJobs[0], more=gpuJobs.length-1;
+    if(running){
+      st.innerHTML=`<span class="lb-run"><span class="spin"></span>Generating on ${esc(running.node&&running.node!=='queued'?running.node:'your GPU')}: <b>${esc(first.prefix||'render')}</b></span>`
+        + (more>0?` <span class="lb-q">· ${more} more</span>`:'')
+        + ` <span class="lb-eta">· ~${ETA_MIN} min each</span>`;
+    } else {
+      st.innerHTML=`<span class="lb-run">⏳ <b>${gpuJobs.length}</b> queued — starts when a GPU connects</span>`;
+    }
   } else if(run.length){
     lb.classList.remove('idle');
     const q1=pend.length;

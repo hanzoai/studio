@@ -574,19 +574,89 @@ EDIT_DENOISE_DEFAULT = 0.25
 EDIT_DENOISE_MIN, EDIT_DENOISE_MAX = 0.05, 0.95
 
 
-def _edit_denoise(strength) -> float:
+def _edit_denoise(strength, default: float = EDIT_DENOISE_DEFAULT) -> float:
     """Map an edit-strength input to a KSampler denoise in the edit band. Accepts a
-    fraction (0.25) or a percent (25). None/invalid → the 0.25 default."""
+    fraction (0.25) or a percent (25). None/invalid → ``default`` (the flow's lane
+    default when a template lane is active, else the 0.25 edit default)."""
     try:
         v = float(strength)
     except (TypeError, ValueError):
-        return EDIT_DENOISE_DEFAULT
+        return max(EDIT_DENOISE_MIN, min(EDIT_DENOISE_MAX, float(default)))
     if v > 1.0:                      # a percent (25) → fraction
         v = v / 100.0
     return max(EDIT_DENOISE_MIN, min(EDIT_DENOISE_MAX, v))
 
 
-def _fix_graph(ref_name: str, instruction: str, prefix: str, *, denoise: float = EDIT_DENOISE_DEFAULT,
+# ── Per-KIND flow policy — the ONE place a picked template lane shapes a render.
+# The composer's template cards send their `kind` with the dispatch body; each
+# entry declares how the user's words are FRAMED (the sentence appended after the
+# instruction, REPLACING the generic edit-preservation clause), what is negatively
+# excluded, and the edit denoise that lane needs — a pen/CAD drawing must be
+# nearly fully re-rendered to become a photograph, a photo edit stays light.
+# No entry (kind absent/unknown) ⇒ the user's words ride unshaped: a hidden style
+# can never leak into a run the user didn't ask to style. An explicit strength
+# from the caller still beats the lane's denoise.
+FLOWS: dict[str, dict] = {
+    "product": {
+        "frame": ("Professional e-commerce product photograph: plain seamless studio "
+                  "background, soft even lighting, accurate colors, true fabric texture, "
+                  "sharp focus on the product. No scene, no props, no people unless "
+                  "explicitly requested."),
+        "negative": ("sketch, line art, drawing, illustration, lifestyle scene, "
+                     "environment, props, clutter"),
+        "denoise": 0.90,
+    },
+    "lifestyle": {
+        "frame": ("Editorial lifestyle photograph: the product in a real scene in natural "
+                  "use, photorealistic, natural light."),
+        "negative": "sketch, line art, drawing, illustration",
+        "denoise": 0.85,
+    },
+    "cad_ghost": {
+        "frame": ("Convert this garment technical drawing into a PHOTOREALISTIC "
+                  "ghost-mannequin e-commerce photograph: real fabric on an invisible "
+                  "form, plain seamless background. Interpret pen and annotation marks "
+                  "as sewing construction — put creases, ruching, gathers, seams and "
+                  "fabric changes exactly where they are indicated, rendered as real "
+                  "fabric behavior — and never draw the marks, arrows or text "
+                  "themselves. Keep the garment's exact shape, proportions, colorway "
+                  "and panel layout from the drawing."),
+        "negative": ("sketch, line art, drawing, pen strokes, annotation marks, arrows, "
+                     "text, flat illustration, paper, visible mannequin, model, person"),
+        "denoise": 0.92,
+    },
+    "cad_mockup": {
+        "frame": ("Convert this technical drawing into a PHOTOREALISTIC mockup "
+                  "photograph — the garment worn by a real model, or the packaging as a "
+                  "real object, as instructed. Real materials, real light. Interpret pen "
+                  "and annotation marks as construction — creases, ruching, gathers, "
+                  "seams and fabric changes exactly where indicated, as real fabric "
+                  "behavior — and never draw the marks, arrows or text themselves. Keep "
+                  "the exact shape, proportions and colorway from the drawing."),
+        "negative": ("sketch, line art, drawing, pen strokes, annotation marks, arrows, "
+                     "text, flat illustration, paper"),
+        "denoise": 0.92,
+    },
+    "outfit": {
+        "frame": ("Swap the garment as instructed while keeping the SAME model, pose, "
+                  "framing, lighting and background. Photorealistic, true fabric "
+                  "texture."),
+        "negative": ("sketch, drawing, illustration, different model, changed pose, "
+                     "changed background"),
+        "denoise": 0.60,
+    },
+}
+
+
+def _flow_of(kind) -> dict | None:
+    """Resolve a dispatch body's `kind` to its flow policy. Unknown/absent kinds are
+    None — the catalog has non-render cards (music, deck, …) whose kind may ride
+    along; they must never error a render, only never shape it."""
+    return FLOWS.get(str(kind or "").strip().lower()) or None
+
+
+def _fix_graph(ref_name: str, instruction: str, prefix: str, *, flow: dict | None = None,
+               denoise: float = EDIT_DENOISE_DEFAULT,
                seed: int | None = None, lessons: list[str] | None = None) -> dict:
     """LOW-DENOISE Qwen-Image-Edit-2511 instruction edit — the EDIT action.
 
@@ -603,14 +673,22 @@ def _fix_graph(ref_name: str, instruction: str, prefix: str, *, denoise: float =
     INVARIANTS (see _assert_edit_graph): latent_image is the VAEEncode of the source (no
     EmptyLatentImage), and denoise is in the edit band (never 1.0). A pose/view change or
     a fresh interpretation is REGENERATE (a separate action), not this."""
-    prompt = (f"{instruction.strip()}. Photorealistic; keep the same subject, "
-              f"composition, pose, framing, proportions, lighting, materials, colors "
-              f"and background — apply ONLY the requested change, leave everything else "
-              f"unchanged.")
-    neg = _NEG
+    # A flow lane's frame REPLACES the generic preservation clause: converting a
+    # pen/CAD drawing to a photograph is the OPPOSITE of "keep the same materials,
+    # colors and background", and keeping that clause is exactly what made CAD
+    # conversions come out still looking like drawings.
+    shape = (flow or {}).get("frame") or (
+        "Photorealistic; keep the same subject, composition, pose, framing, "
+        "proportions, lighting, materials, colors and background — apply ONLY the "
+        "requested change, leave everything else unchanged.")
+    prompt = f"{instruction.strip()}. {shape}"
+    neg = _NEG + (", " + flow["negative"] if flow and flow.get("negative") else "")
+    # Lessons steer through the NEGATIVE only. Injecting them into the positive
+    # ("do not repeat: lifestyle scene") puts the offending words INTO the
+    # conditioning — diffusion models weigh tokens, not negation — which is how a
+    # critique note about lifestyle drift was RE-CAUSING lifestyle drift.
     if lessons:
-        prompt += " Known mistakes on earlier versions — do not repeat: " + "; ".join(lessons) + "."
-        neg = _NEG + ", " + ", ".join(lessons)
+        neg = neg + ", " + ", ".join(lessons)
     return {
         "1": {"class_type": "LoadImage", "inputs": {"image": ref_name}},
         "2": {"class_type": "FluxKontextImageScale", "inputs": {"image": ["1", 0]}},
@@ -631,6 +709,7 @@ def _fix_graph(ref_name: str, instruction: str, prefix: str, *, denoise: float =
 
 
 def _inpaint_graph(ref_name: str, mask_name: str, instruction: str, prefix: str, *,
+                   flow: dict | None = None,
                    denoise: float = EDIT_DENOISE_DEFAULT, seed: int | None = None,
                    lessons: list[str] | None = None) -> dict:
     """MASKED Qwen-Image-Edit — the EDIT-SELECTED-AREA action. Same low-denoise edit as
@@ -638,13 +717,14 @@ def _inpaint_graph(ref_name: str, mask_name: str, instruction: str, prefix: str,
     ImageCompositeMasked composites the decode back over the ORIGINAL so pixels OUTSIDE
     the mask stay byte-identical. The mask is a user-painted image (white = edit here),
     scaled to the source's scaled size so latent + mask align."""
-    prompt = (f"{instruction.strip()}. Photorealistic; change ONLY the masked region to "
-              f"apply the requested edit and blend it seamlessly; keep the subject, "
-              f"lighting, materials and colors consistent with the rest of the image.")
-    neg = _NEG
+    shape = (flow or {}).get("frame") or (
+        "Photorealistic; change ONLY the masked region to apply the requested edit "
+        "and blend it seamlessly; keep the subject, lighting, materials and colors "
+        "consistent with the rest of the image.")
+    prompt = f"{instruction.strip()}. {shape}"
+    neg = _NEG + (", " + flow["negative"] if flow and flow.get("negative") else "")
     if lessons:
-        prompt += " Known mistakes on earlier versions — do not repeat: " + "; ".join(lessons) + "."
-        neg = _NEG + ", " + ", ".join(lessons)
+        neg = neg + ", " + ", ".join(lessons)  # negative-only (see _fix_graph)
     return {
         "1": {"class_type": "LoadImage", "inputs": {"image": ref_name}},
         "2": {"class_type": "FluxKontextImageScale", "inputs": {"image": ["1", 0]}},
@@ -720,8 +800,7 @@ def _video_graph(prompt: str, prefix: str, *, ref_name: str | None = None,
     pos = prompt.strip()
     neg = _WAN_NEG
     if lessons:
-        pos += " Known mistakes on earlier versions — do not repeat: " + "; ".join(lessons) + "."
-        neg = _WAN_NEG + ", " + ", ".join(lessons)
+        neg = _WAN_NEG + ", " + ", ".join(lessons)  # negative-only (see _fix_graph)
     latent = {"vae": ["3", 0], "width": w, "height": h, "length": n, "batch_size": 1}
     g = {
         "1": {"class_type": "UNETLoader", "inputs": {"unet_name": _WAN_UNET, "weight_dtype": "default"}},
@@ -746,7 +825,8 @@ def _video_graph(prompt: str, prefix: str, *, ref_name: str | None = None,
     return g
 
 
-def _image_graph(prompt: str, prefix: str, *, width: int = 1024, height: int = 1024,
+def _image_graph(prompt: str, prefix: str, *, flow: dict | None = None,
+                 width: int = 1024, height: int = 1024,
                  seed: int | None = None, lessons: list[str] | None = None) -> dict:
     """The proven Z-Image-Turbo text-to-image graph, lifted node-for-node from the shipped
     "Text to Image (Z-Image-Turbo)" blueprint. UNETLoader(z_image_turbo_bf16) →
@@ -767,8 +847,12 @@ def _image_graph(prompt: str, prefix: str, *, width: int = 1024, height: int = 1
     w -= w % 16
     h -= h % 16
     pos = prompt.strip()
-    if lessons:
-        pos += " Known mistakes on earlier versions — do not repeat: " + "; ".join(lessons) + "."
+    # A flow lane frames the text-to-image prompt too (cfg 1.0 turbo means the
+    # negative node is inert — steering happens in the positive, so the frame does).
+    # Lessons do NOT ride the positive (see _fix_graph); with an inert negative the
+    # turbo lane simply has no lesson channel — dispatch_image passes none anyway.
+    if flow and flow.get("frame"):
+        pos = f"{pos}. {flow['frame']}"
     return {
         "1": {"class_type": "UNETLoader", "inputs": {"unet_name": _ZIMAGE_UNET, "weight_dtype": "default"}},
         "2": {"class_type": "CLIPLoader", "inputs": {"clip_name": _ZIMAGE_CLIP, "type": "lumina2", "device": "default"}},
@@ -812,15 +896,14 @@ def _model3d_graph(ref_name: str, prefix: str, *, seed: int | None = None) -> di
 
 
 def _compose_graph(ref_names: list[str], instruction: str, prefix: str,
-                   lessons: list[str] | None = None) -> dict:
+                   lessons: list[str] | None = None, flow: dict | None = None) -> dict:
     """Multi-reference compose: several chosen assets become the references and the
     user's words say HOW to combine them into a new output. Same proven Qwen
     reference-conditioned wiring as _fix_graph (TextEncodeQwenImageEditPlus takes
     image1..imageN), so no new pipeline — the multi-input case of the good graph."""
+    shape = (flow or {}).get("frame") or "Photorealistic, coherent single result."
     prompt = (f"{instruction.strip()}. Combine the provided reference images as "
-              f"described. Photorealistic, coherent single result.")
-    if lessons:
-        prompt += " Known mistakes on earlier versions — do not repeat: " + "; ".join(lessons) + "."
+              f"described. {shape}")
     g: dict = {
         "3": {"class_type": "CLIPLoader", "inputs": {"clip_name": _QWEN_CLIP, "type": "qwen_image", "device": "default"}},
         "4": {"class_type": "UNETLoader", "inputs": {"unet_name": _QWEN_UNET, "weight_dtype": "default"}},
@@ -835,10 +918,9 @@ def _compose_graph(ref_names: list[str], instruction: str, prefix: str,
         pos_inputs[f"image{i}"] = [si, 0]
         nid += 2
     g["6"] = {"class_type": "TextEncodeQwenImageEditPlus", "inputs": pos_inputs}
+    neg_prompt = _NEG + (", " + flow["negative"] if flow and flow.get("negative") else "")
     if lessons:
-        neg_prompt = _NEG + ", " + ", ".join(lessons)
-    else:
-        neg_prompt = _NEG
+        neg_prompt = neg_prompt + ", " + ", ".join(lessons)
     g["7"] = {"class_type": "TextEncodeQwenImageEditPlus", "inputs": {"clip": ["3", 0], "prompt": neg_prompt}}
     # Qwen's native multi-reference conditioning (image1..imageN on node 6) — NO
     # FluxKontextMultiReferenceLatentMethod: the same Flux-Kontext override that
@@ -963,7 +1045,11 @@ def _render_job_node(org: str, pid: str) -> str:
 _JOBS_NS = os.environ.get("STUDIO_GPU_JOBS_NS", "gpu-jobs")
 _PHASE = {"SCHEDULED": "queued", "PENDING": "queued", "STARTED": "running",
           "RUNNING": "running", "COMPLETED": "done", "SUCCEEDED": "done",
-          "FAILED": "failed", "CANCELED": "cancelled", "CANCELLED": "cancelled"}
+          "FAILED": "failed", "CANCELED": "cancelled", "CANCELLED": "cancelled",
+          # An engine-expired job is a FAILURE the user must see — mapping it to
+          # "queued" (the old default) made expired work silently vanish.
+          "TIMED_OUT": "failed", "TIMED_OUT_SCHEDULE_TO_START": "failed",
+          "EXPIRED": "failed", "TIMEDOUT": "failed"}
 
 
 def _epoch(ts) -> int | None:
@@ -1136,8 +1222,36 @@ def _cancel_job(server, org: str, pid: str) -> str:
             pass
     if _remove_render_job(org, pid) and realm == "gone":
         realm = "gpu"
+    if pid.startswith("held-"):
+        # A held job cancels by deleting its spool file — else the next queue
+        # read would faithfully re-enqueue the very job the user just cancelled.
+        (_held_dir(org) / f"{pid}.json").unlink(missing_ok=True)
+        realm = "held"
     worklog.set_status(org, pid, "cancelled")
     return realm
+
+
+async def _cancel_activity(request, pid: str) -> bool:
+    """Cancel the BYO-GPU activity in the cloud tasks engine — the counterpart of
+    gpu_dispatch's enqueue, POST …/activities/{id}/{id}/cancel (activityId == runId
+    == prompt_id by construction). Without this, a "cancelled" SCHEDULED job was
+    only hidden locally and still ran (and billed) the moment a worker connected.
+    Best-effort: a cancel of an already-claimed/finished activity is a no-op."""
+    from middleware.gpu_dispatch import CLOUD, _bearer
+    if request is None or not pid:
+        return False
+    tok = _bearer(request)
+    if not tok:
+        return False
+    url = f"{CLOUD}/v1/tasks/namespaces/{_JOBS_NS}/activities/{pid}/{pid}/cancel"
+    try:
+        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=15)) as s:
+            async with s.post(url, headers={"Authorization": tok},
+                              json={"reason": "cancelled in Studio", "identity": "studio"}) as r:
+                return 200 <= r.status < 300
+    except Exception as e:
+        log.warning("gpu-job cancel did not reach the tasks engine for %s: %s", pid, e)
+        return False
 
 
 def _landed_output(root: Path | None, prefix: str) -> str | None:
@@ -1229,12 +1343,79 @@ def _recent_dispatch(key: str) -> str | None:
     return hit[1] if hit and hit[1] and now - hit[0] < _DEDUP_WINDOW_S else None
 
 
+_HOLDABLE = ("momentarily unavailable", "no gpu worker online",
+             "could not reach the render engine", "was not queued")
+
+
+def _held_dir(org: str) -> Path:
+    """orgs/<org>/held — the spool of jobs the render fabric could not be reached
+    for. Same per-org tree as templates/worklog, so tenancy is structural."""
+    out = Path(folder_paths.get_org_output_directory(org))
+    base = out.parent if out.parent.name == org else out
+    d = base / "held"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def _hold_job(org: str, graph: dict, common: dict) -> str:
+    """Persist a job the fabric was unreachable for, as a QUEUED row + a spool file
+    carrying the full graph — the user's prompt/edit is never lost to a transient
+    'GPU worker unavailable'. Returns the held prompt_id (held-…)."""
+    pid = "held-" + uuid.uuid4().hex[:12]
+    rec = {"id": pid, "ts": int(time.time()), "graph": graph, **common}
+    p = _held_dir(org) / f"{pid}.json"
+    tmp = p.with_suffix(".tmp")
+    tmp.write_text(json.dumps(rec), encoding="utf-8")
+    tmp.replace(p)
+    worklog.record(org, pid=pid, status="queued", lane="gpu", node="waiting", **common)
+    _trace("dispatch.held", org=org, pid=pid, kind=common.get("kind"),
+           prefix=common.get("output_prefix"))
+    return pid
+
+
+def _list_held(org: str) -> list[dict]:
+    out = []
+    try:
+        for p in sorted(_held_dir(org).glob("held-*.json")):
+            try:
+                out.append(json.loads(p.read_text(encoding="utf-8")))
+            except Exception:
+                continue
+    except Exception:
+        pass
+    return out
+
+
+async def _retry_held(request, server, org: str) -> None:
+    """Re-enqueue spooled jobs with the CURRENT caller's credentials (same org —
+    the routes resolve org server-side). Runs on every queue read, so the act of
+    watching the queue heals it; no credential is ever stored at rest. Success
+    replaces the held row with a real queued row under the fabric's prompt_id."""
+    for rec in _list_held(org):
+        graph, held_pid = rec.get("graph") or {}, rec.get("id", "")
+        common = {k: rec.get(k) for k in
+                  ("kind", "prompt", "refs", "uploads", "parents", "output_prefix", "params")}
+        try:
+            pid = await _queue_prompt(request, server, graph)
+        except DispatchError:
+            return                      # fabric still unreachable — keep the spool
+        (_held_dir(org) / f"{held_pid}.json").unlink(missing_ok=True)
+        worklog.remove(org, held_pid)
+        lane = "gpu" if _in_render_jobs(org, pid) else "local"
+        node = _render_job_node(org, pid) if lane == "gpu" else "studio pod"
+        worklog.record(org, pid=pid, status="queued", lane=lane, node=node, **common)
+        _trace("dispatch.held_requeued", org=org, held=held_pid, pid=pid)
+
+
 async def _dispatch(request, server, org: str, graph: dict, *, kind: str, prompt: str,
                     refs: list, uploads: list, parents: list, output_prefix: str,
                     lessons: list | None = None) -> str:
     """The ONE place a render is queued AND recorded. On success writes a `queued`
-    work-log row (lane detected); on failure writes a `failed` row with the reason —
-    so a dispatch is NEVER invisible, whatever lane it took or however it failed.
+    work-log row (lane detected). A TRANSPORT failure (fabric/tasks engine
+    unreachable — the messages in _HOLDABLE) HOLDS the job instead of failing it:
+    the prompt/edit lands in the visible queue and re-enqueues when the fabric is
+    back. A validation failure still writes a `failed` row and raises — so a
+    dispatch is NEVER invisible, whatever lane it took or however it failed.
     Idempotent: an identical dispatch within the dedup window returns the in-flight
     prompt_id instead of billing a second render."""
     params = _graph_params(graph)
@@ -1249,6 +1430,11 @@ async def _dispatch(request, server, org: str, graph: dict, *, kind: str, prompt
     try:
         pid = await _queue_prompt(request, server, graph)
     except DispatchError as e:
+        msg = str(e).lower()
+        if any(s in msg for s in _HOLDABLE):
+            pid = _hold_job(org, graph, common)
+            _RECENT_DISPATCH[key] = (time.time(), pid)
+            return pid
         worklog.record(org, status="failed", error=str(e), **common)
         raise
     _RECENT_DISPATCH[key] = (time.time(), pid)
@@ -1263,7 +1449,7 @@ async def _dispatch(request, server, org: str, graph: dict, *, kind: str, prompt
 async def dispatch_fix(request: web.Request, server, org: str, rel: str,
                        instruction: str, upload: str | None = None,
                        stack: str | None = None, strength=None, seed=None,
-                       mask: str | None = None) -> dict:
+                       mask: str | None = None, flow_kind: str | None = None) -> dict:
     """The EDIT action — a LOW-denoise Qwen edit of an already-generated gallery asset.
     The base is EITHER a library asset (``rel``, its stable path — the generated output
     itself) OR a just-uploaded image (``upload``). The selected generated image is the
@@ -1277,7 +1463,10 @@ async def dispatch_fix(request: web.Request, server, org: str, rel: str,
     instruction = (instruction or "").strip()
     if not 3 <= len(instruction) <= 500:
         raise DispatchError("instruction required (3-500 chars)")
-    denoise = _edit_denoise(strength)
+    flow = _flow_of(flow_kind)
+    # A flow lane sets the denoise its conversion needs (a drawing must be nearly
+    # fully re-rendered to become a photograph); an explicit strength still wins.
+    denoise = _edit_denoise(strength, default=(flow or {}).get("denoise", EDIT_DENOISE_DEFAULT))
     src_seed = None                          # the source's original seed, reused by default
     in_dir = Path(folder_paths.get_org_input_directory(org))
     in_dir.mkdir(parents=True, exist_ok=True)
@@ -1325,12 +1514,14 @@ async def dispatch_fix(request: web.Request, server, org: str, rel: str,
     lessons = _lessons(org, _library_root(org), [] if upload else [rel])
     if mask_name:
         graph = _inpaint_graph(ref_name, mask_name, instruction, f"fixes/{stem}",
-                               denoise=denoise, seed=eff_seed, lessons=lessons)
+                               flow=flow, denoise=denoise, seed=eff_seed, lessons=lessons)
         kind = "edit_area"
     else:
         graph = _fix_graph(ref_name, instruction, f"fixes/{stem}",
-                           denoise=denoise, seed=eff_seed, lessons=lessons)
-        kind = "fix"
+                           flow=flow, denoise=denoise, seed=eff_seed, lessons=lessons)
+        # The work-log/queue row carries the LANE the user picked (cad_ghost,
+        # product, …) so the queue shows the real flow, not a generic "fix".
+        kind = flow_kind if flow else "fix"
     # INVARIANT: an Edit dispatch can NEVER be a text-to-image regenerate.
     bad = _assert_edit_graph(graph)
     if bad:
@@ -1409,7 +1600,8 @@ async def dispatch_video(request: web.Request, server, org: str, prompt: str,
 
 async def dispatch_image(request: web.Request, server, org: str, prompt: str,
                          width: int | None = None, height: int | None = None,
-                         seed: int | None = None, stack: str | None = None) -> dict:
+                         seed: int | None = None, stack: str | None = None,
+                         flow_kind: str | None = None) -> dict:
     """Generate an IMAGE from a text prompt — the proven Z-Image-Turbo text-to-image graph.
     This is the composer's default "What should we create?" lane: no reference image (that
     is fix/compose), pure text-to-image through the ONE dispatch funnel. Org is the
@@ -1421,14 +1613,15 @@ async def dispatch_image(request: web.Request, server, org: str, prompt: str,
     if not 3 <= len(prompt) <= 2000:
         raise DispatchError("describe what to create (3-2000 chars)")
     root = _library_root(org)
+    flow = _flow_of(flow_kind)
     stem = re.sub(r"[^a-zA-Z0-9_-]", "_", " ".join(prompt.split()[:8]))[:48] + f"_{_job_tag()}"
     prefix = f"image/{stem}"
     lessons = _lessons(org, root, [])
     pid = await _dispatch(
         request, server, org,
-        _image_graph(prompt, prefix, width=width or 1024, height=height or 1024,
+        _image_graph(prompt, prefix, flow=flow, width=width or 1024, height=height or 1024,
                      seed=seed, lessons=lessons),
-        lessons=lessons, kind="image", prompt=prompt,
+        lessons=lessons, kind=(flow_kind if flow else "image"), prompt=prompt,
         refs=[], uploads=[], parents=[], output_prefix=prefix)
     if stack:
         stacks_store.route_prefix(org, prefix, stack, added_by=_owner_of(request))
@@ -1479,7 +1672,7 @@ async def dispatch_model3d(request: web.Request, server, org: str,
 
 async def dispatch_compose(request: web.Request, server, org: str, paths: list,
                            instruction: str, uploads: list | None = None,
-                           stack: str | None = None) -> dict:
+                           stack: str | None = None, flow_kind: str | None = None) -> dict:
     """Stage 2-5 references and run the multi-input Qwen graph. References are
     library assets (``paths``, staged into the org input dir) and/or images the
     caller just uploaded via ``/upload/image`` (``uploads``, already resident in
@@ -1506,8 +1699,10 @@ async def dispatch_compose(request: web.Request, server, org: str, paths: list,
     labels = [Path(x).stem for x in paths] + [Path(u).stem for u in uploaded]
     stem = "compose_" + "_".join(re.sub(r"[^a-zA-Z0-9]", "", s)[:12] for s in labels[:2]) + f"_{_job_tag()}"
     lessons = _lessons(org, root, list(paths))
-    pid = await _dispatch(request, server, org, _compose_graph(ref_names, instruction, f"composes/{stem}", lessons=lessons),
-                          lessons=lessons, kind="compose", prompt=instruction, refs=ref_names,
+    flow = _flow_of(flow_kind)
+    pid = await _dispatch(request, server, org,
+                          _compose_graph(ref_names, instruction, f"composes/{stem}", lessons=lessons, flow=flow),
+                          lessons=lessons, kind=(flow_kind if flow else "compose"), prompt=instruction, refs=ref_names,
                           uploads=uploaded, parents=list(paths), output_prefix=f"composes/{stem}")
     if stack:
         stacks_store.route_prefix(org, f"composes/{stem}", stack, added_by=_owner_of(request))
@@ -1555,6 +1750,7 @@ async def dispatch_amend(request: web.Request, server, org: str, prompt_id: str,
     if not refs:
         raise DispatchError("no reference images available to amend")
     _cancel_job(server, org, prompt_id)
+    await _cancel_activity(request, prompt_id)   # the engine-side half of the swap
     parents = list(orig.get("parents") or []) + list(paths or [])
     stem = re.sub(r"[^a-zA-Z0-9_-]", "_", Path(refs[0]).stem)[:40] + f"_amended_{_job_tag()}"
     lessons = _lessons(org, _library_root(org), parents)
@@ -2347,6 +2543,12 @@ def add_studio_home_routes(routes: web.RouteTableDef, server) -> None:
         org = _org_of(request)
         root = _library_root(org)
         now = int(time.time())
+        # Watching the queue HEALS it: held jobs (fabric was unreachable at their
+        # dispatch) re-enqueue with this caller's own credentials, then list below.
+        await _retry_held(request, server, org)
+        held = [{"id": r.get("id", ""), "status": "queued", "node": "waiting",
+                 "age": now - int(r.get("ts", now)), "prefix": r.get("output_prefix", ""),
+                 "refs": r.get("refs") or []} for r in _list_held(org)]
         acts = await _list_gpu_jobs(request)
         live, seen = [], set()
         if acts is not None:
@@ -2357,11 +2559,14 @@ def add_studio_home_routes(routes: web.RouteTableDef, server) -> None:
                 if not job["id"]:
                     continue
                 seen.add(job["id"])
-                if job["status"] in ("done", "failed", "cancelled") or job["age"] > 1500:
+                # Terminal rows leave the visible queue; a WAITING job stays visible
+                # no matter how old — hiding queued work by age is how "queued —
+                # starts when a GPU connects" silently became "vanished".
+                if job["status"] in ("done", "failed", "cancelled"):
                     continue
                 live.append(job)
         placeholder = _render_queue_placeholder(root, now, seen) if root is not None else []
-        return web.json_response({"jobs": placeholder + live})
+        return web.json_response({"jobs": held + placeholder + live})
 
     @routes.post("/v1/library/status")
     async def set_status(request: web.Request):
@@ -2595,7 +2800,9 @@ def add_studio_home_routes(routes: web.RouteTableDef, server) -> None:
             return web.json_response({"error": "prompt_id required"}, status=400)
         if not _owns_job(server, org, pid):
             return web.json_response({"error": "not found"}, status=404)
-        return web.json_response({"ok": True, "canceled": _cancel_job(server, org, pid)})
+        realm = _cancel_job(server, org, pid)
+        engine = await _cancel_activity(request, pid)
+        return web.json_response({"ok": True, "canceled": realm, "engine": engine})
 
     @routes.post("/v1/queue/amend")
     async def amend_job(request: web.Request):
@@ -2624,8 +2831,11 @@ def add_studio_home_routes(routes: web.RouteTableDef, server) -> None:
         # finalize any job whose output has landed: done at the file mtime, or FAILED
         # when it landed implausibly fast for its step count (the honesty guard).
         _finalize_landed(org, root, rows, now)
+        # A queued job stays ACTIVE for as long as the engine will still start it
+        # (the 7-day scheduleToStartTimeout) — the old 30-min window silently
+        # dropped waiting work from the visible queue while it could still run.
         active = [r for r in rows if r.get("status") not in ("done", "failed", "cancelled")
-                  and now - int(r.get("ts", now)) <= 1800]
+                  and now - int(r.get("ts", now)) <= 604800]
         # the oldest job in each lane is the one rendering — stamp its start once
         by_lane: dict[str, list[dict]] = {}
         for r in active:
@@ -2735,16 +2945,18 @@ def add_studio_home_routes(routes: web.RouteTableDef, server) -> None:
     @routes.post("/v1/library/fix")
     async def fix(request: web.Request):
         """Edit a generated gallery image. Body: {path|upload, instruction, strength?,
-        seed?, mask?, stack?}. `strength` (edit-strength → denoise, default 0.25) is how
-        much may change; `seed` reuses the source's original by default; `mask` (an
-        uploaded painted image) restricts the edit to a region. Always a low-denoise edit
-        of the SOURCE — never a text-to-image regenerate (that is /v1/library/rerun)."""
+        seed?, mask?, stack?, kind?}. `strength` (edit-strength → denoise, default 0.25)
+        is how much may change; `seed` reuses the source's original by default; `mask`
+        (an uploaded painted image) restricts the edit to a region; `kind` picks a FLOWS
+        lane (product / cad_ghost / …) whose frame + denoise shape the conversion.
+        Always an edit of the SOURCE latent — never a text-to-image regenerate."""
         body = await request.json()
         try:
             return web.json_response(await dispatch_fix(
                 request, server, _org_of(request), body.get("path", ""),
                 body.get("instruction", ""), body.get("upload"), body.get("stack"),
-                strength=body.get("strength"), seed=body.get("seed"), mask=body.get("mask")))
+                strength=body.get("strength"), seed=body.get("seed"), mask=body.get("mask"),
+                flow_kind=body.get("kind")))
         except DispatchError as e:
             return web.json_response({"error": str(e)}, status=400)
 
@@ -2759,7 +2971,8 @@ def add_studio_home_routes(routes: web.RouteTableDef, server) -> None:
             return web.json_response(await dispatch_image(
                 request, server, _org_of(request), body.get("prompt", ""),
                 width=body.get("width"), height=body.get("height"),
-                seed=body.get("seed"), stack=body.get("stack")))
+                seed=body.get("seed"), stack=body.get("stack"),
+                flow_kind=body.get("kind")))
         except DispatchError as e:
             return web.json_response({"error": str(e)}, status=400)
 
@@ -2802,7 +3015,8 @@ def add_studio_home_routes(routes: web.RouteTableDef, server) -> None:
         try:
             return web.json_response(await dispatch_compose(
                 request, server, _org_of(request), body.get("paths") or [],
-                body.get("instruction", ""), body.get("uploads"), body.get("stack")))
+                body.get("instruction", ""), body.get("uploads"), body.get("stack"),
+                flow_kind=body.get("kind")))
         except DispatchError as e:
             return web.json_response({"error": str(e)}, status=400)
 

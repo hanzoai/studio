@@ -269,7 +269,14 @@ def dispatch_if_worker(request, org_id: str, prompt_id: str, prompt: dict) -> bo
         # the shared "gpu-jobs" lane any worker drains. The NAMESPACE is "gpu-jobs"
         # either way — targeting is a taskQueue, not a second queue. One enqueue path.
         target = (request.headers.get("X-Target-GPU") or "").strip()
-        online = _online_gpu_nodes(tok)
+        # The fleet read is ADVISORY (targeting + node label). A machines-API blip
+        # must never abort the enqueue itself — with no fleet view the job simply
+        # rides the shared lane and the claimer decides the node.
+        try:
+            online = _online_gpu_nodes(tok)
+        except Exception as e:                              # noqa: BLE001 — advisory read
+            log.warning("fleet read failed; enqueuing to the shared lane: %s", e)
+            online = []
         # Honor a target ONLY if it is one of the caller-org's OWN online GPUs. This
         # blocks a forged lane AND sanitizes the value before it becomes a taskQueue
         # (and later a queue-row label): an unknown/offline target falls back to the
@@ -304,11 +311,14 @@ def dispatch_if_worker(request, org_id: str, prompt_id: str, prompt: dict) -> bo
             # render. Unset, the tasks default (~1h) reaped real renders mid-run and
             # the queue re-ran them for hours.
             "startToCloseTimeout": "14400s",
-            # Stale jobs EXPIRE instead of waiting forever for a worker. If no GPU
-            # picks this up within 30 min it is dropped — so a worker outage can't
-            # leave a backlog that silently replays (re-billing old renders) the moment
-            # a worker reconnects. A live user re-runs; nothing lingers unbounded.
-            "scheduleToStartTimeout": "1800s",
+            # A job with no GPU online WAITS — queued work runs when a worker
+            # connects, it never silently evaporates (the product contract). The
+            # old 30-min expiry "protected" against a backlog replaying on
+            # reconnect, but it did so by silently discarding the user's work; the
+            # protection now is HONESTY — the queue shows every waiting job the
+            # whole time and Cancel genuinely cancels the activity. 7 days bounds
+            # a truly abandoned org.
+            "scheduleToStartTimeout": "604800s",
             # ONE attempt, no auto-retry. A GPU render is expensive and often
             # deterministic — re-running a failed/crashed render (e.g. spark OOM mid-
             # sample) just re-burns money on the SAME output ("the same reject over and
