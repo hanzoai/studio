@@ -1136,6 +1136,33 @@ def _job_from_activity(a: dict, now: int) -> dict:
             "beat_age": (now - beat) if beat else None}
 
 
+def _fold_engine(org: str, rows: list[dict], acts: list | None) -> None:
+    """Fold the engine's TERMINAL verdicts into worklog rows. A job the engine
+    failed/cancelled leaves no landed output, so _finalize_landed can never close
+    it — without this fold it reads queued forever (the lying state). done is NOT
+    folded: only a landed, intact output makes done (the integrity gate owns that
+    verdict). Mutates rows in place (mirrors the persisted status)."""
+    if not acts:
+        return
+    verdict = {}
+    for a in acts:
+        ex = a.get("execution") or {}
+        pid = ex.get("runId") or ex.get("workflowId") or a.get("activityId") or ""
+        if pid:
+            verdict[pid] = (_activity_phase(a), str(a.get("failureCause") or "")[:300])
+    for r in rows:
+        if r.get("status") in ("done", "failed", "cancelled"):
+            continue
+        ph, why = verdict.get(r.get("id"), (None, ""))
+        if ph == "failed":
+            worklog.set_status(org, r["id"], "failed",
+                               note=why or "render failed on the GPU worker")
+            r["status"] = "failed"
+        elif ph == "cancelled":
+            worklog.set_status(org, r["id"], "cancelled")
+            r["status"] = "cancelled"
+
+
 async def _list_gpu_jobs(request) -> list | None:
     """The caller-org's gpu-jobs activities from the tasks engine. Returns None (not [])
     when the tasks API can't be reached, so a transient blip falls back to the local
@@ -3063,6 +3090,7 @@ def add_studio_home_routes(routes: web.RouteTableDef, server) -> None:
         org = _org_of(request)
         root = _library_root(org)
         rows = worklog.load(org)
+        _fold_engine(org, rows, await _list_gpu_jobs(request))
         _resolve_outputs(org, root, rows, int(time.time()))
         out = [dict(r) for r in reversed(rows)]
         q = (request.query.get("q") or "").lower().strip()

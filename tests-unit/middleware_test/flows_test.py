@@ -206,6 +206,48 @@ def test_truncated_output_never_reads_done(tmp_path, monkeypatch):
     assert rows[2]["status"] == "queued"                          # fresh: still judged later
 
 
+def test_fold_engine_terminal_verdicts_reach_the_worklog(monkeypatch):
+    # An engine-failed job leaves no landed output, so only this fold can ever
+    # close its worklog row — without it the row reads queued FOREVER.
+    calls = {}
+    monkeypatch.setattr(sh.worklog, "set_status",
+                        lambda org, id_, st, note=None: calls.setdefault(id_, (st, note)))
+    acts = [
+        {"execution": {"runId": "f1"}, "status": "ACTIVITY_TASK_STATE_FAILED",
+         "failureCause": "studio.render: /v1/worker/execute HTTP 400: bad model"},
+        {"execution": {"runId": "c1"}, "status": "ACTIVITY_TASK_STATE_CANCELED"},
+        {"execution": {"runId": "r1"}, "status": "ACTIVITY_TASK_STATE_STARTED"},
+        {"execution": {"runId": "d1"}, "status": "ACTIVITY_TASK_STATE_COMPLETED"},
+    ]
+    rows = [{"id": i, "status": "queued"} for i in ("f1", "c1", "r1", "d1", "x1")]
+    sh._fold_engine("acme", rows, acts)
+    st = {r["id"]: r["status"] for r in rows}
+    assert st["f1"] == "failed" and "bad model" in calls["f1"][1]
+    assert st["c1"] == "cancelled"
+    assert st["r1"] == "queued"        # running: not terminal, untouched
+    assert st["d1"] == "queued"        # done is the integrity gate's verdict, never folded
+    assert st["x1"] == "queued"        # not in the engine: untouched
+    sh._fold_engine("acme", rows, None)  # engine unreachable: no-op, never raises
+
+
+def test_home_script_has_no_duplicate_declarations():
+    # A second top-level const/let/class of an already-declared name is a
+    # script-killing SyntaxError: the ENTIRE home app is discarded while shell.js
+    # keeps the page LOOKING alive (the dead-tabs production incident).
+    import collections
+    import re
+    html = (Path(__file__).resolve().parents[2] / "middleware" / "studio_home.html").read_text()
+    script = "\n".join(re.findall(r"<script>(.*?)</script>", html, re.S))
+    decls = re.findall(
+        r"^(const|let|class)\s+([A-Za-z_$][\w$]*)|^(?:async\s+)?(function)\s+([A-Za-z_$][\w$]*)\s*\(",
+        script, re.M)
+    names = [(k or f, n or fn) for k, n, f, fn in decls]
+    counts = collections.Counter(n for _, n in names)
+    strict = {n for k, n in names if k in ("const", "let", "class")}
+    dupes = sorted(n for n, c in counts.items() if c > 1 and n in strict)
+    assert dupes == [], f"duplicate top-level declarations kill the whole script: {dupes}"
+
+
 def test_index_upload_refuses_truncated_file(tmp_path, monkeypatch):
     import middleware.worklog as wl
     monkeypatch.setattr(sh.stacks_store, "absorb", lambda *a, **k: None)

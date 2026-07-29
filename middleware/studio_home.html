@@ -2266,7 +2266,8 @@ async function updateLivebar(){
 // one Stack; removing it returns it to the gallery (never deletes). The SQLite
 // store (/v1/stacks…) is the source of truth for arrangement; assets stay as-is.
 let STACKS=[], STACKSET=new Set(), CURSTACK=null, DRAG=null, SVDRAG=null, SVI=-1, DELSTACK=null;
-const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+// esc() is declared ONCE above — a second const declaration here was a script-killing
+// SyntaxError (Identifier 'esc' has already been declared) that discarded the ENTIRE app.
 const qq=s=>String(s==null?'':s).replace(/\\/g,'\\\\').replace(/'/g,"\\'");
 // One delegated handler for every queue/worklog row action. Job ids and output paths
 // are client/worker-controlled data (prompt_id, X-Target-GPU, filenames), so they ride

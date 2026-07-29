@@ -19,7 +19,9 @@ def test_file_esc_map_neutralizes_payload():
     payload and assert it renders INERT — every '<'/'>' neutralized, no live tag survives.
     Pure-Python (no node dep) so it runs in CI; weakening the map (e.g. dropping '<')
     fails here."""
-    m = re.search(r"const esc=.*?replace\(/\[([^\]]+)\]/g,\s*c=>\((\{[^}]+\})", HTML)
+    # Matches the ONE esc declaration (function form; the duplicate const was a
+    # script-killing SyntaxError and is gone).
+    m = re.search(r"esc\s*[=(][^\n]*?replace\(/\[([^\]]+)\]/g,\s*c=>\((\{[^}]+\})", HTML)
     assert m, "esc() helper/map not found"
     charclass, mapsrc = m.group(1), m.group(2)
     emap = dict(re.findall(r"'(.)':'([^']+)'", mapsrc))
