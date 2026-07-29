@@ -27,9 +27,34 @@ def test_flow_of_known_and_unknown():
 def test_flows_are_well_formed():
     for kind, f in sh.FLOWS.items():
         assert f["frame"] and f["negative"], kind
-        assert sh.EDIT_DENOISE_MIN <= f["denoise"] <= sh.EDIT_DENOISE_MAX, kind
+        if "denoise" in f:
+            assert sh.EDIT_DENOISE_MIN <= f["denoise"] <= sh.EDIT_DENOISE_MAX, kind
         # No flow frame may smuggle the preservation clause back in.
         assert "keep the same subject" not in f["frame"], kind
+
+
+def test_only_conversion_lanes_license_a_re_render():
+    """denoise follows the TRANSFORMATION DISTANCE, not the output style.
+
+    `product` shipped at 0.90 and an ordinary "remove the drawn lines" edit came back
+    with the watercolor print replaced by plaid and a different model — a style lane
+    must never license a re-render. Only drawing→photograph conversions may.
+    """
+    conversions = {"cad_ghost", "cad_mockup"}
+    for kind, f in sh.FLOWS.items():
+        d = f.get("denoise", sh.EDIT_DENOISE_DEFAULT)
+        if kind in conversions:
+            assert d >= 0.85, f"{kind} must re-render enough to become a photograph (got {d})"
+        else:
+            assert d <= 0.5, (f"{kind} only names a LOOK — at {d} it re-renders the image and "
+                              "destroys the print, the model and the resolution")
+    # A style lane inherits the preserving default, so an edit stays an edit.
+    for kind in ("product", "lifestyle"):
+        g = sh._fix_graph("a.png", "remove the drawn lines", "fixes/a",
+                          flow=sh.FLOWS[kind],
+                          denoise=sh._edit_denoise(None, default=sh.FLOWS[kind].get(
+                              "denoise", sh.EDIT_DENOISE_DEFAULT)))
+        assert g["13"]["inputs"]["denoise"] == sh.EDIT_DENOISE_DEFAULT, kind
 
 
 def test_cad_flow_replaces_preservation_clause_and_extends_negative():

@@ -602,6 +602,21 @@ def _edit_denoise(strength, default: float = EDIT_DENOISE_DEFAULT) -> float:
 # No entry (kind absent/unknown) ⇒ the user's words ride unshaped: a hidden style
 # can never leak into a run the user didn't ask to style. An explicit strength
 # from the caller still beats the lane's denoise.
+# Per-lane render policy. `frame` shapes the positive prompt, `negative` extends the
+# global negative, and `denoise` is declared by a lane ONLY when that lane is a
+# CONVERSION — because denoise follows the TRANSFORMATION DISTANCE, never the output
+# style:
+#
+#   drawing → photograph  : a large change is REQUIRED, so cad_* run near-full (0.92).
+#   photograph → edited photograph : the print, the model's identity, the framing and
+#     the resolution must SURVIVE, so a style lane keeps the 0.25 edit default.
+#
+# Braiding the two cost a real render: `product` shipped at 0.90 and an ordinary
+# "remove the drawn lines" edit came back with the watercolor print replaced by plaid,
+# a different model, and a lower-resolution frame — the "it says it fixed it but it
+# destroyed my design" failure. A lane that only names a LOOK must not license a
+# re-render; `outfit` is the one non-conversion lane that legitimately replaces a large
+# region (the garment) and it stays preservation-biased.
 FLOWS: dict[str, dict] = {
     "product": {
         "frame": ("Professional e-commerce product photograph: plain seamless studio "
@@ -610,13 +625,13 @@ FLOWS: dict[str, dict] = {
                   "explicitly requested."),
         "negative": ("sketch, line art, drawing, illustration, lifestyle scene, "
                      "environment, props, clutter"),
-        "denoise": 0.90,
+        # No denoise: see the note above — a style lane edits a photograph.
     },
     "lifestyle": {
         "frame": ("Editorial lifestyle photograph: the product in a real scene in natural "
                   "use, photorealistic, natural light."),
         "negative": "sketch, line art, drawing, illustration",
-        "denoise": 0.85,
+        # No denoise: a style lane edits a photograph (see the note above).
     },
     "cad_ghost": {
         "frame": ("Convert this garment technical drawing into a PHOTOREALISTIC "
@@ -649,7 +664,9 @@ FLOWS: dict[str, dict] = {
                   "texture."),
         "negative": ("sketch, drawing, illustration, different model, changed pose, "
                      "changed background"),
-        "denoise": 0.60,
+        # A garment swap replaces a large region, but the frame promises the SAME model,
+        # pose and background — so it stays well below the conversion band.
+        "denoise": 0.45,
     },
 }
 
