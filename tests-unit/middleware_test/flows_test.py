@@ -230,6 +230,65 @@ def test_fold_engine_terminal_verdicts_reach_the_worklog(monkeypatch):
     sh._fold_engine("acme", rows, None)  # engine unreachable: no-op, never raises
 
 
+def test_op_of_reads_the_output_prefix_not_the_kind():
+    # `kind` carries the FLOW when one was active (product/cad_ghost/…), so only the
+    # recorded output prefix can name the operation to replay.
+    assert sh._op_of({"output_prefix": "fixes/x_ab12", "kind": "cad_ghost"}) == "fix"
+    assert sh._op_of({"output_prefix": "composes/y", "kind": "product"}) == "compose"
+    assert sh._op_of({"output_prefix": "video/v", "kind": "video"}) == "video"
+    assert sh._op_of({"output_prefix": "model3d/m"}) == "model3d"
+    assert sh._op_of({"output_prefix": "image/i", "kind": "product"}) == "image"
+    assert sh._op_of({"output_prefix": "renders/mystery"}) == ""
+    assert sh._op_of({}) == ""
+
+
+def test_retry_row_replays_through_the_one_funnel(monkeypatch):
+    """A retry must call the SAME dispatch a fresh submit calls — that is how it picks up
+    the current rules (flow frames, the construction-lines negative, the integrity gate)
+    with no replay-only path — and must REFUSE rather than approximate an unrebuildable row."""
+    import asyncio
+    seen = {}
+
+    async def fake_fix(request, server, org, rel, instruction, **kw):
+        seen.update(op="fix", rel=rel, instruction=instruction, flow=kw.get("flow_kind"))
+        return {"ok": True, "prompt_id": "n1"}
+
+    async def fake_compose(request, server, org, paths, instruction, **kw):
+        seen.update(op="compose", paths=paths, uploads=kw.get("uploads"), flow=kw.get("flow_kind"))
+        return {"ok": True, "prompt_id": "n2"}
+
+    monkeypatch.setattr(sh, "dispatch_fix", fake_fix)
+    monkeypatch.setattr(sh, "dispatch_compose", fake_compose)
+
+    # A failed FLOW fix replays with its flow intact and its own source.
+    row = {"id": "f1", "status": "failed", "kind": "cad_ghost", "output_prefix": "fixes/a_b",
+           "prompt": "remove the drawn black lines", "parents": ["designs/cad.png"], "uploads": []}
+    out = asyncio.run(sh.retry_row(None, None, "acme", row))
+    assert out["prompt_id"] == "n1"
+    assert seen == {"op": "fix", "rel": "designs/cad.png",
+                    "instruction": "remove the drawn black lines", "flow": "cad_ghost"}
+
+    # A compose replays every recorded source, library paths and uploads alike.
+    seen.clear()
+    asyncio.run(sh.retry_row(None, None, "acme", {
+        "id": "c1", "status": "failed", "kind": "compose", "output_prefix": "composes/x",
+        "prompt": "merge", "parents": ["a.png"], "uploads": ["up_1.png"]}))
+    assert seen["op"] == "compose" and seen["paths"] == ["a.png"] and seen["uploads"] == ["up_1.png"]
+
+    # Refusals: no source for a fix, too few sources for a compose, unknown prefix.
+    for bad, why in (
+        ({"output_prefix": "fixes/a", "prompt": "x", "parents": []}, "source asset"),
+        ({"output_prefix": "composes/a", "prompt": "x", "parents": ["only.png"]}, "2-5 recorded sources"),
+        ({"output_prefix": "renders/a", "prompt": "x"}, "unrecognized job type"),
+    ):
+        try:
+            asyncio.run(sh.retry_row(None, None, "acme", bad))
+        except sh.DispatchError as e:
+            assert why in str(e), (why, str(e))
+        else:
+            raise AssertionError(f"expected a refusal for {bad}")
+
+
 def test_home_script_has_no_duplicate_declarations():
     # A second top-level const/let/class of an already-declared name is a
     # script-killing SyntaxError: the ENTIRE home app is discarded while shell.js

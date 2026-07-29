@@ -639,7 +639,8 @@ body.immersive #stage{display:block}
   <section id="runs" hidden>
     <div id="qhead" class="qhead"></div>
     <div class="qcol"><h3 class="qh">🗂 Your work
-      <input class="search" id="wlq" placeholder="Search prompts…" oninput="worklog()" style="margin-left:10px"></h3>
+      <input class="search" id="wlq" placeholder="Search prompts…" oninput="worklog()" style="margin-left:10px">
+      <button class="mini" data-retryall="1" title="Re-run the most recent failed generations under the current rules" style="margin-left:8px">↻ Retry failed</button></h3>
       <div class="qlist" id="wllist"></div></div>
     <div class="qcol"><h3 class="qh">▶ Now running <span id="qrunN" class="cnt">0</span></h3><div class="qlist" id="qrun"></div></div>
     <div class="qcol"><h3 class="qh">⏳ Up next <span id="qpendN" class="cnt">0</span> <button class="mini" onclick="clearQueue()" style="margin-left:8px">Clear all</button></h3><div class="qlist" id="qpend"></div></div>
@@ -1664,6 +1665,7 @@ function wlRow(it){
       <div class="qdesc">${esc(it.prompt||'(no prompt)')}</div>
       ${active&&e?qmetaHTML(it,e):`<div class="qsub">${when}${it.node?(' · ⚙ '+esc(it.node)):''}${it.error?` · <span style="color:#ff8f8f">${esc(it.error)}</span>`:''}</div>`}</div>
     ${active?`<button class="mini" data-amend="${esc(it.id)}" title="Amend prompt/refs (re-queues)">Edit</button><button class="mini" data-cancel="${esc(it.id)}">Cancel</button>`:''}
+    ${(status==='failed')?`<button class="mini" data-retry="${esc(it.id)}" title="Run this again under the current rules">↻ Retry</button>`:''}
     <button class="mini" data-open="${esc(it.id)}">Open</button>
     ${(!active&&it.output)?`<button class="mini" data-arch="${esc(it.output)}" title="Move this render to Archive (recoverable)">🗄</button>`:''}
     ${active?'':`<button class="mini" data-del="${esc(it.id)}" title="Delete this item from the queue" style="color:#f85149">🗑</button>`}</div>`;
@@ -1677,6 +1679,22 @@ async function delWork(id){
   toast('Removed from queue'); worklog();
 }
 function delCtx(){ if(!CTX||!CTX.id)return; ctxdlg.close(); delWork(CTX.id); }
+// Re-run failed work under TODAY's rules. ids=null replays the newest failures.
+// The originals stay in history — a retry is a NEW job — and a row the server can't
+// faithfully reconstruct is reported as refused, never quietly approximated.
+async function retryWork(ids){
+  const body=ids?{ids}:{failed:true,limit:20};
+  const one=ids&&ids.length===1;
+  toast(one?'Re-queueing…':'Re-queueing failed work…');
+  try{
+    const r=await fetch('/v1/worklog/retry',{method:'POST',headers:genHeaders(),body:JSON.stringify(body)});
+    const d=await r.json().catch(()=>({}));
+    if(!r.ok)throw new Error(d&&d.error||'retry failed');
+    const q=d.queued||0, ref=d.refused||0;
+    toast(q?`✓ ${q} queued${ref?` · ${ref} couldn’t be rebuilt`:''}`:(ref?`Couldn’t rebuild ${ref} — see the item’s details`:'Nothing to retry'));
+    worklog();
+  }catch(e){ toast('Couldn’t retry — '+((e&&e.message)||'try again')); }
+}
 async function archiveFromQueue(path){
   if(!path)return;
   const a=DATA.assets.find(x=>x.path===path);
@@ -2281,6 +2299,8 @@ document.addEventListener('click',ev=>{
   const t=ev.target; if(!t||!t.closest)return; let el;
   if(el=t.closest('[data-cancel]')){ev.stopPropagation();cancelJob(el.getAttribute('data-cancel'));}
   else if(el=t.closest('[data-amend]')){ev.stopPropagation();openAmend(el.getAttribute('data-amend'));}
+  else if(el=t.closest('[data-retry]')){ev.stopPropagation();retryWork([el.getAttribute('data-retry')]);}
+  else if(el=t.closest('[data-retryall]')){ev.stopPropagation();retryWork(null);}
   else if(el=t.closest('[data-del]')){ev.stopPropagation();delWork(el.getAttribute('data-del'));}
   else if(el=t.closest('[data-arch]')){ev.stopPropagation();archiveFromQueue(el.getAttribute('data-arch'));}
   else if(el=t.closest('[data-open]')){ev.stopPropagation();openContext(el.getAttribute('data-open'));}

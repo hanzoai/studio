@@ -1759,6 +1759,60 @@ async def dispatch_compose(request: web.Request, server, org: str, paths: list,
     return {"ok": True, "prompt_id": pid, "output_prefix": f"composes/{stem}", "refs": len(ref_names)}
 
 
+# Which dispatch made a row, read from the output prefix it recorded. The `kind` field
+# carries the FLOW when one was active (product / cad_ghost / …), so it cannot name the
+# operation — the prefix can, and every dispatch writes one.
+_OP_BY_PREFIX = (("fixes/", "fix"), ("composes/", "compose"), ("video/", "video"),
+                 ("model3d/", "model3d"), ("image/", "image"))
+
+
+def _op_of(row: dict) -> str:
+    prefix = str(row.get("output_prefix") or "")
+    for pre, op in _OP_BY_PREFIX:
+        if prefix.startswith(pre):
+            return op
+    return ""
+
+
+async def retry_row(request: web.Request, server, org: str, row: dict) -> dict:
+    """Re-dispatch ONE recorded render through the SAME funnel that would run it today.
+
+    This is the whole point: a row that failed under old behavior (or during an outage)
+    replays through ``dispatch_*``, so it picks up every CURRENT rule — the per-flow frames,
+    the construction-lines ban in the global negative, the lane denoise, the output-integrity
+    gate — with no second code path to keep in sync. The row's own record supplies the
+    inputs (operation from the output prefix, flow from ``kind``, prompt, sources); nothing
+    is inferred. When the record cannot reconstruct the job faithfully we REFUSE with the
+    reason rather than render an approximation the user didn't ask for."""
+    op = _op_of(row)
+    prompt = (row.get("prompt") or "").strip()
+    parents = [p for p in (row.get("parents") or []) if p]
+    uploads = [u for u in (row.get("uploads") or []) if u]
+    flow_kind = row.get("kind") if _flow_of(row.get("kind")) else None
+    if op == "fix":
+        if not parents:
+            raise DispatchError("cannot retry: the original source asset was not recorded")
+        return await dispatch_fix(request, server, org, parents[0], prompt, flow_kind=flow_kind)
+    if op == "compose":
+        if len(parents) + len(uploads) < 2:
+            raise DispatchError("cannot retry: a compose needs 2-5 recorded sources, "
+                                f"this row has {len(parents) + len(uploads)}")
+        return await dispatch_compose(request, server, org, parents, prompt,
+                                      uploads=uploads, flow_kind=flow_kind)
+    if op == "video":
+        return await dispatch_video(request, server, org, prompt,
+                                    rel=parents[0] if parents else None)
+    if op == "model3d":
+        if not parents and not uploads:
+            raise DispatchError("cannot retry: 3D needs its recorded reference image")
+        return await dispatch_model3d(request, server, org,
+                                      rel=parents[0] if parents else None,
+                                      upload=None if parents else uploads[0])
+    if op == "image":
+        return await dispatch_image(request, server, org, prompt, flow_kind=flow_kind)
+    raise DispatchError(f"cannot retry: unrecognized job type for prefix {row.get('output_prefix')!r}")
+
+
 class NotOwned(DispatchError):
     """The prompt_id isn't the caller's — routes map this to 404 (never reveals it)."""
 
@@ -3101,6 +3155,49 @@ def add_studio_home_routes(routes: web.RouteTableDef, server) -> None:
                    [r.get("prompt", ""), r.get("kind", ""), r.get("output_prefix", ""),
                     r.get("output", ""), *(r.get("refs") or [])]).lower()]
         return web.json_response({"org": org, "items": out[:200]})
+
+    @routes.post("/v1/worklog/retry")
+    async def retry_worklog(request: web.Request):
+        """Re-run recorded renders under TODAY's rules — the ONE replay path.
+
+        Body: ``{ids:[...]}`` for specific rows, or ``{failed:true, limit:N}`` to replay this
+        org's most recent failures (newest first, default 20, max 50). Each row re-enters the
+        SAME dispatch funnel a fresh submit uses, so the new flow frames, the
+        construction-lines ban and the integrity gate all apply — no replay-only code path.
+
+        Returns per-row outcomes: ``queued`` with the new job id, or ``refused`` with the
+        reason (a row whose sources were not recorded is never approximated). The original
+        rows are left as they are — history is not rewritten; the retry is a NEW job."""
+        org = _org_of(request)
+        try:
+            body = await request.json()
+        except Exception:
+            body = {}
+        rows = worklog.load(org)
+        ids = [str(i) for i in (body.get("ids") or []) if i]
+        if ids:
+            wanted = [r for r in rows if str(r.get("id")) in set(ids)]
+        elif body.get("failed"):
+            try:
+                limit = max(1, min(50, int(body.get("limit", 20))))
+            except (TypeError, ValueError):
+                limit = 20
+            wanted = [r for r in reversed(rows) if r.get("status") == "failed"][:limit]
+        else:
+            return web.json_response({"error": "pass {ids:[...]} or {failed:true}"}, status=400)
+        out = []
+        for r in wanted:
+            rid = str(r.get("id"))
+            try:
+                res = await retry_row(request, server, org, r)
+                out.append({"id": rid, "state": "queued", "prompt_id": res.get("prompt_id"),
+                            "output_prefix": res.get("output_prefix")})
+            except DispatchError as e:
+                out.append({"id": rid, "state": "refused", "reason": str(e)})
+        queued = sum(1 for o in out if o["state"] == "queued")
+        return web.json_response({"org": org, "requested": len(wanted),
+                                  "queued": queued, "refused": len(out) - queued,
+                                  "results": out})
 
     @routes.post("/v1/worklog/delete")
     async def delete_worklog(request: web.Request):
