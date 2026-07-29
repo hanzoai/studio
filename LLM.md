@@ -115,6 +115,14 @@ shared Hanzo IAM (standard OIDC code flow). No embedding.
   (`worker_client.reject_untrusted_worker_submit`, one policy gate). Legacy push
   (`prompt_router`) is OFF unless `STUDIO_LEGACY_PUSH_ROUTER=1`. Tests:
   `middleware_test/{gpu_dispatch_test,worker_seam_test}.py`.
+- **Output integrity — done means 100% complete** (`studio_home.py`): `_intact()` reads
+  the format's terminal marker (PNG IEND / JPEG EOI / RIFF size / a consistent MP4 box
+  chain) — encoders write it LAST, so presence proves the write finished. In
+  `_finalize_landed` a truncated landing reads **failed** (never done), a file inside the
+  `_SETTLE_SECS` window with no proof is judged on a later pass, and `_index_upload`
+  refuses a truncated file at the gallery's one ingest point. Sits beside the
+  implausibly-fast honesty guard (`_IMPLAUSIBLE_SECS` — an engine that didn't sample
+  never delivers). Tests: `middleware_test/flows_test.py`.
 - **Durable render queue** (`middleware/tasks_queue.py`, `docs/federation.md`):
   `SqlitePromptQueue` — crash-durable render queue in a single SQLite file
   (stdlib `sqlite3`, WAL, **zero external processes**). `STUDIO_QUEUE_DB=<path>`
