@@ -51,18 +51,33 @@ _METHOD_NOT_FOUND = -32601
 # The studio render tools. `inputSchema` is the JSON Schema cloud advertises to
 # the model; the dispatch functions validate again (instruction length, asset
 # existence), so the schema is a hint, not the trust boundary.
+# TRUTH CONTRACT baked into every render tool's description: a dispatch result
+# means QUEUED, never done. The model must report the job id and queue state and
+# point at Queue & History — claiming an edit is complete/visible is a lie the
+# user will catch the moment they look.
+_QUEUED_NOT_DONE = (
+    " The result means the render is QUEUED (prompt_id + queue state included) — "
+    "it is NOT complete. Tell the user it is queued and where it stands; NEVER "
+    "say the image is fixed, changed or done — completion is only observable in "
+    "Queue & History when the output lands."
+)
+
 _TOOLS = [
     {
         "name": "fix",
         "description": (
-            "Edit one library asset with an instruction (Qwen image-edit). "
-            "Returns the render prompt_id and output_prefix."
+            "Edit one library asset with an instruction (Qwen image-edit)."
+            + _QUEUED_NOT_DONE
         ),
         "inputSchema": {
             "type": "object",
             "properties": {
                 "path": {"type": "string", "description": "library-relative path of the asset to edit"},
                 "instruction": {"type": "string", "description": "the edit to apply (3-500 chars)"},
+                "kind": {"type": "string",
+                         "description": "optional flow lane: product | lifestyle | cad_ghost | cad_mockup | outfit"},
+                "strength": {"type": "number",
+                             "description": "optional edit strength 0.05-0.95 (how much may change)"},
             },
             "required": ["path", "instruction"],
         },
@@ -70,8 +85,8 @@ _TOOLS = [
     {
         "name": "compose",
         "description": (
-            "Combine 2-5 library assets into a new output per an instruction. "
-            "Returns the render prompt_id and output_prefix."
+            "Combine 2-5 library assets into a new output per an instruction."
+            + _QUEUED_NOT_DONE
         ),
         "inputSchema": {
             "type": "object",
@@ -84,8 +99,46 @@ _TOOLS = [
                     "description": "2-5 library-relative asset paths to combine",
                 },
                 "instruction": {"type": "string", "description": "how to combine them (3-500 chars)"},
+                "kind": {"type": "string",
+                         "description": "optional flow lane: product | lifestyle | cad_ghost | cad_mockup | outfit"},
             },
             "required": ["paths", "instruction"],
+        },
+    },
+    {
+        "name": "rerun",
+        "description": (
+            "Re-render an asset's OWN embedded workflow — the precise-flow tool. "
+            "Optionally override the positive prompt and/or swap the reference "
+            "images; everything else in the workflow stays exactly as it was."
+            + _QUEUED_NOT_DONE
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "path": {"type": "string", "description": "library-relative path of the asset whose workflow to re-run"},
+                "prompt": {"type": "string", "description": "optional replacement prompt (3-2000 chars)"},
+                "paths": {"type": "array", "items": {"type": "string"},
+                          "description": "optional replacement reference assets, in LoadImage order"},
+                "count": {"type": "integer", "minimum": 1, "maximum": 4,
+                          "description": "how many variations (default 1)"},
+            },
+            "required": ["path"],
+        },
+    },
+    {
+        "name": "status",
+        "description": (
+            "The REAL state of a render job: queued/running/done/failed, queue "
+            "position, and whether its lane is actually moving. Use this before "
+            "telling the user anything about a job's progress."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "prompt_id": {"type": "string", "description": "the job id a render tool returned"},
+            },
+            "required": ["prompt_id"],
         },
     },
     {
@@ -122,18 +175,43 @@ def _content(payload: dict, is_error: bool = False) -> dict:
     return r
 
 
+def _queued(out: dict) -> dict:
+    """Stamp a dispatch payload with the truth contract the tool descriptions
+    promise: the render is queued, not complete."""
+    return {**out, "state": "queued",
+            "note": "The render is QUEUED — report the job id; completion is only "
+                    "observable in Queue & History when the output lands."}
+
+
 async def _call_tool(request: web.Request, server, name: str, arguments: dict):
     """Dispatch one tool call to the shared render path. Returns the MCP
     tool-result, or None for an unknown tool name (caller maps that to isError)."""
     org = studio_home._org_of(request)
     if name == "fix":
         out = await studio_home.dispatch_fix(
-            request, server, org, arguments.get("path", ""), arguments.get("instruction", ""))
-        return _content(out)
+            request, server, org, arguments.get("path", ""), arguments.get("instruction", ""),
+            strength=arguments.get("strength"), flow_kind=arguments.get("kind"))
+        return _content(_queued(out))
     if name == "compose":
         out = await studio_home.dispatch_compose(
-            request, server, org, arguments.get("paths") or [], arguments.get("instruction", ""))
-        return _content(out)
+            request, server, org, arguments.get("paths") or [], arguments.get("instruction", ""),
+            flow_kind=arguments.get("kind"))
+        return _content(_queued(out))
+    if name == "rerun":
+        out = await studio_home.dispatch_rerun(
+            request, server, org, arguments.get("path", ""),
+            prompt=arguments.get("prompt"), paths=arguments.get("paths"),
+            count=arguments.get("count", 1))
+        return _content(_queued(out))
+    if name == "status":
+        from middleware import worklog
+        pid = str(arguments.get("prompt_id", "")).strip()
+        row = next((r for r in worklog.load(org) if r.get("id") == pid), None)
+        if row is None:
+            return _content({"error": f"no such job: {pid}"}, is_error=True)
+        return _content({k: row.get(k) for k in
+                         ("id", "status", "kind", "prompt", "node", "lane",
+                          "output", "error", "started_at", "finished_at")})
     if name == "ask":
         return _content({"ok": True, "question": str(arguments.get("question", "")).strip()})
     return None

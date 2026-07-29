@@ -66,7 +66,13 @@ _PROV_CACHE: dict[str, tuple[float, dict]] = {}  # abspath -> (mtime, provenance
 
 _NEG = ("ghosting, double exposure, duplicated body, transparent fabric, sheer "
         "fabric, illustration, painterly, blotchy skin, mottled skin, jpeg "
-        "artifacts, pixelation, noise, deformed hands, extra limbs, text, watermark")
+        "artifacts, pixelation, noise, deformed hands, extra limbs, text, watermark, "
+        # HOUSE RULE (permanent): CAD/pen construction lines — the black marks a
+        # designer draws to indicate creases, ruching, gathers or seams — are
+        # sewing guidance, NEVER a visual feature. They must never be rendered on
+        # a garment or a model wearing one, in ANY lane.
+        "drawn black lines on fabric, pen markings, construction lines, "
+        "annotation marks, sketch lines, drawn outlines on clothing")
 
 # The Qwen-Image-Edit-2511 model set, by the EXACT filenames present on the render
 # worker (diffusion_models / text_encoders / vae — verified on spark). The graph
@@ -754,6 +760,19 @@ def _inpaint_graph(ref_name: str, mask_name: str, instruction: str, prefix: str,
 
 # Edit-graph invariants — validated before every Edit dispatch so an Edit can NEVER
 # silently become a text-to-image Regenerate. Returns "" if valid, else the reason.
+def _positive_encoders(graph: dict) -> set:
+    """The node ids the samplers condition POSITIVELY on — the ONLY safe way to
+    tell a positive encoder from a negative one. Comparing encoder text against
+    _NEG breaks the moment lessons (or a flow) augment the negative string."""
+    pos: set = set()
+    for n in graph.values():
+        if isinstance(n, dict) and "KSampler" in n.get("class_type", ""):
+            ref = n.get("inputs", {}).get("positive")
+            if isinstance(ref, list) and ref:
+                pos.add(str(ref[0]))
+    return pos
+
+
 def _assert_edit_graph(graph: dict) -> str:
     ks = next((n for n in graph.values() if isinstance(n, dict) and n.get("class_type") == "KSampler"), None)
     if not ks:
@@ -1711,6 +1730,85 @@ async def dispatch_compose(request: web.Request, server, org: str, paths: list,
 
 class NotOwned(DispatchError):
     """The prompt_id isn't the caller's — routes map this to 404 (never reveals it)."""
+
+
+async def dispatch_rerun(request: web.Request, server, org: str, rel: str, *,
+                         prompt: str | None = None, paths: list | None = None,
+                         uploads: list | None = None, count=1,
+                         stack: str | None = None) -> dict:
+    """Re-render an asset's OWN embedded workflow, with optional PRECISE overrides:
+    ``prompt`` replaces the text on the encoders the samplers condition POSITIVELY
+    on (identified by sampler wiring — text comparison misreads a lessons-augmented
+    negative, and the negative must never be overwritten); ``paths``/``uploads``
+    re-point the graph's LoadImage nodes in order. Everything else in the workflow
+    stays exactly as it was — this is the ONE precise-flow implementation, shared
+    by POST /v1/library/rerun and the chat `rerun` tool."""
+    root = _library_root(org)
+    p = _safe_asset(root, rel) if root else None
+    if p is None or p.suffix.lower() not in _SAVE_EXT:
+        raise NotOwned(f"unknown asset: {rel}")
+    try:
+        graph = json.loads(_embedded(p).get("prompt", "null"))   # PNG OR video metadata
+    except Exception:
+        graph = None
+    if not isinstance(graph, dict) or not graph:
+        raise DispatchError("no embedded workflow in this output")
+    pos_ids = _positive_encoders(graph)
+    out_prefix = ""
+    instr = ""
+    for nid, n in graph.items():
+        if not isinstance(n, dict):
+            continue
+        if n.get("class_type") in _SAVERS:
+            out_prefix = n.get("inputs", {}).get("filename_prefix", "") or out_prefix
+        elif nid in pos_ids and not instr:
+            instr = n.get("inputs", {}).get("prompt") or n.get("inputs", {}).get("text") or ""
+    new_prompt = (prompt or "").strip()
+    if new_prompt:
+        if not 3 <= len(new_prompt) <= 2000:
+            raise DispatchError("prompt must be 3-2000 chars")
+        for nid in pos_ids:
+            ins = graph.get(nid, {}).setdefault("inputs", {})
+            ins["prompt" if "prompt" in ins else "text"] = new_prompt
+        instr = new_prompt
+    ref_names = []
+    for prel in (paths or []):
+        rp = _safe_asset(root, prel) if root else None
+        if rp is None or rp.suffix.lower() != ".png":
+            raise NotOwned(f"unknown asset: {prel}")
+        in_dir = Path(folder_paths.get_org_input_directory(org))
+        in_dir.mkdir(parents=True, exist_ok=True)
+        ref_names.append(_stage_source(in_dir, rp, "rerun"))
+    ref_names.extend(_resolve_uploads(org, uploads))
+    if ref_names:
+        loads = sorted((nid for nid, n in graph.items()
+                        if isinstance(n, dict) and n.get("class_type") == "LoadImage"),
+                       key=lambda s: (len(s), s))
+        if not loads:
+            raise DispatchError("this workflow takes no reference images")
+        for nid, name in zip(loads, ref_names):
+            graph[nid]["inputs"]["image"] = name
+    try:
+        n_runs = max(1, min(int(count), 4))
+    except (TypeError, ValueError):
+        n_runs = 1
+    base = out_prefix or f"reruns/{re.sub(r'[^a-zA-Z0-9_-]', '_', p.stem)[:40]}"
+    # Save-outputs-to destination: an explicit Stack, or an auto-stack when the
+    # org opted in and this is a batch. Routing keys on the shared base, so every
+    # uniquely-tagged rerun output still lands in the one destination.
+    sid = _dest_stack(org, stack, prompt=instr, multi=n_runs > 1,
+                      owner=_owner_of(request), workspace=_workspace_of(request))
+    ids = []
+    for _ in range(n_runs):
+        tag = _stamp(base)                    # each rerun owns a unique namespace
+        g = _retag(_reseed(json.loads(json.dumps(graph))), tag)
+        ids.append(await _dispatch(
+            request, server, org, g,
+            kind="rerun", prompt=instr, refs=ref_names,
+            uploads=list(uploads or []), parents=[rel], output_prefix=tag))
+        if sid:
+            stacks_store.route_prefix(org, tag, sid, added_by=_owner_of(request))
+    return {"ok": True, "prompt_ids": ids, "stack": sid}
 
 
 async def dispatch_amend(request: web.Request, server, org: str, prompt_id: str,
@@ -2743,51 +2841,22 @@ def add_studio_home_routes(routes: web.RouteTableDef, server) -> None:
 
     @routes.post("/v1/library/rerun")
     async def rerun(request: web.Request):
+        """Re-render an asset's OWN embedded workflow — optionally with a NEW
+        prompt and/or swapped reference images. Body: {path, prompt?, paths?,
+        uploads?, count?, stack?}. The precise-flow contract: the SAME graph,
+        exactly the changes asked for. Thin adapter over dispatch_rerun (the ONE
+        implementation the chat `rerun` tool also calls)."""
         body = await request.json()
-        org = _org_of(request)
-        root = _library_root(org)
-        p = _safe_asset(root, body.get("path", "")) if root else None
-        if p is None or p.suffix.lower() not in _SAVE_EXT:
-            return web.json_response({"error": "unknown asset"}, status=404)
         try:
-            graph = json.loads(_embedded(p).get("prompt", "null"))   # PNG OR video metadata
-        except Exception:
-            graph = None
-        if not isinstance(graph, dict) or not graph:
-            return web.json_response({"error": "no embedded workflow in this output"}, status=422)
-        rel = body.get("path", "")
-        out_prefix = ""
-        instr = ""
-        for n in graph.values():
-            if not isinstance(n, dict):
-                continue
-            if n.get("class_type") in _SAVERS:
-                out_prefix = n.get("inputs", {}).get("filename_prefix", "") or out_prefix
-            elif "TextEncode" in n.get("class_type", "") and not instr:
-                t = n.get("inputs", {}).get("prompt") or n.get("inputs", {}).get("text") or ""
-                if t and t != _NEG and t != _WAN_NEG:   # the positive, not either negative
-                    instr = t
-        count = max(1, min(int(body.get("count", 1)), 4))
-        base = out_prefix or f"reruns/{re.sub(r'[^a-zA-Z0-9_-]', '_', p.stem)[:40]}"
-        # Save-outputs-to destination: an explicit Stack, or an auto-stack when the
-        # org opted in and this is a batch (count>1). Routing keys on the shared base,
-        # so every uniquely-tagged rerun output still lands in the one destination.
-        sid = _dest_stack(org, body.get("stack"), prompt=instr, multi=count > 1,
-                          owner=_owner_of(request), workspace=_workspace_of(request))
-        ids = []
-        try:
-            for _ in range(count):
-                tag = _stamp(base)                    # each rerun owns a unique namespace (no tag accumulation)
-                g = _retag(_reseed(json.loads(json.dumps(graph))), tag)
-                ids.append(await _dispatch(
-                    request, server, org, g,
-                    kind="rerun", prompt=instr, refs=[], uploads=[], parents=[rel],
-                    output_prefix=tag))
-                if sid:
-                    stacks_store.route_prefix(org, tag, sid, added_by=_owner_of(request))
+            return web.json_response(await dispatch_rerun(
+                request, server, _org_of(request), body.get("path", ""),
+                prompt=body.get("prompt"), paths=body.get("paths"),
+                uploads=body.get("uploads"), count=body.get("count", 1),
+                stack=body.get("stack")))
+        except NotOwned as e:
+            return web.json_response({"error": str(e)}, status=404)
         except DispatchError as e:
             return web.json_response({"error": str(e)}, status=400)
-        return web.json_response({"ok": True, "prompt_ids": ids, "stack": sid})
 
     @routes.post("/v1/queue/cancel")
     async def cancel_job(request: web.Request):

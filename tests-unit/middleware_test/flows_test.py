@@ -114,3 +114,28 @@ def test_holdable_matches_transport_errors_only():
     for msg in ["instruction required (3-500 chars)", "unknown asset: x.png",
                 "select 2-5 references to compose"]:
         assert not any(s in msg.lower() for s in sh._HOLDABLE), msg
+
+
+def test_positive_encoders_by_sampler_wiring():
+    g = {"5": {"class_type": "CLIPTextEncode", "inputs": {"text": "user words"}},
+         "6": {"class_type": "CLIPTextEncode", "inputs": {"text": sh._NEG + ", extra lesson"}},
+         "13": {"class_type": "KSampler", "inputs": {"positive": ["5", 0], "negative": ["6", 0]}}}
+    assert sh._positive_encoders(g) == {"5"}
+
+
+def test_mcp_tools_carry_truth_contract_and_new_tools():
+    from middleware import mcp
+    names = {t["name"] for t in mcp._TOOLS}
+    assert {"fix", "compose", "rerun", "status", "ask"} <= names
+    for t in mcp._TOOLS:
+        if t["name"] in ("fix", "compose", "rerun"):
+            assert "NEVER" in t["description"] and "QUEUED" in t["description"], t["name"]
+    q = mcp._queued({"ok": True, "prompt_id": "x"})
+    assert q["state"] == "queued" and "QUEUED" in q["note"]
+
+
+def test_global_negative_bans_construction_lines():
+    # The permanent house rule: CAD/pen construction marks never render, any lane.
+    for term in ("pen markings", "construction lines", "annotation marks",
+                 "drawn black lines on fabric"):
+        assert term in sh._NEG, term

@@ -63,14 +63,14 @@ def test_initialize_reports_server_and_tools_capability():
 
 # --- tools/list ----------------------------------------------------------
 
-def test_tools_list_returns_the_three_render_tools():
+def test_tools_list_returns_the_render_tools():
     async def go():
         async with TestClient(TestServer(_app())) as c:
             r = await _rpc(c, "tools/list")
             return await r.json()
     body = _run(go())
     tools = body["result"]["tools"]
-    assert {t["name"] for t in tools} == {"fix", "compose", "ask"}
+    assert {t["name"] for t in tools} == {"fix", "compose", "rerun", "status", "ask"}
     for t in tools:
         assert t["inputSchema"]["type"] == "object"
     compose = next(t for t in tools if t["name"] == "compose")
@@ -83,7 +83,7 @@ def test_tools_list_returns_the_three_render_tools():
 def test_tools_call_fix_dispatches(monkeypatch):
     seen = {}
 
-    async def fake_fix(request, server, org, path, instruction):
+    async def fake_fix(request, server, org, path, instruction, **kw):
         seen.update(org=org, path=path, instruction=instruction)
         return {"ok": True, "prompt_id": "p1", "output_prefix": "fixes/x"}
 
@@ -109,7 +109,7 @@ def test_tools_call_fix_dispatches(monkeypatch):
 def test_tools_call_compose_dispatches(monkeypatch):
     seen = {}
 
-    async def fake_compose(request, server, org, paths, instruction):
+    async def fake_compose(request, server, org, paths, instruction, **kw):
         seen.update(org=org, paths=paths, instruction=instruction)
         return {"ok": True, "prompt_id": "p2", "output_prefix": "composes/y", "refs": len(paths)}
 
@@ -143,7 +143,7 @@ def test_tools_call_ask_echoes_question():
 
 
 def test_dispatch_error_becomes_iserror_result(monkeypatch):
-    async def bad_fix(request, server, org, path, instruction):
+    async def bad_fix(request, server, org, path, instruction, **kw):
         raise studio_home.DispatchError("unknown asset: nope.png")
 
     monkeypatch.setattr(studio_home, "dispatch_fix", bad_fix)
