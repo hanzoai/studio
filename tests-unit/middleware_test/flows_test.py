@@ -139,3 +139,71 @@ def test_global_negative_bans_construction_lines():
     for term in ("pen markings", "construction lines", "annotation marks",
                  "drawn black lines on fabric"):
         assert term in sh._NEG, term
+
+
+# ── Output integrity: done means 100% complete ───────────────────────────────
+
+_PNG_OK = b"\x89PNG\r\n\x1a\n" + b"\x00" * 32 + b"\x00\x00\x00\x00IEND\xaeB`\x82"
+_PNG_CUT = b"\x89PNG\r\n\x1a\n" + b"\x00" * 64  # no IEND: a truncated write
+
+
+def test_intact_reads_format_terminal_markers(tmp_path):
+    good = tmp_path / "a.png"
+    good.write_bytes(_PNG_OK)
+    assert sh._intact(good) is True
+    bad = tmp_path / "b.png"
+    bad.write_bytes(_PNG_CUT)
+    assert sh._intact(bad) is False
+    # MP4: a consistent top-level box chain is completion evidence…
+    mp4 = tmp_path / "c.mp4"
+    mp4.write_bytes(b"\x00\x00\x00\x10ftyp" + b"\x00" * 8 + b"\x00\x00\x00\x08free")
+    assert sh._intact(mp4) is True
+    # …a chain that overruns EOF is truncation.
+    cut = tmp_path / "d.mp4"
+    cut.write_bytes(b"\x00\x00\x00\x10ftyp" + b"\x00" * 8 + b"\x00\x00\x00\x20mdat")
+    assert sh._intact(cut) is False
+    # Unknown format: no evidence either way.
+    other = tmp_path / "e.webm"
+    other.write_bytes(b"\x1a\x45\xdf\xa3" + b"\x00" * 32)
+    assert sh._intact(other) is None
+
+
+def test_truncated_output_never_reads_done(tmp_path, monkeypatch):
+    import os
+    import time
+    calls = {}
+    monkeypatch.setattr(sh.worklog, "set_status",
+                        lambda org, id_, st, note=None: calls.setdefault(id_, (st, note)))
+    monkeypatch.setattr(sh.worklog, "mark_finished",
+                        lambda org, id_, mt: calls.setdefault(id_, ("done", mt)))
+    (tmp_path / "fixes").mkdir()
+    (tmp_path / "fixes" / "a_00001_.png").write_bytes(_PNG_OK)
+    (tmp_path / "fixes" / "b_00001_.png").write_bytes(_PNG_CUT)
+    (tmp_path / "fixes" / "c_00001_.png").write_bytes(_PNG_CUT)
+    old = time.time() - 120
+    for name in ("a_00001_.png", "b_00001_.png"):
+        os.utime(tmp_path / "fixes" / name, (old, old))          # settled
+    now = int(time.time())
+    rows = [{"id": i, "status": "queued", "output_prefix": f"fixes/{i}",
+             "ts": int(old) - 5, "params": {}} for i in ("a", "b", "c")]
+    sh._finalize_landed("acme", tmp_path, rows, now)
+    assert rows[0]["status"] == "done"                            # complete: done
+    assert rows[1]["status"] == "failed"                          # truncated: failed
+    assert "truncated" in calls["b"][1]
+    assert rows[2]["status"] == "queued"                          # fresh: still judged later
+
+
+def test_index_upload_refuses_truncated_file(tmp_path, monkeypatch):
+    import middleware.worklog as wl
+    monkeypatch.setattr(sh.stacks_store, "absorb", lambda *a, **k: None)
+    monkeypatch.setattr(wl.folder_paths, "get_org_output_directory",
+                        lambda org: str(tmp_path / "orgs" / org / "output"))
+    root = tmp_path / "lib"
+    (root / "up").mkdir(parents=True)
+    (root / "up" / "partial.png").write_bytes(_PNG_CUT)
+    assert sh._index_upload("acme", root, "up/partial.png",
+                            design=None, kind="render", role=None, node="upload") is False
+    assert sh._load_library(root).get("assets", []) == []         # never surfaced
+    (root / "up" / "ok.png").write_bytes(_PNG_OK)
+    assert sh._index_upload("acme", root, "up/ok.png",
+                            design=None, kind="render", role=None, node="upload") is True

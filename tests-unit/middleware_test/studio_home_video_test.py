@@ -231,7 +231,7 @@ def test_landed_video(orgaware):
               output_prefix="video/done", params={"steps": 20}, pid="dv", status="queued")
     ts = next(r["ts"] for r in wl.load("acme") if r["id"] == "dv")
     dp = root / "video" / "done_00001_.mp4"
-    dp.write_bytes(b"\x00\x00\x00 ftyp")
+    dp.write_bytes(b"\x00\x00\x00\x08ftyp" + b"\x00\x00\x00\x08free")
     os.utime(dp, (ts + 200, ts + 200))
     rows = wl.load("acme")
     sh._finalize_landed("acme", root, rows, int(time.time()) + 500)
@@ -242,7 +242,7 @@ def test_landed_video(orgaware):
               output_prefix="video/fast", params={"steps": 20}, pid="fv", status="queued")
     tsf = next(r["ts"] for r in wl.load("acme") if r["id"] == "fv")
     fp = root / "video" / "fast_00001_.mp4"
-    fp.write_bytes(b"\x00\x00\x00 ftyp")
+    fp.write_bytes(b"\x00\x00\x00\x08ftyp" + b"\x00\x00\x00\x08free")
     os.utime(fp, (tsf + 2, tsf + 2))
     rows = wl.load("acme")
     sh._finalize_landed("acme", root, rows, int(time.time()) + 500)

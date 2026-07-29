@@ -2079,6 +2079,63 @@ def _row_output(root: Path | None, output_prefix: str | None) -> str | None:
 
 
 # ── Honesty guard + iteration hygiene ────────────────────────────────────────────
+# A file whose format-terminal marker is missing is a truncated write (a worker died
+# mid-upload, a mirror was interrupted). Encoders emit these bytes LAST, so their
+# presence proves the write finished; their absence on a settled file proves it never
+# did. A file younger than the settle window with no proof either way may still be
+# mid-write — it is judged on a later pass, never guessed at.
+_SETTLE_SECS = 10
+
+
+def _intact(path: Path) -> bool | None:
+    """Completion evidence for a landed output. True: the terminal marker is present
+    (PNG IEND / JPEG EOI / RIFF size / a consistent MP4 box chain). False: provably
+    truncated. None: the format carries no terminal marker."""
+    try:
+        ext = path.suffix.lower()
+        size = path.stat().st_size
+        if size < 16:
+            return False
+        with path.open("rb") as f:
+            head = f.read(12)
+            if ext == ".png":
+                if not head.startswith(b"\x89PNG\r\n\x1a\n"):
+                    return False
+                f.seek(size - 12)
+                return b"IEND" in f.read()
+            if ext in (".jpg", ".jpeg"):
+                if not head.startswith(b"\xff\xd8"):
+                    return False
+                f.seek(size - 2)
+                return f.read(2) == b"\xff\xd9"
+            if ext == ".webp":
+                if head[:4] != b"RIFF" or head[8:12] != b"WEBP":
+                    return False
+                return int.from_bytes(head[4:8], "little") + 8 in (size, size - 1)
+            if ext in (".mp4", ".m4v", ".mov"):
+                off = 0
+                while off < size:
+                    f.seek(off)
+                    hdr = f.read(8)
+                    if len(hdr) < 8:
+                        return False
+                    n = int.from_bytes(hdr[:4], "big")
+                    if n == 0:
+                        return None  # box runs to EOF — no terminal evidence
+                    if n == 1:
+                        big = f.read(8)
+                        if len(big) < 8:
+                            return False
+                        n = int.from_bytes(big, "big")
+                    if n < 8:
+                        return False
+                    off += n
+                return off == size
+        return None
+    except OSError:
+        return None
+
+
 # A >=10-step 1024x1536 Qwen edit takes MINUTES on any real GPU (≈350s on the GB10).
 # If an output lands within this many seconds of the job being dispatched, the engine
 # did not sample — a graph that errored straight into history, a stale-history reuse,
@@ -2119,6 +2176,14 @@ def _finalize_landed(org: str, root: Path | None, rows: list[dict], now: int) ->
             continue
         mt = _output_mtime(root, landed) or now
         if mt < int(r.get("ts", now)):
+            continue
+        whole = _intact(root / landed) if root else None
+        if whole is not True and now - mt < _SETTLE_SECS:
+            continue  # may still be mid-write — judged on a later pass, never guessed
+        if whole is False:
+            worklog.set_status(org, r["id"], "failed",
+                               note="output file is truncated — an incomplete render never reads done")
+            r["status"] = "failed"
             continue
         if _implausibly_fast(r, mt):
             worklog.set_status(org, r["id"], "failed",
@@ -2184,6 +2249,8 @@ def _index_upload(org: str, root: Path, rel: str, *, design, kind, role, node) -
     Atomic per-org writes like every other metadata file; upserts by path so a
     re-render of the same name never duplicates the asset. Returns True when a NEW
     asset row was created (a newly-surfaced render) — the quality gate's trigger."""
+    if _intact(root / rel) is False:
+        return False  # a truncated file never enters the library
     now_iso = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
     lib = _load_library(root)
     assets = lib.setdefault("assets", [])

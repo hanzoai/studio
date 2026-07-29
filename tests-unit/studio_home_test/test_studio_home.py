@@ -617,7 +617,7 @@ async def test_library_upload_indexes_into_assets_and_worklog(tmp_path, monkeypa
     import aiohttp
     _orgaware(tmp_path, monkeypatch)
     client = await _client(_FakeServer())
-    png = b"\x89PNG\r\n\x1a\n" + b"render-bytes"
+    png = b"\x89PNG\r\n\x1a\n" + b"render-bytes" + b"\x00" * 16 + b"\x00\x00\x00\x00IEND\xaeB`\x82"
     form = aiohttp.FormData()
     form.add_field("image", png, filename="shot.png", content_type="image/png")
     r = await client.post("/v1/library/upload?node=spark&design=karma&kind=render",
@@ -662,7 +662,7 @@ async def test_upload_schedules_quality_gate_only_for_new_renders(tmp_path, monk
     monkeypatch.setattr(sh.quality_gate, "schedule",
                         lambda request, org, r, rel: calls.append((org, rel)))
     client = await _client(_FakeServer())
-    png = b"\x89PNG\r\n\x1a\n" + b"gate-bytes"
+    png = b"\x89PNG\r\n\x1a\n" + b"gate-bytes" + b"\x00" * 16 + b"\x00\x00\x00\x00IEND\xaeB`\x82"
 
     form = aiohttp.FormData()
     form.add_field("image", png, filename="g.png", content_type="image/png")
@@ -677,7 +677,7 @@ async def test_upload_schedules_quality_gate_only_for_new_renders(tmp_path, monk
     assert calls == [("acme", "renders/g.png")]            # identical re-post → NOT re-judged
 
     # a file already on disk but with no library row (restored store) → a new row → judged
-    png2 = b"\x89PNG\r\n\x1a\n" + b"restored"
+    png2 = b"\x89PNG\r\n\x1a\n" + b"restored" + b"\x00" * 16 + b"\x00\x00\x00\x00IEND\xaeB`\x82"
     (root / "renders" / "old.png").write_bytes(png2)
     form3 = aiohttp.FormData()
     form3.add_field("image", png2, filename="old.png", content_type="image/png")

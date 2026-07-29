@@ -109,7 +109,9 @@ def org_root(tmp_path, monkeypatch):
 def _land(root: Path, rel: str, mtime: int):
     p = root / rel
     p.parent.mkdir(parents=True, exist_ok=True)
-    p.write_bytes(b"\x89PNG\r\n")
+    # A COMPLETE png (IEND tail): the integrity gate must judge these rows on
+    # timing alone, not refuse them as truncated writes.
+    p.write_bytes(b"\x89PNG\r\n\x1a\n" + b"\x00" * 32 + b"\x00\x00\x00\x00IEND\xaeB`\x82")
     os.utime(p, (mtime, mtime))
 
 
