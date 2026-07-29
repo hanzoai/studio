@@ -1093,7 +1093,11 @@ def _act_type_name(a: dict) -> str:
 
 
 def _activity_phase(a: dict) -> str:
-    return _PHASE.get(str(a.get("status", "")).upper(), "queued")
+    # The engine emits long-form enum names (ACTIVITY_TASK_STATE_CANCELED); the map
+    # is keyed bare. Without the strip EVERY status missed the map and defaulted to
+    # "queued" — 400+ terminal jobs rendered as a phantom queue.
+    s = str(a.get("status", "")).upper().removeprefix("ACTIVITY_TASK_STATE_")
+    return _PHASE.get(s, "queued")
 
 
 def _prompt_title_refs(prompt: dict) -> tuple:

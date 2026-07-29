@@ -81,6 +81,19 @@ def test_expired_phases_read_failed():
     assert sh._PHASE["SCHEDULED"] == "queued"
 
 
+def test_activity_phase_reads_long_form_engine_statuses():
+    # The engine emits ACTIVITY_TASK_STATE_* enum names; a terminal status must
+    # NEVER read as queued (the phantom-queue bug: 400+ finished jobs as depth).
+    for raw, want in (("ACTIVITY_TASK_STATE_CANCELED", "cancelled"),
+                      ("ACTIVITY_TASK_STATE_COMPLETED", "done"),
+                      ("ACTIVITY_TASK_STATE_FAILED", "failed"),
+                      ("ACTIVITY_TASK_STATE_SCHEDULED", "queued"),
+                      ("ACTIVITY_TASK_STATE_STARTED", "running"),
+                      ("SCHEDULED", "queued"), ("COMPLETED", "done")):
+        assert sh._activity_phase({"status": raw}) == want, raw
+    assert sh._activity_phase({"status": "SOMETHING_NEW"}) == "queued"  # unknown stays optimistic
+
+
 def test_hold_job_spools_and_cancels(tmp_path, monkeypatch):
     import middleware.worklog as wl
     monkeypatch.setattr(sh.folder_paths, "get_org_output_directory",
