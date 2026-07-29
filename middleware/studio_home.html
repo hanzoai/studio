@@ -1643,6 +1643,9 @@ function qmetaHTML(it,e){
     const el=(e.elapsed_seconds||0)+(Date.now()-QLOCAL)/1000;
     return `<div class="wmeta">${node} · #${e.position}/${e.of} · running <span id="el-${esc(it.id)}">${fmtDur(el)}</span>${e.eta_seconds!=null?(' · ~'+fmtDur(e.eta_seconds)+' left'):''}</div>`;
   }
+  // A queued job shows a time ONLY when its lane is genuinely moving — with no
+  // worker running anything, an ETA is fiction and it just says queued.
+  if(!e.lane_running) return `<div class="wmeta">${node} · #${e.position}/${e.of} in line · queued</div>`;
   return `<div class="wmeta">${node} · #${e.position}/${e.of} in line · ${fmtEta(e.eta_seconds||0)}</div>`;
 }
 function wlRow(it){
@@ -2085,7 +2088,15 @@ async function sendFix(){const t=$('fixtext').value.trim();if(t.length<3){showFi
     r=await fetch('/v1/library/compose',{method:'POST',headers:genHeaders(),body:JSON.stringify({paths:[FIXPATH,...paths],instruction:t,uploads,stack})});
   }
   const j=await r.json().catch(()=>({}));
-  if(r.ok){ $('fixdlg').close(); toast(j.note || (FIXMODE==='amend'?'Amended — re-queued (position reset)':(mask?'Area edit queued → see Queue & History':'Edit queued → see Queue & History'))); track('fix',{mode:FIXMODE,masked:!!mask}); if(typeof runs==='function')runs(); }
+  if(r.ok){
+    // The dialog ALWAYS closes on an accepted edit and the confirmation is a
+    // plain ✓ Queued — whether a GPU is connected only changes the subtitle,
+    // never the outcome (the server holds the job until a worker can run it).
+    $('fixdlg').close();
+    const online=await gpuOnline().catch(()=>false);
+    toast('✓ Queued'+(j.note?(' — '+j.note):(online?' — rendering shortly':' — starts when a GPU connects')));
+    track('fix',{mode:FIXMODE,masked:!!mask}); if(typeof runs==='function')runs();
+  }
   else showFixErr('Couldn’t '+(FIXMODE==='amend'?'amend':'queue')+': '+(errMsg(j)||('error '+r.status)));   // stay open so the reason is visible
 }
 // ── Edit selected area: paint a white mask over the base image; only that region is

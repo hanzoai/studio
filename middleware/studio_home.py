@@ -2836,23 +2836,48 @@ def add_studio_home_routes(routes: web.RouteTableDef, server) -> None:
         # dropped waiting work from the visible queue while it could still run.
         active = [r for r in rows if r.get("status") not in ("done", "failed", "cancelled")
                   and now - int(r.get("ts", now)) <= 604800]
-        # the oldest job in each lane is the one rendering — stamp its start once
+        # RUNNING is a FACT, not an assumption. A gpu-lane job runs only when the
+        # engine says a worker CLAIMED it (STARTED); the local lane's head runs
+        # because this pod itself executes it. The old rule — "the oldest job in
+        # each lane is running" — showed a ticking work-in-progress timer on jobs
+        # NO worker had touched, with zero GPUs connected.
+        engine_running: set = set()
+        for a in (await _list_gpu_jobs(request) or []):
+            if _act_type_name(a) in ("studio.render", "") and _activity_phase(a) == "running":
+                j = _job_from_activity(a, now)
+                if j.get("id"):
+                    engine_running.add(j["id"])
         by_lane: dict[str, list[dict]] = {}
         for r in active:
             by_lane.setdefault(r.get("lane") or "local", []).append(r)
-        for jobs in by_lane.values():
-            head = min(jobs, key=lambda j: j.get("ts", 0))
-            if not head.get("started_at"):
-                worklog.mark_started(org, head["id"], now)
-                head["started_at"] = now
-            head["status"] = "running"
+        for lane, jobs in by_lane.items():
+            if lane == "local":
+                head = min(jobs, key=lambda j: j.get("ts", 0))
+                if not head.get("started_at"):
+                    worklog.mark_started(org, head["id"], now)
+                    head["started_at"] = now
+                head["status"] = "running"
+                continue
+            for r in jobs:
+                if r["id"] in engine_running:
+                    if not r.get("started_at"):
+                        worklog.mark_started(org, r["id"], now)
+                        r["started_at"] = now
+                    r["status"] = "running"
         medians = worklog.median_durations(rows)
         est, counts = worklog.estimate_lanes(active, medians, now)
+        lane_live = {lane: any(j.get("status") == "running" for j in jobs)
+                     for lane, jobs in by_lane.items()}
         items = {}
         for r in active:
+            lane = r.get("lane") or "local"
             items[r["id"]] = {**est.get(r["id"], {}), "id": r["id"], "kind": r.get("kind", ""),
                               "prompt": r.get("prompt", ""), "status": r.get("status"),
-                              "node": r.get("node")}
+                              "node": r.get("node"),
+                              # Whether ANYTHING in this job's lane is genuinely
+                              # running — a queued job in a dead lane shows plain
+                              # "queued", never a fictional countdown.
+                              "lane_running": lane_live.get(lane, False)}
         return web.json_response({"items": items, "medians": medians, "lanes": counts, "now": now})
 
     @routes.get("/v1/nodes")
