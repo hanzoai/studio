@@ -580,6 +580,30 @@ EDIT_DENOISE_DEFAULT = 0.25
 EDIT_DENOISE_MIN, EDIT_DENOISE_MAX = 0.05, 0.95
 
 
+# The instruction itself declares the transformation distance when no lane was picked.
+# "make this into a CAD drawing" is a CONVERSION — at the 0.25 edit default it comes back
+# VISIBLY UNCHANGED, which is the mirror of the plaid failure: too little change is as
+# wrong as too much. These are EXPLICIT rewrite phrasings only ("make/turn this into",
+# "convert to", "as a photograph"); an ordinary edit ("remove the lines", "brighten",
+# "make the straps thinner") must never match, so nothing is silently re-rendered.
+_CONVERSION_PHRASES = (
+    "make this into", "make it into", "turn this into", "turn it into",
+    "convert this", "convert it", "convert to", "redraw",
+    "as a cad", "into a cad", "to a cad",
+    "as a photo", "into a photo", "to a photo",
+    "as a real", "into a real", "to a real",
+    "photorealistic version", "real life version", "real-life version",
+)
+CONVERSION_DENOISE = 0.90
+
+
+def asks_conversion(instruction: str) -> bool:
+    """True when the instruction EXPLICITLY asks to remake the image as something else
+    (a drawing→photograph or photograph→drawing rewrite) rather than to edit it."""
+    t = (instruction or "").lower()
+    return any(p in t for p in _CONVERSION_PHRASES)
+
+
 def _edit_denoise(strength, default: float = EDIT_DENOISE_DEFAULT) -> float:
     """Map an edit-strength input to a KSampler denoise in the edit band. Accepts a
     fraction (0.25) or a percent (25). None/invalid → ``default`` (the flow's lane
@@ -1543,7 +1567,14 @@ async def dispatch_fix(request: web.Request, server, org: str, rel: str,
     flow = _flow_of(flow_kind)
     # A flow lane sets the denoise its conversion needs (a drawing must be nearly
     # fully re-rendered to become a photograph); an explicit strength still wins.
-    denoise = _edit_denoise(strength, default=(flow or {}).get("denoise", EDIT_DENOISE_DEFAULT))
+    # Distance, in priority order: an explicit strength wins; else the lane's own
+    # conversion denoise; else the INSTRUCTION's own request ("make this into a CAD
+    # drawing" must actually convert — at the edit default it returned the source
+    # untouched); else the preserving edit default.
+    lane_default = (flow or {}).get("denoise")
+    if lane_default is None:
+        lane_default = CONVERSION_DENOISE if asks_conversion(instruction) else EDIT_DENOISE_DEFAULT
+    denoise = _edit_denoise(strength, default=lane_default)
     src_seed = None                          # the source's original seed, reused by default
     in_dir = Path(folder_paths.get_org_input_directory(org))
     in_dir.mkdir(parents=True, exist_ok=True)

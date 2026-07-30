@@ -257,6 +257,26 @@ def test_fold_engine_terminal_verdicts_reach_the_worklog(monkeypatch):
     sh._fold_engine("acme", rows, None)  # engine unreachable: no-op, never raises
 
 
+def test_an_explicit_conversion_request_actually_converts():
+    """The mirror of the plaid failure: "make this into a CAD drawing" at the 0.25 edit
+    default returned the source VISIBLY UNCHANGED. Too little change is as wrong as too
+    much, so an EXPLICIT rewrite request raises the distance — and an ordinary edit
+    never does."""
+    for asks in ("make this into a CAD drawing", "turn this into a real life version",
+                 "convert to a photograph", "show it as a photorealistic version",
+                 "redraw this as a technical flat"):
+        assert sh.asks_conversion(asks), asks
+    for edit in ("remove the drawn black lines from the top", "brighten slightly",
+                 "make the bottom a thong cut", "remove any visible stitching",
+                 "the suit is supposed to be like a corset so it sucks in her waist"):
+        assert not sh.asks_conversion(edit), edit
+    # …and the distance actually reaches the graph, with an explicit strength still winning.
+    g = sh._fix_graph("cad.png", "make this into a CAD drawing", "fixes/c",
+                      denoise=sh._edit_denoise(None, default=sh.CONVERSION_DENOISE))
+    assert g["13"]["inputs"]["denoise"] == sh.CONVERSION_DENOISE >= 0.85
+    assert sh._edit_denoise(0.3, default=sh.CONVERSION_DENOISE) == 0.3
+
+
 def test_heartbeat_window_covers_a_cold_load_plus_a_full_sample():
     """The heartbeat rides SAMPLING steps, so the window must also cover the cold model
     load before step 1. At 1200s six real renders were reclaimed as "lease expired:
