@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1.7
 FROM python:3.11-slim AS base
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -16,14 +17,18 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
-# Install PyTorch CPU first (large layer, cached separately)
-RUN pip install --no-cache-dir \
+# Install PyTorch CPU first (large layer, cached separately).
+# The pip cache is a BuildKit CACHE MOUNT, not a layer: --no-cache-dir made every
+# build re-download the whole torch stack over the network (the fabric passes no
+# --import-cache either, so nothing was reused). The mount is not part of the image,
+# so the image stays exactly as small as before.
+RUN --mount=type=cache,target=/root/.cache/pip pip install \
     torch torchvision torchaudio \
     --index-url https://download.pytorch.org/whl/cpu
 
 # Install remaining dependencies
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN --mount=type=cache,target=/root/.cache/pip pip install -r requirements.txt
 
 # Apply Hanzo Studio branding to frontend package
 COPY branding/ /tmp/branding/
