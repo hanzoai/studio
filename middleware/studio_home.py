@@ -3182,6 +3182,10 @@ def add_studio_home_routes(routes: web.RouteTableDef, server) -> None:
         SAME dispatch funnel a fresh submit uses, so the new flow frames, the
         construction-lines ban and the integrity gate all apply — no replay-only code path.
 
+        Each retry is a FULL dispatch (stage the sources, enqueue), so a large batch holds
+        the connection for minutes: the UI therefore sends small ``ids`` chunks and shows
+        progress. ``{failed:true}`` stays for one-shot/CLI use where a long wait is fine.
+
         Returns per-row outcomes: ``queued`` with the new job id, or ``refused`` with the
         reason (a row whose sources were not recorded is never approximated). The original
         rows are left as they are — history is not rewritten; the retry is a NEW job."""

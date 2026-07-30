@@ -1682,18 +1682,29 @@ function delCtx(){ if(!CTX||!CTX.id)return; ctxdlg.close(); delWork(CTX.id); }
 // Re-run failed work under TODAY's rules. ids=null replays the newest failures.
 // The originals stay in history — a retry is a NEW job — and a row the server can't
 // faithfully reconstruct is reported as refused, never quietly approximated.
+// Chunked on purpose: each retry is a full dispatch (stage the sources, enqueue), so
+// asking for 17 in ONE request holds the connection open past every sane timeout —
+// the reply never arrives even though the server is working. Small chunks keep every
+// request short, report progress as it goes, and let a failure name its own chunk.
+const RETRY_CHUNK=3;
 async function retryWork(ids){
-  const body=ids?{ids}:{failed:true,limit:20};
-  const one=ids&&ids.length===1;
-  toast(one?'Re-queueing…':'Re-queueing failed work…');
-  try{
-    const r=await fetch('/v1/worklog/retry',{method:'POST',headers:genHeaders(),body:JSON.stringify(body)});
-    const d=await r.json().catch(()=>({}));
-    if(!r.ok)throw new Error(d&&d.error||'retry failed');
-    const q=d.queued||0, ref=d.refused||0;
-    toast(q?`✓ ${q} queued${ref?` · ${ref} couldn’t be rebuilt`:''}`:(ref?`Couldn’t rebuild ${ref} — see the item’s details`:'Nothing to retry'));
+  const list=ids||WL.filter(x=>x.status==='failed').slice(0,20).map(x=>x.id);
+  if(!list.length){toast('Nothing to retry');return;}
+  let queued=0, refused=0;
+  toast(list.length===1?'Re-queueing…':`Re-queueing ${list.length}…`);
+  for(let i=0;i<list.length;i+=RETRY_CHUNK){
+    const chunk=list.slice(i,i+RETRY_CHUNK);
+    try{
+      const r=await fetch('/v1/worklog/retry',{method:'POST',headers:genHeaders(),body:JSON.stringify({ids:chunk})});
+      const d=await r.json().catch(()=>({}));
+      if(!r.ok)throw new Error((d&&d.error)||'retry failed');
+      queued+=d.queued||0; refused+=d.refused||0;
+    }catch(e){ refused+=chunk.length; }
+    if(list.length>RETRY_CHUNK)toast(`Re-queueing… ${Math.min(i+RETRY_CHUNK,list.length)}/${list.length}`);
     worklog();
-  }catch(e){ toast('Couldn’t retry — '+((e&&e.message)||'try again')); }
+  }
+  toast(queued?`✓ ${queued} queued${refused?` · ${refused} couldn’t be rebuilt`:''}`
+              :`Couldn’t rebuild ${refused} — open an item to see why`);
 }
 async function archiveFromQueue(path){
   if(!path)return;
