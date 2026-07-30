@@ -262,6 +262,7 @@ def test_heartbeat_window_covers_a_cold_load_plus_a_full_sample():
     load before step 1. At 1200s six real renders were reclaimed as "lease expired:
     worker unresponsive" while the GPU was busy — the engine failing working jobs."""
     import inspect
+    import re
     from middleware import gpu_dispatch
     src = inspect.getsource(gpu_dispatch.dispatch_if_worker)
     m = re.search(r'"heartbeatTimeout":\s*"(\d+)s"', src)
