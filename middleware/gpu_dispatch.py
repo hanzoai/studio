@@ -303,10 +303,17 @@ def dispatch_if_worker(request, org_id: str, prompt_id: str, prompt: dict) -> bo
             "runId": prompt_id,
             "activityType": {"name": "studio.render"},
             "taskQueue": task_queue,
-            # 1200s: a heavy Qwen edit on a cold GB10 (model reload + full 30-step
-            # sample) can exceed 600s; the worker heartbeats each step, so this is
-            # the ceiling for a genuinely long single render, not idle slack.
-            "heartbeatTimeout": "1200s",
+            # 3600s. The heartbeat rides SAMPLING steps, so the window must also cover
+            # everything BEFORE the first step: on a box whose models thrash (Qwen-Edit,
+            # Z-Image, Wan and Hunyuan3D all competing for one host's memory) a cold load
+            # is minutes on its own, and the worker's own readiness probe may kill and
+            # reload studio mid-load — restarting that clock. At 1200s six real renders
+            # were reclaimed as "lease expired: worker unresponsive" while the GPU was
+            # busy, then re-run, then reclaimed again: the queue reported failure and
+            # burned the GPU twice for one output. A genuinely dead worker is still
+            # reclaimed, just later — a late reclaim costs one wait, a premature one
+            # costs the render.
+            "heartbeatTimeout": "3600s",
             # Liveness is the heartbeat above; this cap only bounds a live-but-stuck
             # render. Unset, the tasks default (~1h) reaped real renders mid-run and
             # the queue re-ran them for hours.

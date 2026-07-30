@@ -257,6 +257,20 @@ def test_fold_engine_terminal_verdicts_reach_the_worklog(monkeypatch):
     sh._fold_engine("acme", rows, None)  # engine unreachable: no-op, never raises
 
 
+def test_heartbeat_window_covers_a_cold_load_plus_a_full_sample():
+    """The heartbeat rides SAMPLING steps, so the window must also cover the cold model
+    load before step 1. At 1200s six real renders were reclaimed as "lease expired:
+    worker unresponsive" while the GPU was busy — the engine failing working jobs."""
+    import inspect
+    from middleware import gpu_dispatch
+    src = inspect.getsource(gpu_dispatch.dispatch_if_worker)
+    m = re.search(r'"heartbeatTimeout":\s*"(\d+)s"', src)
+    assert m, "heartbeatTimeout must be declared on the enqueue"
+    assert int(m.group(1)) >= 3600, (
+        f"{m.group(1)}s is too tight: a cold 20GB load plus a 30-step sample on a "
+        "memory-thrashing host exceeds it, and a premature reclaim costs the render")
+
+
 def test_op_of_reads_the_output_prefix_not_the_kind():
     # `kind` carries the FLOW when one was active (product/cad_ghost/…), so only the
     # recorded output prefix can name the operation to replay.
