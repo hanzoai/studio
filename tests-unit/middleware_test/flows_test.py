@@ -249,7 +249,9 @@ def test_fold_engine_terminal_verdicts_reach_the_worklog(monkeypatch):
     st = {r["id"]: r["status"] for r in rows}
     assert st["f1"] == "failed" and "bad model" in calls["f1"][1]
     assert st["c1"] == "cancelled"
-    assert st["r1"] == "queued"        # running: not terminal, untouched
+    # A worker CLAIMED and STARTED r1 — that is a fact, so it must not read "queued"
+    # while it samples on a GPU (the same lie as a failed job reading queued).
+    assert st["r1"] == "running" and calls["r1"][0] == "running"
     assert st["d1"] == "queued"        # done is the integrity gate's verdict, never folded
     assert st["x1"] == "queued"        # not in the engine: untouched
     sh._fold_engine("acme", rows, None)  # engine unreachable: no-op, never raises

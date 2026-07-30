@@ -1154,11 +1154,17 @@ def _job_from_activity(a: dict, now: int) -> dict:
 
 
 def _fold_engine(org: str, rows: list[dict], acts: list | None) -> None:
-    """Fold the engine's TERMINAL verdicts into worklog rows. A job the engine
-    failed/cancelled leaves no landed output, so _finalize_landed can never close
-    it — without this fold it reads queued forever (the lying state). done is NOT
-    folded: only a landed, intact output makes done (the integrity gate owns that
-    verdict). Mutates rows in place (mirrors the persisted status)."""
+    """Fold what the ENGINE knows into worklog rows — the states no local observation
+    can produce:
+
+    * failed / cancelled: such a job leaves no landed output, so _finalize_landed can
+      never close it and without this fold it reads queued forever (the lying state).
+    * running: a worker CLAIMED and STARTED it. That is a fact, not optimism, and
+      without it a render actively sampling on a GPU still reads "queued" — the same
+      class of lie from the other direction.
+
+    ``done`` is NOT folded: only a landed, intact output makes done (the integrity gate
+    owns that verdict). Mutates rows in place (mirrors the persisted status)."""
     if not acts:
         return
     verdict = {}
@@ -1178,6 +1184,10 @@ def _fold_engine(org: str, rows: list[dict], acts: list | None) -> None:
         elif ph == "cancelled":
             worklog.set_status(org, r["id"], "cancelled")
             r["status"] = "cancelled"
+        elif ph == "running" and r.get("status") == "queued":
+            worklog.set_status(org, r["id"], "running")
+            worklog.mark_started(org, r["id"], int(time.time()))   # idempotent; feeds the ETA median
+            r["status"] = "running"
 
 
 async def _list_gpu_jobs(request) -> list | None:
