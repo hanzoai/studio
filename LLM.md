@@ -115,6 +115,26 @@ shared Hanzo IAM (standard OIDC code flow). No embedding.
   (`worker_client.reject_untrusted_worker_submit`, one policy gate). Legacy push
   (`prompt_router`) is OFF unless `STUDIO_LEGACY_PUSH_ROUTER=1`. Tests:
   `middleware_test/{gpu_dispatch_test,worker_seam_test}.py`.
+- **Edit strength follows the TRANSFORMATION DISTANCE, not the look** (`studio_home.py` `FLOWS`):
+  a lane declares `denoise` ONLY when it is a conversion. `cad_ghost`/`cad_mockup`
+  (drawing→photograph) run 0.92 because a large change is required; `product`/`lifestyle`
+  name an output LOOK, so they declare nothing and inherit `EDIT_DENOISE_DEFAULT` 0.25 —
+  the print, the model's identity, the framing and the resolution survive. `outfit`
+  (garment swap) is the one non-conversion lane that replaces a large region: 0.45.
+  Braiding the two shipped `product` at 0.90 and a "remove the drawn lines" edit came back
+  with the watercolor print replaced by plaid and a different model. Tested both ways
+  (`flows_test.py`): no style lane above 0.5, no conversion lane below 0.85.
+- **Retry failed work — the ONE replay path** (`studio_home.py` `retry_row` +
+  `POST /v1/worklog/retry`): `{ids:[…]}` or `{failed:true,limit:N}` re-enters the SAME
+  `dispatch_*` funnel a fresh submit uses, so a replay picks up every current rule with no
+  replay-only code. The operation comes from the recorded **output prefix** (`kind` carries
+  the FLOW, so it cannot name the op); the flow from `kind`. A row whose sources were never
+  recorded is REFUSED with the reason, never approximated; originals stay in history. The UI
+  (`↻ Retry` per failed row, `↻ Retry failed` in Your work) sends **chunks of 3** — each
+  retry is a full dispatch, so one request for 17 never returns.
+- **Engine verdicts reach the worklog** (`_fold_engine`): an engine-failed/cancelled job
+  leaves no landed output, so `_finalize_landed` can never close it — without the fold it
+  read `queued` forever. `done` is still ONLY the integrity gate's verdict.
 - **Output integrity — done means 100% complete** (`studio_home.py`): `_intact()` reads
   the format's terminal marker (PNG IEND / JPEG EOI / RIFF size / a consistent MP4 box
   chain) — encoders write it LAST, so presence proves the write finished. In
