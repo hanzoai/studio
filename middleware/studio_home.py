@@ -2458,6 +2458,12 @@ def add_studio_home_routes(routes: web.RouteTableDef, server) -> None:
     from middleware.documents import add_documents_routes
     add_documents_routes(routes, server, org_of=_org_of, owner_of=_owner_of)
 
+    # Commerce ⇄ Studio — READ the product catalog / store / listing, and publish a
+    # render straight to the storefront listing karma.style serves. Same injected
+    # tenancy seam; the module owns the upstream shapes, this file owns nothing of them.
+    from middleware.commerce_catalog import add_commerce_routes
+    add_commerce_routes(routes, org_of=_org_of)
+
     @routes.get("/studio")
     async def studio_home(request: web.Request):
         # no-store: the home HTML changes every release; without this, browsers
