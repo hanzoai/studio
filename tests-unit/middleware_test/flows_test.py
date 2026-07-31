@@ -142,6 +142,53 @@ def test_hold_job_spools_and_cancels(tmp_path, monkeypatch):
     assert next(r for r in wl.load("acme") if r.get("id") == pid)["status"] == "cancelled"
 
 
+def test_one_unqueueable_held_job_never_strands_the_rest(tmp_path, monkeypatch):
+    """A single poisoned spool entry must not hold the queue hostage.
+
+    _retry_held used to `return` on ANY DispatchError, so the first un-requeueable job
+    blocked every other held job forever — observed in prod as the same 5 ids across
+    every queue read, none ever moving. A TRANSPORT error still stops the sweep (the
+    rest would fail identically); anything else fails that ONE job, with its reason.
+    """
+    import asyncio
+    import middleware.worklog as wl
+    monkeypatch.setattr(sh.folder_paths, "get_org_output_directory",
+                        lambda org: str(tmp_path / "orgs" / org / "output"))
+    monkeypatch.setattr(wl.folder_paths, "get_org_output_directory",
+                        lambda org: str(tmp_path / "orgs" / org / "output"))
+    common = dict(prompt="p", refs=[], uploads=[], parents=[], params={})
+    bad = sh._hold_job("acme", {"1": {"class_type": "SaveImage", "inputs": {}}},
+                       dict(kind="fix", output_prefix="fixes/bad", **common))
+    good = sh._hold_job("acme", {"2": {"class_type": "SaveImage", "inputs": {}}},
+                        dict(kind="fix", output_prefix="fixes/good", **common))
+    assert len(sh._list_held("acme")) == 2
+
+    order = sorted([bad, good])            # _list_held order decides who is "first"
+    async def fake_queue(request, server, graph):
+        # The FIRST entry is permanently un-requeueable; the second is fine.
+        if graph.get(list(graph)[0]) and order[0] == (bad if "1" in graph else good):
+            raise sh.DispatchError("unknown asset: gone.png")
+        return "new-pid"
+    monkeypatch.setattr(sh, "_queue_prompt", fake_queue)
+    monkeypatch.setattr(sh, "_in_render_jobs", lambda org, pid: False)
+
+    asyncio.run(sh._retry_held(None, None, "acme"))
+    # BOTH left the spool: one re-queued, one failed with its reason — neither stranded.
+    assert sh._list_held("acme") == []
+    rows = {r["id"]: r for r in wl.load("acme")}
+    assert rows[order[0]]["status"] == "failed"
+    assert "could not re-queue" in str(rows[order[0]].get("events") or rows[order[0]])
+
+    # A TRANSPORT failure still stops the sweep and KEEPS the spool (work is not lost).
+    held = sh._hold_job("acme", {"3": {"class_type": "SaveImage", "inputs": {}}},
+                        dict(kind="fix", output_prefix="fixes/t", **common))
+    async def down(request, server, graph):
+        raise sh.DispatchError("GPU render worker is momentarily unavailable — please retry.")
+    monkeypatch.setattr(sh, "_queue_prompt", down)
+    asyncio.run(sh._retry_held(None, None, "acme"))
+    assert [r["id"] for r in sh._list_held("acme")] == [held]
+
+
 def test_holdable_matches_transport_errors_only():
     holdable = ["GPU render worker is momentarily unavailable — please retry.",
                 "render could not be queued — no GPU worker online for this org",

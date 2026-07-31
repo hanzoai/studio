@@ -1498,8 +1498,20 @@ async def _retry_held(request, server, org: str) -> None:
                   ("kind", "prompt", "refs", "uploads", "parents", "output_prefix", "params")}
         try:
             pid = await _queue_prompt(request, server, graph)
-        except DispatchError:
-            return                      # fabric still unreachable — keep the spool
+        except DispatchError as e:
+            # Distinguish "the fabric is down" from "THIS job cannot be re-queued".
+            # Returning on any error let ONE un-requeueable entry strand every other
+            # held job forever (observed: the same 5 ids across every queue read, none
+            # ever moving). A transport failure still stops the sweep — the rest would
+            # fail identically and re-holding them churns. Anything else is this job's
+            # own problem: fail it with the reason (never silently) and keep going, so
+            # a single poisoned entry can't hold the queue hostage.
+            if any(s in str(e).lower() for s in _HOLDABLE):
+                return
+            (_held_dir(org) / f"{held_pid}.json").unlink(missing_ok=True)
+            worklog.set_status(org, held_pid, "failed", note=f"could not re-queue: {e}")
+            _trace("dispatch.held_unqueueable", org=org, held=held_pid, err=str(e)[:120])
+            continue
         (_held_dir(org) / f"{held_pid}.json").unlink(missing_ok=True)
         worklog.remove(org, held_pid)
         lane = "gpu" if _in_render_jobs(org, pid) else "local"
