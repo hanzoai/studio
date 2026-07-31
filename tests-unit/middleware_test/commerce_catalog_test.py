@@ -22,6 +22,9 @@ def _run(coro):
 
 def _studio(monkeypatch, upstream_base, org="acme"):
     monkeypatch.setattr(cc, "CLOUD_URL", upstream_base.rstrip("/"))
+    # The stub upstream doubles as the public asset surface, so the anonymous
+    # readability check the publish path runs is exercised on the real wire too.
+    monkeypatch.setattr(cc, "ASSET_BASE", upstream_base.rstrip("/"))
     app = web.Application()
     routes = web.RouteTableDef()
     cc.add_commerce_routes(routes, org_of=lambda r: org)
@@ -34,6 +37,11 @@ async def _upstream(handlers):
     routes = web.RouteTableDef()
     for (method, path), fn in handlers.items():
         routes.route(method, path)(fn)
+    if not any(m == "HEAD" for (m, _) in handlers):
+        # Default: the asset IS publicly readable.
+        async def asset(r):
+            return web.Response()
+        routes.route("HEAD", "/orgs/{rest:.*}")(asset)
     app.add_routes(routes)
     server = TestServer(app)
     await server.start_server()
@@ -45,10 +53,140 @@ async def _upstream(handlers):
 def test_asset_url_uses_the_one_key_convention(monkeypatch):
     """Byte-identical to content_publish.object_key (orgs/<org>/output/<rel>) — the
     listing, the CMS record and the mirrored bytes must never disagree."""
-    monkeypatch.setattr(cc, "ASSET_BASE", "https://s3.hanzo.ai/hanzo-studio")
+    monkeypatch.setattr(cc, "ASSET_BASE", "https://assets.hanzo.ai")
     assert cc.asset_url("acme", "fixes/a_00001_.png") == \
-        "https://s3.hanzo.ai/hanzo-studio/orgs/acme/output/fixes/a_00001_.png"
+        "https://assets.hanzo.ai/orgs/acme/output/fixes/a_00001_.png"
     assert "//orgs" not in cc.asset_url("acme", "/leading.png")
+
+
+def test_default_asset_base_is_a_public_surface_never_the_credentialed_s3_api(monkeypatch):
+    """s3.hanzo.ai is the CREDENTIALED S3 API: it declares one admin identity and no
+    anonymous one, so every unauthenticated GET is 403 — verified in prod against a real
+    render. A listing built on that base can never render, so it must not be the default.
+    The public read surface is hanzoai/static in front of the same bucket, which keeps the
+    key convention byte-identical (URL path == bucket key)."""
+    import importlib
+    monkeypatch.delenv("STUDIO_ASSET_BASE_URL", raising=False)
+    importlib.reload(cc)
+    try:
+        assert cc.ASSET_BASE == "https://assets.hanzo.ai"
+        assert "s3.hanzo.ai" not in cc.ASSET_BASE
+        assert cc.asset_url("acme", "v/a.png") == "https://assets.hanzo.ai/orgs/acme/output/v/a.png"
+        monkeypatch.setenv("STUDIO_ASSET_BASE_URL", "https://cdn.example/studio/")
+        importlib.reload(cc)
+        assert cc.ASSET_BASE == "https://cdn.example/studio"        # trailing / stripped
+    finally:
+        monkeypatch.delenv("STUDIO_ASSET_BASE_URL", raising=False)
+        importlib.reload(cc)
+
+
+# --- the URL must actually RESOLVE, anonymously -------------------------------
+
+def test_publish_refuses_an_asset_that_is_not_publicly_readable(monkeypatch):
+    """headerImage.url is PERSISTED and then read by an anonymous browser forever after.
+    An unreadable one is a permanent silent breakage, so it is refused — with the observed
+    status and the fix — and NO listing is written."""
+    wrote = {}
+
+    async def asset(r):
+        return web.Response(status=403)
+
+    async def store(r):
+        return web.json_response({"store": {"id": "STORE123"}})
+
+    async def listing(r):
+        wrote["hit"] = True
+        return web.json_response({"ok": True})
+
+    async def go():
+        up = await _upstream({("HEAD", "/orgs/{rest:.*}"): asset,
+                              ("GET", "/v1/store/current"): store,
+                              ("PUT", "/v1/store/{sid}/listing/{slug}"): listing})
+        base = f"http://127.0.0.1:{up.port}"
+        async with TestClient(TestServer(_studio(monkeypatch, base))) as c:
+            r = await c.post("/v1/commerce/publish", json={"path": "valentina/hero.png"})
+            out = await r.json()
+            await up.close()
+            return r.status, out
+    status, out = _run(go())
+    assert status == 409
+    assert "ok" not in out and "hit" not in wrote      # never written, never a false success
+    assert "not publicly readable" in out["error"]
+    assert "403" in out["error"] and out["asset_status"] == 403
+    assert "STUDIO_ASSET_BASE_URL" in out["error"]     # …and how to fix it
+    assert "s3.hanzo.ai" in out["error"]               # …and the trap that caused it
+
+
+def test_publish_says_retry_when_the_mirror_has_not_landed_the_render_yet(monkeypatch):
+    """The output mirror is a ~30s poll loop, so a just-finished render is briefly absent.
+    That is a different problem from an unreadable surface and gets a different answer."""
+    async def asset(r):
+        return web.Response(status=404)
+
+    async def store(r):
+        return web.json_response({"store": {"id": "S1"}})
+
+    async def go():
+        up = await _upstream({("HEAD", "/orgs/{rest:.*}"): asset,
+                              ("GET", "/v1/store/current"): store})
+        base = f"http://127.0.0.1:{up.port}"
+        async with TestClient(TestServer(_studio(monkeypatch, base))) as c:
+            r = await c.post("/v1/commerce/publish", json={"path": "v/a.png"})
+            out = await r.json()
+            await up.close()
+            return r.status, out
+    status, out = _run(go())
+    assert status == 409 and out["asset_status"] == 404
+    assert "publish again in a moment" in out["error"]
+    assert "STUDIO_ASSET_BASE_URL" not in out["error"]   # not the same failure, not the same fix
+
+
+def test_the_readability_check_carries_no_credential(monkeypatch):
+    """A credentialed read proves nothing about what a customer's browser sees, so the
+    check must be anonymous even when a store token is configured."""
+    seen = {}
+
+    async def asset(r):
+        seen["auth"] = r.headers.get("Authorization")
+        return web.Response()
+
+    async def store(r):
+        return web.json_response({"store": {"id": "S1"}})
+
+    async def listing(r):
+        return web.json_response({"ok": True})
+
+    async def go():
+        up = await _upstream({("HEAD", "/orgs/{rest:.*}"): asset,
+                              ("GET", "/v1/store/current"): store,
+                              ("PUT", "/v1/store/{sid}/listing/{slug}"): listing})
+        base = f"http://127.0.0.1:{up.port}"
+        async with TestClient(TestServer(_studio(monkeypatch, base))) as c:
+            r = await c.post("/v1/commerce/publish", json={"path": "v/a.png"})
+            await up.close()
+            return r.status
+    monkeypatch.setenv("STUDIO_STORE_TOKEN", "st-live-abc")
+    assert _run(go()) == 200
+    assert seen["auth"] is None
+
+
+def test_an_unreachable_asset_surface_is_refused_not_published(monkeypatch):
+    async def store(r):
+        return web.json_response({"store": {"id": "S1"}})
+
+    async def go():
+        up = await _upstream({("GET", "/v1/store/current"): store})
+        base = f"http://127.0.0.1:{up.port}"
+        app = _studio(monkeypatch, base)
+        monkeypatch.setattr(cc, "ASSET_BASE", "http://127.0.0.1:9")   # nothing listening
+        async with TestClient(TestServer(app)) as c:
+            r = await c.post("/v1/commerce/publish", json={"path": "v/a.png"})
+            out = await r.json()
+            await up.close()
+            return r.status, out
+    status, out = _run(go())
+    assert status == 409 and out["asset_status"] == 0
+    assert "could not be reached" in out["error"]
 
 
 # --- read: catalog / store ----------------------------------------------------
