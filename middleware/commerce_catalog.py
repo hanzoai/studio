@@ -98,8 +98,17 @@ def _why_not_public(code: int, reason: str) -> str:
                 "front of the hanzo-studio bucket); s3.hanzo.ai is the credentialed S3 "
                 "API and denies every anonymous read")
     if code == 404:
-        return (f"not there yet ({code}) — the output mirror copies a new render up "
-                "every ~30s; publish again in a moment")
+        # A 404 has TWO causes that need opposite actions, and telling them apart is the
+        # difference between "wait 30s" and "wire a host". If the base itself does not
+        # serve (its root 404s too), no render will EVER appear there and "retry in a
+        # moment" would loop forever — verified: assets.hanzo.ai currently has no
+        # ingress and no static deploy, so it 404s every key including the root.
+        return (f"not found ({code}) — either the output mirror has not copied this "
+                f"render up yet (it polls every ~30s; publish again in a moment), or "
+                f"{ASSET_BASE} does not serve this bucket at all. Check the base "
+                f"itself: if {ASSET_BASE}/ also 404s, no asset will ever resolve there "
+                "— point STUDIO_ASSET_BASE_URL at a public read surface for the "
+                "hanzo-studio bucket (hanzoai/static + an ingress route)")
     if code == 0:
         return f"could not be reached: {reason}"
     return f"answered {code} {reason}"

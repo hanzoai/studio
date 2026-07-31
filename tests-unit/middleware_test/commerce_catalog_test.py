@@ -138,7 +138,13 @@ def test_publish_says_retry_when_the_mirror_has_not_landed_the_render_yet(monkey
     status, out = _run(go())
     assert status == 409 and out["asset_status"] == 404
     assert "publish again in a moment" in out["error"]
-    assert "STUDIO_ASSET_BASE_URL" not in out["error"]   # not the same failure, not the same fix
+    # A 404 has TWO causes needing OPPOSITE actions: mirror lag (wait) vs a base that
+    # serves nothing (wire a host). Naming only the first would loop a user forever
+    # against an unwired host — verified in prod: assets.hanzo.ai has no ingress and
+    # 404s every key including its root. So the message must name both and say how to
+    # tell them apart.
+    assert "does not serve this bucket" in out["error"]
+    assert "also 404s" in out["error"]                    # the discriminator
 
 
 def test_the_readability_check_carries_no_credential(monkeypatch):
