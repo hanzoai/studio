@@ -133,7 +133,7 @@ def test_publish_relays_a_scope_refusal_verbatim_and_never_claims_success(monkey
     assert status == 403
     assert "ok" not in out                                   # never a false success
     assert "Token doesn't support this scope" in out["error"]  # upstream's words, verbatim
-    assert "STUDIO_COMMERCE_TOKEN" in out["error"]             # …and how to fix it
+    assert "STUDIO_STORE_TOKEN" in out["error"]                # …and how to fix it
 
 
 def test_publish_requires_a_path_and_a_derivable_slug(monkeypatch):
@@ -152,6 +152,24 @@ def test_publish_requires_a_path_and_a_derivable_slug(monkeypatch):
     st, body = _run(go())
     assert st == 400                                   # no path
     assert "slug is required" in body["error"]         # not inside a design folder
+
+
+def test_store_token_is_its_own_variable_never_the_billing_one(monkeypatch):
+    """One credential, one purpose. STUDIO_COMMERCE_TOKEN is the BILLING token and is a
+    DIFFERENT token with different scope (verified in prod: different hashes, and the
+    billing one is refused by the store). Reusing it here would repeat the overload that
+    took chat down."""
+    import inspect
+    src = inspect.getsource(cc)
+    assert "STUDIO_STORE_TOKEN" in src
+    assert "os.environ.get(\"STUDIO_COMMERCE_TOKEN\")" not in src, \
+        "the billing credential must never be used as the store credential"
+
+    monkeypatch.setenv("STUDIO_STORE_TOKEN", "st-live-abc")
+    monkeypatch.delenv("STUDIO_COMMERCE_TOKEN", raising=False)
+    assert cc._bearer(None) == "Bearer st-live-abc"
+    monkeypatch.setenv("STUDIO_STORE_TOKEN", "Bearer st-already")
+    assert cc._bearer(None) == "Bearer st-already"      # already-prefixed kept as-is
 
 
 def test_unreachable_commerce_is_a_legible_503(monkeypatch):

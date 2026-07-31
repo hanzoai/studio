@@ -31,7 +31,12 @@ Env:
     STUDIO_CLOUD_API_URL   cloud base (default https://api.hanzo.ai)
     STUDIO_ASSET_BASE_URL  public base for rendered assets (default the S3 bucket the
                            output mirror writes: https://s3.hanzo.ai/hanzo-studio)
-    STUDIO_COMMERCE_TOKEN  optional store-scoped service token for the listing write
+    STUDIO_STORE_TOKEN     store-scoped service token for the listing write. Its OWN
+                           variable on purpose: STUDIO_COMMERCE_TOKEN is the BILLING
+                           credential and is a different token with different scope
+                           (verified in prod — they hash differently and the billing one
+                           is refused by the store). One credential, one purpose; the
+                           chat outage came from exactly this kind of overload.
 """
 from __future__ import annotations
 
@@ -47,9 +52,9 @@ _TIMEOUT = aiohttp.ClientTimeout(total=20)
 
 # The write needs a store-scoped credential. A user bearer usually has none, and the
 # upstream says exactly that — which we relay rather than swallow.
-_SCOPE_REMEDY = (" — this token has no store scope. Set STUDIO_COMMERCE_TOKEN to the "
+_SCOPE_REMEDY = (" — this token has no store scope. Set STUDIO_STORE_TOKEN to the "
                  "store-scoped service token (the same credential cloud's publish edge "
-                 "uses), or publish through the CMS lane.")
+                 "uses: cloud-api-secrets/commerceToken), or publish through the CMS lane.")
 
 
 def asset_url(org: str, rel: str) -> str:
@@ -62,7 +67,7 @@ def asset_url(org: str, rel: str) -> str:
 def _bearer(request) -> str:
     """The caller's own credential, or the configured store token when present. Returns a
     full ``Bearer <tok>`` value, or "" when the caller is anonymous."""
-    server = (os.environ.get("STUDIO_COMMERCE_TOKEN") or "").strip()
+    server = (os.environ.get("STUDIO_STORE_TOKEN") or "").strip()
     if server:
         return server if server[:7].lower() == "bearer " else "Bearer " + server
     from middleware.gpu_dispatch import _bearer as caller_bearer
