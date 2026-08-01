@@ -560,3 +560,38 @@ def test_the_held_sweep_is_bounded_so_it_cannot_stall_the_server(tmp_path, monke
     assert len(attempts) <= sh._HOLD_TRIES, (
         f"one read attempted {len(attempts)} enqueues; each is a blocking upload")
     assert len(sh._list_held("acme")) == 10, "nothing was lost — they stay held"
+
+
+def test_an_unsendable_source_is_refused_up_front_not_retried(tmp_path, monkeypatch):
+    """A job whose source is too big to send is FAILED with its reason, never retried.
+
+    The enqueue inlines staged inputs and is a synchronous urlopen on the event loop,
+    so a doomed attempt ships megabytes and blocks every other request in the process.
+    Two per queue read starved the readiness probe and took studio off the ingress.
+    The size is a filesystem question, so it is asked BEFORE any upload — and asking
+    it also ends the two-day hold, because "too large" is permanent and wearing
+    transport words was what made it look temporary.
+    """
+    import asyncio
+    import middleware.worklog as wl
+    monkeypatch.setattr(sh.folder_paths, "get_org_output_directory",
+                        lambda org: str(tmp_path / "orgs" / org / "output"))
+    monkeypatch.setattr(wl.folder_paths, "get_org_output_directory",
+                        lambda org: str(tmp_path / "orgs" / org / "output"))
+    common = dict(prompt="p", refs=[], uploads=[], parents=[], params={})
+    big = sh._hold_job("acme", {"1": {"class_type": "LoadImage", "inputs": {"image": "huge.png"}}},
+                       dict(kind="fix", output_prefix="fixes/big", **common))
+
+    monkeypatch.setattr(sh, "_oversized_inputs", lambda graph, org: 19 * 1024 * 1024)
+    attempted = []
+    async def must_not_run(request, server, graph):
+        attempted.append(1)
+        raise AssertionError("an unsendable job was uploaded anyway")
+    monkeypatch.setattr(sh, "_queue_prompt", must_not_run)
+
+    asyncio.run(sh._retry_held(None, None, "acme"))
+    assert not attempted, "the upload was attempted despite a known-unsendable source"
+    assert sh._list_held("acme") == [], "it must leave the spool instead of holding forever"
+    row = next(r for r in wl.load("acme") if r.get("id") == big)
+    assert row["status"] == "failed"
+    assert "19MB" in str(row) and "too large" in str(row), row

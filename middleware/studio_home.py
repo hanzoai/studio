@@ -1499,6 +1499,32 @@ _HOLDABLE = ("momentarily unavailable", "no gpu worker online",
 _HOLD_TRIES = 2
 
 
+def _oversized_inputs(graph: dict, org: str) -> int:
+    """Bytes of this graph's staged inputs when they exceed what the render fabric
+    will accept, else 0. Delegates to gpu_dispatch, which owns the limit and measured
+    it; imported lazily so this module stays importable without the dispatch stack."""
+    try:
+        try:
+            from middleware.gpu_dispatch import oversized_inputs
+        except ImportError:
+            from .gpu_dispatch import oversized_inputs
+        return oversized_inputs(graph, org)
+    except Exception:
+        return 0
+
+
+def sh_max_inline_mb() -> int:
+    """The fabric's input-size limit in MB, for the message a refused job carries."""
+    try:
+        try:
+            from middleware.gpu_dispatch import _MAX_INLINE_BYTES
+        except ImportError:
+            from .gpu_dispatch import _MAX_INLINE_BYTES
+        return int(_MAX_INLINE_BYTES / (1024 * 1024))
+    except Exception:
+        return 4
+
+
 def _held_dir(org: str) -> Path:
     """orgs/<org>/held — the spool of jobs the render fabric could not be reached
     for. Same per-org tree as templates/worklog, so tenancy is structural."""
@@ -1548,6 +1574,21 @@ async def _retry_held(request, server, org: str) -> None:
         graph, held_pid = rec.get("graph") or {}, rec.get("id", "")
         common = {k: rec.get(k) for k in
                   ("kind", "prompt", "refs", "uploads", "parents", "output_prefix", "params")}
+        # Refuse what cannot be enqueued BEFORE trying it. The enqueue inlines the
+        # staged inputs and is a synchronous urlopen on the event loop, so a doomed
+        # attempt ships megabytes and blocks every other request in this process until
+        # the far end gives up — enough of them starved the readiness probe and took
+        # studio off the ingress. The size is a filesystem question, so ask it.
+        over = _oversized_inputs(graph, org)
+        if over:
+            (_held_dir(org) / f"{held_pid}.json").unlink(missing_ok=True)
+            mb = over / (1024 * 1024)
+            worklog.set_status(org, held_pid, "failed", note=(
+                f"source is {mb:.0f}MB — too large to send to a GPU worker "
+                f"(the limit is {sh_max_inline_mb()}MB). Re-run it from a smaller "
+                "version of the source."))
+            _trace("dispatch.held_oversized", org=org, held=held_pid, bytes=over)
+            continue
         try:
             pid = await _queue_prompt(request, server, graph)
         except DispatchError as e:

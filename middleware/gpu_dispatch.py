@@ -34,8 +34,54 @@ STUDIO_PUBLIC_URL = os.environ.get("STUDIO_PUBLIC_URL", "https://studio.hanzo.ai
 # render runs on the worker's LOCAL disk, so any file a user UPLOADED here (it lands
 # in orgs/{org}/input, which the worker cannot read) must travel WITH the job.
 _IMAGE_INPUT_CLASSES = ("LoadImage", "LoadImageMask", "LoadImageOutput")
-# Cap the inlined payload so a pathological graph can't blow the tasks-API body.
-_MAX_INLINE_BYTES = 48 * 1024 * 1024
+# Cap the inlined payload so a graph can't blow the tasks-API body. MEASURED, not
+# guessed: POST /v1/tasks/namespaces/gpu-jobs/activities takes a 1MB body and answers
+# 400 "Error when parsing request" at 8MB and above. Base64 costs 4/3, and the graph
+# JSON rides along, so the raw-bytes budget is 4MB.
+#
+# It was 48MB — six times what the API accepts — so an oversized source was never
+# skipped and the enqueue was attempted and refused every time. A 4K PNG (19MB → 25MB
+# encoded) could therefore never dispatch, and because the refusal was reported as
+# "GPU render worker is momentarily unavailable" the job spooled to wait for a fleet
+# that was never the problem. Ten of one org's renders sat that way for two days.
+#
+# Over the cap the file is SKIPPED, exactly as before. That is not a fix for the 4K
+# case — the worker cannot render what it was not sent — it only makes the failure
+# land quickly and honestly instead of stalling the queue. The fix is for the worker
+# to FETCH its inputs (the job body already carries STUDIO_PUBLIC_URL), and until
+# that exists, oversized_inputs() below refuses such a job up front with its real
+# reason rather than letting it wear transport words forever.
+_MAX_INLINE_BYTES = 4 * 1024 * 1024
+
+
+def oversized_inputs(prompt: dict, org_id: str) -> int:
+    """Total bytes of this graph's staged inputs when they exceed what the tasks API
+    will accept, else 0 — computed from file SIZES, never by attempting the upload.
+
+    The enqueue is a synchronous urlopen on the event loop, so "try it and see" is not
+    free: each doomed attempt ships megabytes and blocks every other request in the
+    process until the far end gives up. Two of them per queue read was enough to starve
+    the readiness probe and take studio off the ingress. Asking the filesystem costs
+    nothing and answers the same question.
+    """
+    in_dir = folder_paths.get_org_input_directory(org_id)
+    seen: set[str] = set()
+    total = 0
+    for node in prompt.values():
+        if not isinstance(node, dict) or node.get("class_type") not in _IMAGE_INPUT_CLASSES:
+            continue
+        name = (node.get("inputs") or {}).get("image")
+        if not isinstance(name, str) or name in seen:
+            continue
+        seen.add(name)
+        rel = os.path.normpath(name)
+        if rel.startswith("..") or os.path.isabs(rel):
+            continue
+        try:
+            total += os.path.getsize(os.path.join(in_dir, rel))
+        except OSError:
+            continue
+    return total if total > _MAX_INLINE_BYTES else 0
 
 
 def _collect_input_images(prompt: dict, org_id: str) -> list[dict]:
