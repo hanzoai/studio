@@ -190,10 +190,18 @@ def test_one_unqueueable_held_job_never_strands_the_rest(tmp_path, monkeypatch):
 
 
 def test_holdable_matches_transport_errors_only():
+    # "was not queued" was here and is NOT transport: the engine returns it for a graph
+    # it REFUSED (missing model, stale staged input), which repeats forever. Since
+    # _retry_held stops the sweep on a holdable error, one such job pinned the whole
+    # spool — ten jobs sat unmoved for hours while fresh dispatches succeeded beside
+    # them. A job the engine will never accept must FAIL with its reason.
+    assert not any(s in "render was not queued (no prompt_id returned)".lower()
+                   for s in sh._HOLDABLE), "a refusal must not be held as transport"
     holdable = ["GPU render worker is momentarily unavailable — please retry.",
                 "render could not be queued — no GPU worker online for this org",
                 "could not reach the render engine (boom)",
-                "render was not queued (no prompt_id returned)"]
+                "commerce: no available server",
+                "dial unix /var/lib/cloud/run/commerce.sock: connection refused"]
     for msg in holdable:
         assert any(s in msg.lower() for s in sh._HOLDABLE), msg
     for msg in ["instruction required (3-500 chars)", "unknown asset: x.png",

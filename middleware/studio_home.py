@@ -1444,8 +1444,20 @@ def _recent_dispatch(key: str) -> str | None:
     return hit[1] if hit and hit[1] and now - hit[0] < _DEDUP_WINDOW_S else None
 
 
+# TRANSPORT failures only — the fabric was unreachable, so the SAME job will succeed
+# unchanged once it is reachable. That is the whole premise of holding: retry the
+# identical graph later.
+#
+# "was not queued" was in this list and is NOT a transport failure. The engine returns
+# it for a graph it REFUSED (a missing model, a stale staged input) — a refusal that
+# will repeat forever. Because _retry_held stops the sweep on a holdable error, one such
+# job pinned the entire spool: observed in prod as ten jobs that never moved across
+# hours of healthy fabric, while fresh dispatches went through beside them. A job the
+# engine will never accept must FAIL with its reason, not wait for a condition that has
+# already been met.
 _HOLDABLE = ("momentarily unavailable", "no gpu worker online",
-             "could not reach the render engine", "was not queued")
+             "could not reach the render engine", "no available server",
+             "connection refused", "timed out")
 
 
 def _held_dir(org: str) -> Path:
