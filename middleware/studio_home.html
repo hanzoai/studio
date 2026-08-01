@@ -1168,7 +1168,7 @@ function pickTemplate(k,t){KIND=k;$('tmpl').textContent=t; tab('assets'); $('pin
 function clearLane(){KIND='';$('tmpl').textContent='None';}
 // ── Composer pill dropdowns — ONE popover, four REAL sources ───────────────────
 // Design system (the org's designs) · Template (the KIND catalog) · </> (request
-// preview) · Model (real models from api.hanzo.ai/v1/models). Monochrome; closes
+// preview) · Model (real models from catalog.hanzo.ai/v1/models). Monochrome; closes
 // on outside-click / Esc; keyboard-selectable. No bespoke per-pill menu code.
 let _pop=null;
 function closeMenu(){ if(!_pop)return; try{_pop.anchor.classList.remove('on');}catch(_){}
@@ -1249,7 +1249,12 @@ function modelLabel(id){ return _MLABEL[id]||String(id).replace(/[-_]/g,' ').rep
 async function loadModels(){
   if(MODELS)return MODELS;
   let ids=new Set();
-  try{ const r=await fetch('https://api.hanzo.ai/v1/models',{headers:{Accept:'application/json'}}); // public list, no creds
+  // catalog.hanzo.ai, not api.hanzo.ai: this runs before sign-in and sends no
+  // credentials. api.hanzo.ai/v1/models is the authenticated model list and
+  // answers 401 without a bearer — it only read as public while the ingress
+  // carved /v1/models* to the catalog worker, and that carve is gone. The
+  // catalog host is the tokenless door and serves the same {data:[{id}]} shape.
+  try{ const r=await fetch('https://catalog.hanzo.ai/v1/models',{headers:{Accept:'application/json'}});
     const j=await r.json(); (Array.isArray(j)?j:j.data||[]).forEach(m=>{const id=m&&(m.id||m);if(id)ids.add(id);}); }catch(_){}
   MODELS=MODEL_SETS.map(s=>({label:s.label,items:s.ids.filter(id=>!ids.size||ids.has(id)||_CORE_MODELS.has(id)).map(id=>({v:id,t:modelLabel(id),d:_MDESC[id]||''}))})).filter(g=>g.items.length);
   if(!MODELS.length)MODELS=[{label:'Image',items:[{v:'zen-image',t:'Zen Image',d:_MDESC['zen-image']}]}]; // fail-safe: ALWAYS offer image create
