@@ -956,11 +956,23 @@ def _model3d_graph(ref_name: str, prefix: str, *, seed: int | None = None) -> di
 
 
 def _compose_graph(ref_names: list[str], instruction: str, prefix: str,
-                   lessons: list[str] | None = None, flow: dict | None = None) -> dict:
+                   lessons: list[str] | None = None, flow: dict | None = None,
+                   base: str | None = None, denoise: float | None = None) -> dict:
     """Multi-reference compose: several chosen assets become the references and the
     user's words say HOW to combine them into a new output. Same proven Qwen
     reference-conditioned wiring as _fix_graph (TextEncodeQwenImageEditPlus takes
-    image1..imageN), so no new pipeline — the multi-input case of the good graph."""
+    image1..imageN), so no new pipeline — the multi-input case of the good graph.
+
+    ``base`` names the reference that is the SUBJECT rather than a source. Without it
+    the sampler starts from an EMPTY latent at denoise 1.0 — it SYNTHESISES a new image
+    guided by every reference equally, which is right for "combine these" and wrong for
+    "put the garment from A onto the scene in B": that returned a ghosted double
+    exposure of both photographs, because nothing told it which one it was making.
+    With a base, that image is VAEEncode'd as the starting latent exactly as an edit is,
+    so its pose, framing and composition SURVIVE and the others act only as references.
+    ``denoise`` then means what it does everywhere else — how far the base may travel
+    (a painting→photograph conversion needs the high band; a garment swap does not).
+    """
     shape = (flow or {}).get("frame") or "Photorealistic, coherent single result."
     prompt = (f"{instruction.strip()}. Combine the provided reference images as "
               f"described. {shape}")
@@ -985,11 +997,20 @@ def _compose_graph(ref_names: list[str], instruction: str, prefix: str,
     # Qwen's native multi-reference conditioning (image1..imageN on node 6) — NO
     # FluxKontextMultiReferenceLatentMethod: the same Flux-Kontext override that
     # stippled the single-image fix has no place on Qwen conditioning here either.
-    g["10"] = {"class_type": "EmptySD3LatentImage", "inputs": {"width": 1024, "height": 1536, "batch_size": 1}}
+    if base:
+        # The base IS the subject: encode it as the starting latent (same wiring as an
+        # edit) so its pose and framing survive instead of being averaged away.
+        g["8"] = {"class_type": "LoadImage", "inputs": {"image": base}}
+        g["9"] = {"class_type": "FluxKontextImageScale", "inputs": {"image": ["8", 0]}}
+        g["10"] = {"class_type": "VAEEncode", "inputs": {"pixels": ["9", 0], "vae": ["5", 0]}}
+        pos_inputs["image1"] = ["9", 0]   # and it leads the conditioning
+    else:
+        g["10"] = {"class_type": "EmptySD3LatentImage", "inputs": {"width": 1024, "height": 1536, "batch_size": 1}}
     g["11"] = {"class_type": "ModelSamplingAuraFlow", "inputs": {"model": ["4", 0], "shift": 3.1}}
     g["12"] = {"class_type": "CFGNorm", "inputs": {"model": ["11", 0], "strength": 1.0}}
     g["13"] = {"class_type": "KSampler", "inputs": {"model": ["12", 0], "positive": ["6", 0], "negative": ["7", 0], "latent_image": ["10", 0],
-               "seed": random.randrange(2**31), "steps": 30, "cfg": 4.0, "sampler_name": "euler", "scheduler": "simple", "denoise": 1.0}}
+               "seed": random.randrange(2**31), "steps": 30, "cfg": 4.0, "sampler_name": "euler", "scheduler": "simple",
+               "denoise": (1.0 if not base else _edit_denoise(denoise, default=(flow or {}).get("denoise", CONVERSION_DENOISE)))}}
     g["14"] = {"class_type": "VAEDecode", "inputs": {"samples": ["13", 0], "vae": ["5", 0]}}
     g["15"] = {"class_type": "SaveImage", "inputs": {"images": ["14", 0], "filename_prefix": prefix}}
     return g
@@ -1804,7 +1825,8 @@ async def dispatch_model3d(request: web.Request, server, org: str,
 
 async def dispatch_compose(request: web.Request, server, org: str, paths: list,
                            instruction: str, uploads: list | None = None,
-                           stack: str | None = None, flow_kind: str | None = None) -> dict:
+                           stack: str | None = None, flow_kind: str | None = None,
+                           base: str | None = None, strength=None) -> dict:
     """Stage 2-5 references and run the multi-input Qwen graph. References are
     library assets (``paths``, staged into the org input dir) and/or images the
     caller just uploaded via ``/upload/image`` (``uploads``, already resident in
@@ -1832,8 +1854,18 @@ async def dispatch_compose(request: web.Request, server, org: str, paths: list,
     stem = "compose_" + "_".join(re.sub(r"[^a-zA-Z0-9]", "", s)[:12] for s in labels[:2]) + f"_{_job_tag()}"
     lessons = _lessons(org, root, list(paths))
     flow = _flow_of(flow_kind)
+    # `base` names which of the chosen assets is the SUBJECT (the one being changed);
+    # the rest stay references. Matched against the caller's own paths so it can only
+    # ever be one of them, then mapped to the staged name the graph loads.
+    base_name = None
+    if base:
+        base = str(base).strip().lstrip("/")
+        if base not in paths:
+            raise DispatchError(f"base must be one of the chosen references: {base}")
+        base_name = ref_names[paths.index(base)]
     pid = await _dispatch(request, server, org,
-                          _compose_graph(ref_names, instruction, f"composes/{stem}", lessons=lessons, flow=flow),
+                          _compose_graph(ref_names, instruction, f"composes/{stem}", lessons=lessons, flow=flow,
+                                         base=base_name, denoise=strength),
                           lessons=lessons, kind=(flow_kind if flow else "compose"), prompt=instruction, refs=ref_names,
                           uploads=uploaded, parents=list(paths), output_prefix=f"composes/{stem}")
     if stack:
@@ -3398,7 +3430,8 @@ def add_studio_home_routes(routes: web.RouteTableDef, server) -> None:
             return web.json_response(await dispatch_compose(
                 request, server, _org_of(request), body.get("paths") or [],
                 body.get("instruction", ""), body.get("uploads"), body.get("stack"),
-                flow_kind=body.get("kind")))
+                flow_kind=body.get("kind"), base=body.get("base"),
+                strength=body.get("strength")))
         except DispatchError as e:
             return web.json_response({"error": str(e)}, status=400)
 

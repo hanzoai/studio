@@ -438,3 +438,33 @@ def test_index_upload_refuses_truncated_file(tmp_path, monkeypatch):
     (root / "up" / "ok.png").write_bytes(_PNG_OK)
     assert sh._index_upload("acme", root, "up/ok.png",
                             design=None, kind="render", role=None, node="upload") is True
+
+
+def test_compose_with_a_base_edits_it_instead_of_synthesising_a_blend():
+    """"Put the garment from A onto the scene in B" is an EDIT of B, not a blend.
+
+    Without a base the sampler starts from an EMPTY latent at denoise 1.0 — it
+    synthesises a new image guided by every reference equally — and the real result was
+    a ghosted double exposure of both photographs, because nothing said which one was
+    being made. With a base, that image is the starting latent, so its pose and framing
+    survive and the others are only references.
+    """
+    refs = ["scene.png", "outfit.png"]
+    blend = sh._compose_graph(refs, "combine them", "composes/x")
+    assert blend["10"]["class_type"] == "EmptySD3LatentImage"
+    assert blend["13"]["inputs"]["denoise"] == 1.0          # synthesis, unchanged
+
+    onto = sh._compose_graph(refs, "dress her in the two-piece", "composes/y",
+                             base="scene.png", flow=sh.FLOWS["cad_mockup"])
+    # The base is ENCODED as the latent — the same wiring an edit uses.
+    assert onto["10"]["class_type"] == "VAEEncode"
+    assert onto[onto["13"]["inputs"]["latent_image"][0]]["class_type"] == "VAEEncode"
+    assert not any(n.get("class_type", "").startswith("Empty") for n in onto.values())
+    # …and it leads the conditioning, with the other reference still present.
+    pos = next(n for n in onto.values() if n.get("class_type") == "TextEncodeQwenImageEditPlus")
+    assert pos["inputs"]["image1"] == ["9", 0]
+    assert "image2" in pos["inputs"]
+    # A painting→photograph conversion travels far; an explicit strength still wins.
+    assert onto["13"]["inputs"]["denoise"] == sh.FLOWS["cad_mockup"]["denoise"]
+    exact = sh._compose_graph(refs, "swap the top", "composes/z", base="scene.png", denoise=0.4)
+    assert exact["13"]["inputs"]["denoise"] == 0.4
