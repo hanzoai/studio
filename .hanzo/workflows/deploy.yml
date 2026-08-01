@@ -176,12 +176,27 @@ jobs:
           for attempt in 1 2 3 4 5; do
             /tmp/universe/charts/app/pin.sh studio "$VERSION"
 
-            if git -C /tmp/universe push --quiet origin HEAD:main 2>/dev/null; then
+            if err=$(git -C /tmp/universe push --quiet origin HEAD:main 2>&1); then
               echo "pinned studio to v${VERSION}"; exit 0
             fi
 
-            echo "universe moved under us (attempt ${attempt}/5) — re-applying on the new tip"
-            git -C /tmp/universe fetch --quiet --depth 1 origin main
-            git -C /tmp/universe reset --hard --quiet FETCH_HEAD
+            # Only a non-fast-forward is a race. Anything else — a bad or
+            # under-scoped PIN_TOKEN, a protected branch, a read-only mirror —
+            # cannot clear by retrying, and `2>/dev/null` used to hide which it
+            # was: five identical rounds of "universe moved under us" against a
+            # repo that took two commits all day, then a final error naming
+            # nothing. Report what git said and stop.
+            case "$err" in
+              *non-fast-forward*|*"fetch first"*|*"Updates were rejected"*)
+                echo "universe moved under us (attempt ${attempt}/5) — re-applying on the new tip"
+                git -C /tmp/universe fetch --quiet --depth 1 origin main
+                git -C /tmp/universe reset --hard --quiet FETCH_HEAD
+                ;;
+              *)
+                echo "::error::pushing the pin to universe failed, and retrying cannot fix it:"
+                printf '%s\n' "$err"
+                exit 1
+                ;;
+            esac
           done
-          echo "::error::could not push the pin after 5 attempts"; exit 1
+          echo "::error::could not push the pin after 5 attempts — universe kept moving"; exit 1
