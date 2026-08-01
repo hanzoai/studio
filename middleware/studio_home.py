@@ -995,7 +995,16 @@ def _compose_graph(ref_names: list[str], instruction: str, prefix: str,
     neg_prompt = _NEG + (", " + flow["negative"] if flow and flow.get("negative") else "")
     if lessons:
         neg_prompt = neg_prompt + ", " + ", ".join(lessons)
-    g["7"] = {"class_type": "TextEncodeQwenImageEditPlus", "inputs": {"clip": ["3", 0], "prompt": neg_prompt}}
+    # The negative sees the SAME references as the positive. TextEncodeQwenImageEditPlus
+    # does not just encode words: it attaches a reference latent per image. A negative
+    # encoded without them is a different STRUCTURE, not merely different words, so every
+    # CFG step subtracted a term computed over a latent the positive did not share —
+    # which is what turned "put this garment on that scene" into the two photographs
+    # ghosted over each other under a stipple. _fix_graph has always mirrored them
+    # (node 7 carries vae + image1); the multi-input case simply never did.
+    neg_inputs = dict(pos_inputs)
+    neg_inputs["prompt"] = neg_prompt
+    g["7"] = {"class_type": "TextEncodeQwenImageEditPlus", "inputs": neg_inputs}
     # Qwen's native multi-reference conditioning (image1..imageN on node 6) — NO
     # FluxKontextMultiReferenceLatentMethod: the same Flux-Kontext override that
     # stippled the single-image fix has no place on Qwen conditioning here either.

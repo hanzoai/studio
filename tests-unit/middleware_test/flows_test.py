@@ -440,6 +440,25 @@ def test_index_upload_refuses_truncated_file(tmp_path, monkeypatch):
                             design=None, kind="render", role=None, node="upload") is True
 
 
+def test_compose_negative_carries_the_same_references_as_the_positive():
+    """CFG subtracts the negative from the positive, so they must describe the same thing.
+
+    TextEncodeQwenImageEditPlus attaches a reference LATENT per image — it does not
+    only encode words. A negative built from the prompt alone is therefore a different
+    structure, not merely different words, and every sampling step subtracted a term
+    computed over latents the positive did not share. That is what returned the two
+    source photographs ghosted over each other under a stipple. The single-image edit
+    has always mirrored them; this pins the multi-input case to the same rule.
+    """
+    g = sh._compose_graph(["a.png", "b.png"], "put the suit on her", "composes/x")
+    enc = [n for n in g.values() if n.get("class_type") == "TextEncodeQwenImageEditPlus"]
+    assert len(enc) == 2
+    pos, neg = (enc[0], enc[1]) if "worst quality" in str(enc[1]["inputs"]["prompt"]) else (enc[1], enc[0])
+    refs = lambda n: {k: v for k, v in n["inputs"].items() if k.startswith("image") or k == "vae"}
+    assert refs(neg) == refs(pos), "the negative must see every reference the positive does"
+    assert neg["inputs"]["prompt"] != pos["inputs"]["prompt"], "only the WORDS may differ"
+
+
 def test_compose_with_a_base_edits_it_instead_of_synthesising_a_blend():
     """"Put the garment from A onto the scene in B" is an EDIT of B, not a blend.
 
