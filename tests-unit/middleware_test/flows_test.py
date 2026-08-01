@@ -460,10 +460,13 @@ def test_compose_with_a_base_edits_it_instead_of_synthesising_a_blend():
     assert onto["10"]["class_type"] == "VAEEncode"
     assert onto[onto["13"]["inputs"]["latent_image"][0]]["class_type"] == "VAEEncode"
     assert not any(n.get("class_type", "").startswith("Empty") for n in onto.values())
-    # …and it leads the conditioning, with the other reference still present.
+    # …and it leads the conditioning, with the other reference still present. Loaded
+    # ONCE: the node feeding the latent is the very node image1 points at, so a base can
+    # never displace a reference or be staged twice.
     pos = next(n for n in onto.values() if n.get("class_type") == "TextEncodeQwenImageEditPlus")
-    assert pos["inputs"]["image1"] == ["9", 0]
+    assert pos["inputs"]["image1"] == onto["10"]["inputs"]["pixels"]
     assert "image2" in pos["inputs"]
+    assert sum(1 for n in onto.values() if n.get("class_type") == "LoadImage") == len(refs)
     # A painting→photograph conversion travels far; an explicit strength still wins.
     assert onto["13"]["inputs"]["denoise"] == sh.FLOWS["cad_mockup"]["denoise"]
     exact = sh._compose_graph(refs, "swap the top", "composes/z", base="scene.png", denoise=0.4)

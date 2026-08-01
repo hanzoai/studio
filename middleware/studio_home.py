@@ -982,12 +982,14 @@ def _compose_graph(ref_names: list[str], instruction: str, prefix: str,
         "5": {"class_type": "VAELoader", "inputs": {"vae_name": _QWEN_VAE}},
     }
     pos_inputs: dict = {"clip": ["3", 0], "vae": ["5", 0], "prompt": prompt}
+    scaled: dict[str, str] = {}   # reference name -> the node holding it, scaled
     nid = 20
     for i, name in enumerate(ref_names[:5], start=1):  # up to 5 references
         li, si = str(nid), str(nid + 1)
         g[li] = {"class_type": "LoadImage", "inputs": {"image": name}}
         g[si] = {"class_type": "FluxKontextImageScale", "inputs": {"image": [li, 0]}}
         pos_inputs[f"image{i}"] = [si, 0]
+        scaled.setdefault(name, si)
         nid += 2
     g["6"] = {"class_type": "TextEncodeQwenImageEditPlus", "inputs": pos_inputs}
     neg_prompt = _NEG + (", " + flow["negative"] if flow and flow.get("negative") else "")
@@ -997,20 +999,19 @@ def _compose_graph(ref_names: list[str], instruction: str, prefix: str,
     # Qwen's native multi-reference conditioning (image1..imageN on node 6) — NO
     # FluxKontextMultiReferenceLatentMethod: the same Flux-Kontext override that
     # stippled the single-image fix has no place on Qwen conditioning here either.
-    if base:
-        # The base IS the subject: encode it as the starting latent (same wiring as an
-        # edit) so its pose and framing survive instead of being averaged away.
-        g["8"] = {"class_type": "LoadImage", "inputs": {"image": base}}
-        g["9"] = {"class_type": "FluxKontextImageScale", "inputs": {"image": ["8", 0]}}
-        g["10"] = {"class_type": "VAEEncode", "inputs": {"pixels": ["9", 0], "vae": ["5", 0]}}
-        pos_inputs["image1"] = ["9", 0]   # and it leads the conditioning
+    if base in scaled:
+        # The base IS the subject: encode the reference already loaded for it as the
+        # starting latent (the same wiring an edit uses) so its pose and framing survive
+        # instead of being averaged away. It stays a reference too — one load, one slot.
+        g["10"] = {"class_type": "VAEEncode", "inputs": {"pixels": [scaled[base], 0], "vae": ["5", 0]}}
     else:
         g["10"] = {"class_type": "EmptySD3LatentImage", "inputs": {"width": 1024, "height": 1536, "batch_size": 1}}
     g["11"] = {"class_type": "ModelSamplingAuraFlow", "inputs": {"model": ["4", 0], "shift": 3.1}}
     g["12"] = {"class_type": "CFGNorm", "inputs": {"model": ["11", 0], "strength": 1.0}}
     g["13"] = {"class_type": "KSampler", "inputs": {"model": ["12", 0], "positive": ["6", 0], "negative": ["7", 0], "latent_image": ["10", 0],
                "seed": random.randrange(2**31), "steps": 30, "cfg": 4.0, "sampler_name": "euler", "scheduler": "simple",
-               "denoise": (1.0 if not base else _edit_denoise(denoise, default=(flow or {}).get("denoise", CONVERSION_DENOISE)))}}
+               "denoise": (_edit_denoise(denoise, default=(flow or {}).get("denoise", CONVERSION_DENOISE))
+                           if base in scaled else 1.0)}}
     g["14"] = {"class_type": "VAEDecode", "inputs": {"samples": ["13", 0], "vae": ["5", 0]}}
     g["15"] = {"class_type": "SaveImage", "inputs": {"images": ["14", 0], "filename_prefix": prefix}}
     return g
@@ -1839,6 +1840,15 @@ async def dispatch_compose(request: web.Request, server, org: str, paths: list,
     uploaded = _resolve_uploads(org, uploads)
     if not 2 <= len(paths) + len(uploaded) <= 5:
         raise DispatchError("select 2-5 references to compose")
+    # `base` names which of the chosen assets is the SUBJECT (the one being changed);
+    # the rest stay references. Matched against the caller's own paths so it can only
+    # ever be one of them, and moved to the front — Qwen reads image1 as the primary,
+    # so the subject leads the conditioning as well as seeding the latent.
+    if base:
+        base = str(base).strip().lstrip("/")
+        if base not in paths:
+            raise DispatchError(f"base must be one of the chosen references: {base}")
+        paths = [base] + [p for p in paths if p != base]
     root = _library_root(org)
     in_dir = Path(folder_paths.get_org_input_directory(org))
     in_dir.mkdir(parents=True, exist_ok=True)
@@ -1854,15 +1864,7 @@ async def dispatch_compose(request: web.Request, server, org: str, paths: list,
     stem = "compose_" + "_".join(re.sub(r"[^a-zA-Z0-9]", "", s)[:12] for s in labels[:2]) + f"_{_job_tag()}"
     lessons = _lessons(org, root, list(paths))
     flow = _flow_of(flow_kind)
-    # `base` names which of the chosen assets is the SUBJECT (the one being changed);
-    # the rest stay references. Matched against the caller's own paths so it can only
-    # ever be one of them, then mapped to the staged name the graph loads.
-    base_name = None
-    if base:
-        base = str(base).strip().lstrip("/")
-        if base not in paths:
-            raise DispatchError(f"base must be one of the chosen references: {base}")
-        base_name = ref_names[paths.index(base)]
+    base_name = ref_names[0] if base else None
     pid = await _dispatch(request, server, org,
                           _compose_graph(ref_names, instruction, f"composes/{stem}", lessons=lessons, flow=flow,
                                          base=base_name, denoise=strength),
