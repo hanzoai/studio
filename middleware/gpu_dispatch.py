@@ -34,10 +34,11 @@ STUDIO_PUBLIC_URL = os.environ.get("STUDIO_PUBLIC_URL", "https://studio.hanzo.ai
 # render runs on the worker's LOCAL disk, so any file a user UPLOADED here (it lands
 # in orgs/{org}/input, which the worker cannot read) must travel WITH the job.
 _IMAGE_INPUT_CLASSES = ("LoadImage", "LoadImageMask", "LoadImageOutput")
-# Cap the inlined payload so a graph can't blow the tasks-API body. MEASURED, not
-# guessed: POST /v1/tasks/namespaces/gpu-jobs/activities takes a 1MB body and answers
-# 400 "Error when parsing request" at 8MB and above. Base64 costs 4/3, and the graph
-# JSON rides along, so the raw-bytes budget is 4MB.
+# Cap the inlined payload so a graph can't blow the tasks-API body. MEASURED by
+# bisection against POST /v1/tasks/namespaces/gpu-jobs/activities: 2MB of raw bytes
+# (a ~2.7MB body) is accepted; 3MB (~4.0MB) answers 400 "Error when parsing request".
+# The API's body limit is therefore 4MB, and since base64 costs 4/3 and the graph JSON
+# rides along, the raw-bytes budget is 2MB.
 #
 # It was 48MB — six times what the API accepts — so an oversized source was never
 # skipped and the enqueue was attempted and refused every time. A 4K PNG (19MB → 25MB
@@ -51,7 +52,7 @@ _IMAGE_INPUT_CLASSES = ("LoadImage", "LoadImageMask", "LoadImageOutput")
 # to FETCH its inputs (the job body already carries STUDIO_PUBLIC_URL), and until
 # that exists, oversized_inputs() below refuses such a job up front with its real
 # reason rather than letting it wear transport words forever.
-_MAX_INLINE_BYTES = 4 * 1024 * 1024
+_MAX_INLINE_BYTES = 2 * 1024 * 1024
 
 
 def oversized_inputs(prompt: dict, org_id: str) -> int:
