@@ -361,7 +361,21 @@ def dispatch_if_worker(request, org_id: str, prompt_id: str, prompt: dict) -> bo
                  org_id, prompt_id, node, len(staged),
                  ",".join(sorted(s["name"] for s in staged)) or None)
         return True
-    except Exception:
+    except Exception as e:                                  # noqa: BLE001 — see below
+        # SAY WHY. Falling back is correct; falling back in silence is not. The caller
+        # turns a False into "GPU render worker is momentarily unavailable", and that
+        # sentence is a guess: it names the fleet as the cause whatever actually
+        # happened. When the real cause is something else the guess is unfalsifiable
+        # from outside, because nothing anywhere recorded the truth.
+        #
+        # It cost one org ten renders over two days. Their sources were 4K, so the
+        # inlined enqueue body ran past the API's request-size limit and came back
+        # 400 "Error when parsing request" — nothing to do with any GPU. The held spool
+        # then re-held them on a message that reads as transient, and the
+        # alphabetically-first of them pinned the whole sweep behind it, every sweep,
+        # while both GPUs sat idle reporting themselves healthy.
+        log.warning("studio.trace gpu.dispatch_failed org=%s pid=%s err=%s: %s",
+                    org_id, prompt_id, type(e).__name__, e)
         return False
 
 

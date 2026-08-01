@@ -189,6 +189,44 @@ def test_one_unqueueable_held_job_never_strands_the_rest(tmp_path, monkeypatch):
     assert [r["id"] for r in sh._list_held("acme")] == [held]
 
 
+def test_a_job_wearing_transport_words_does_not_pin_the_others(tmp_path, monkeypatch):
+    """A holdable MESSAGE is not proof of a holdable CONDITION.
+
+    "momentarily unavailable" is what the dispatcher says for ANY enqueue failure —
+    it names the fleet without checking — so a job that simply cannot be enqueued
+    (a 4K source whose inlined body exceeds the API's request-size limit) wears
+    transport words and re-holds forever. The spool is walked in sorted order, so the
+    alphabetically-first of those pinned all ten of one org's renders across two days
+    while both GPUs sat idle and healthy.
+
+    Trying the rest costs nothing when the fabric really is down (they all fail and the
+    spool is intact either way) and is the whole difference when it is not.
+    """
+    import asyncio
+    import middleware.worklog as wl
+    monkeypatch.setattr(sh.folder_paths, "get_org_output_directory",
+                        lambda org: str(tmp_path / "orgs" / org / "output"))
+    monkeypatch.setattr(wl.folder_paths, "get_org_output_directory",
+                        lambda org: str(tmp_path / "orgs" / org / "output"))
+    common = dict(prompt="p", refs=[], uploads=[], parents=[], params={})
+    big = sh._hold_job("acme", {"BIG": {"class_type": "SaveImage", "inputs": {}}},
+                       dict(kind="fix", output_prefix="fixes/big", **common))
+    ok = sh._hold_job("acme", {"OK": {"class_type": "SaveImage", "inputs": {}}},
+                      dict(kind="fix", output_prefix="fixes/ok", **common))
+
+    async def fake_queue(request, server, graph):
+        if "BIG" in graph:      # too large to enqueue, reported as if the fleet were down
+            raise sh.DispatchError("GPU render worker is momentarily unavailable — please retry.")
+        return "new-pid"
+    monkeypatch.setattr(sh, "_queue_prompt", fake_queue)
+    monkeypatch.setattr(sh, "_in_render_jobs", lambda org, pid: False)
+
+    asyncio.run(sh._retry_held(None, None, "acme"))
+    left = [r["id"] for r in sh._list_held("acme")]
+    assert ok not in left, "a queueable job was stranded behind one that was not"
+    assert left == [big], "the un-enqueueable job is still HELD (its work is not lost)"
+
+
 def test_holdable_matches_transport_errors_only():
     # "was not queued" was here and is NOT transport: the engine returns it for a graph
     # it REFUSED (missing model, stale staged input), which repeats forever. Since

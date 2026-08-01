@@ -1549,8 +1549,22 @@ async def _retry_held(request, server, org: str) -> None:
             # fail identically and re-holding them churns. Anything else is this job's
             # own problem: fail it with the reason (never silently) and keep going, so
             # a single poisoned entry can't hold the queue hostage.
+            #
+            # A holdable MESSAGE is not proof of a holdable CONDITION. "momentarily
+            # unavailable" is what the dispatcher says for ANY enqueue failure — it
+            # names the fleet as the cause without checking — so a job that simply
+            # cannot be enqueued (a 4K source whose inlined body exceeds the API's
+            # request limit) wore transport words and re-held forever. The spool is
+            # walked in sorted order, so the alphabetically-first of those pinned all
+            # ten across two days while both GPUs sat idle and healthy.
+            #
+            # So the sweep TRIES THE REST before believing it. A genuinely unreachable
+            # fabric fails them all and the spool is intact either way; a per-job
+            # problem no longer speaks for the fleet. The reason is always traced —
+            # this went unexplained precisely because nothing recorded it.
             if any(s in str(e).lower() for s in _HOLDABLE):
-                return
+                _trace("dispatch.held_again", org=org, held=held_pid, err=str(e)[:120])
+                continue
             (_held_dir(org) / f"{held_pid}.json").unlink(missing_ok=True)
             worklog.set_status(org, held_pid, "failed", note=f"could not re-queue: {e}")
             _trace("dispatch.held_unqueueable", org=org, held=held_pid, err=str(e)[:120])
