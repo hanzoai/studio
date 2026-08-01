@@ -528,3 +528,35 @@ def test_compose_with_a_base_edits_it_instead_of_synthesising_a_blend():
     assert onto["13"]["inputs"]["denoise"] == sh.FLOWS["cad_mockup"]["denoise"]
     exact = sh._compose_graph(refs, "swap the top", "composes/z", base="scene.png", denoise=0.4)
     assert exact["13"]["inputs"]["denoise"] == 0.4
+
+
+def test_the_held_sweep_is_bounded_so_it_cannot_stall_the_server(tmp_path, monkeypatch):
+    """One queue read may not make an unbounded number of enqueue attempts.
+
+    The enqueue is a SYNCHRONOUS urlopen on the event loop. Trying every held job took
+    studio down: ten entries, each shipping a ~25MB body that the far end reset, blocked
+    every request in the process — the readiness probe included — so the pod went unready
+    and the ingress served 503. Progress past a stuck entry is worth having; an
+    unbounded stall is not.
+    """
+    import asyncio
+    import middleware.worklog as wl
+    monkeypatch.setattr(sh.folder_paths, "get_org_output_directory",
+                        lambda org: str(tmp_path / "orgs" / org / "output"))
+    monkeypatch.setattr(wl.folder_paths, "get_org_output_directory",
+                        lambda org: str(tmp_path / "orgs" / org / "output"))
+    common = dict(prompt="p", refs=[], uploads=[], parents=[], params={})
+    for i in range(10):
+        sh._hold_job("acme", {f"N{i}": {"class_type": "SaveImage", "inputs": {}}},
+                     dict(kind="fix", output_prefix=f"fixes/h{i}", **common))
+
+    attempts = []
+    async def always_down(request, server, graph):
+        attempts.append(1)
+        raise sh.DispatchError("GPU render worker is momentarily unavailable — please retry.")
+    monkeypatch.setattr(sh, "_queue_prompt", always_down)
+
+    asyncio.run(sh._retry_held(None, None, "acme"))
+    assert len(attempts) <= sh._HOLD_TRIES, (
+        f"one read attempted {len(attempts)} enqueues; each is a blocking upload")
+    assert len(sh._list_held("acme")) == 10, "nothing was lost — they stay held"

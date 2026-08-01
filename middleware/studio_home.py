@@ -1490,6 +1490,14 @@ _HOLDABLE = ("momentarily unavailable", "no gpu worker online",
              "could not reach the render engine", "no available server",
              "connection refused", "timed out")
 
+# How many held jobs one sweep may FAIL to enqueue before it gives up until the next
+# read. The enqueue is a synchronous urlopen on the event loop, so an unbounded sweep
+# is an unbounded stall: ten entries each shipping a ~25MB body that the far end reset
+# blocked every request in the process, the readiness probe included, and the pod went
+# unready behind a 503. Small enough that a read stays quick, more than one so a stuck
+# entry cannot pin the queue.
+_HOLD_TRIES = 2
+
 
 def _held_dir(org: str) -> Path:
     """orgs/<org>/held — the spool of jobs the render fabric could not be reached
@@ -1535,6 +1543,7 @@ async def _retry_held(request, server, org: str) -> None:
     the routes resolve org server-side). Runs on every queue read, so the act of
     watching the queue heals it; no credential is ever stored at rest. Success
     replaces the held row with a real queued row under the fabric's prompt_id."""
+    tries = 0
     for rec in _list_held(org):
         graph, held_pid = rec.get("graph") or {}, rec.get("id", "")
         common = {k: rec.get(k) for k in
@@ -1558,12 +1567,19 @@ async def _retry_held(request, server, org: str) -> None:
             # walked in sorted order, so the alphabetically-first of those pinned all
             # ten across two days while both GPUs sat idle and healthy.
             #
-            # So the sweep TRIES THE REST before believing it. A genuinely unreachable
-            # fabric fails them all and the spool is intact either way; a per-job
-            # problem no longer speaks for the fleet. The reason is always traced —
-            # this went unexplained precisely because nothing recorded it.
+            # So the sweep TRIES THE REST before believing it — but only _HOLD_TRIES of
+            # them per read. Trying all of them took studio DOWN: the enqueue is a
+            # SYNCHRONOUS urlopen on the event loop, and ten of those, each shipping a
+            # ~25MB body that the far end resets, blocks every other request in the
+            # process — including the readiness probe, so the pod went unready and the
+            # ingress served 503. The bound is what makes this safe to do at all: each
+            # read makes progress past a stuck entry without any single read being able
+            # to stall the server.
             if any(s in str(e).lower() for s in _HOLDABLE):
                 _trace("dispatch.held_again", org=org, held=held_pid, err=str(e)[:120])
+                tries += 1
+                if tries >= _HOLD_TRIES:
+                    return
                 continue
             (_held_dir(org) / f"{held_pid}.json").unlink(missing_ok=True)
             worklog.set_status(org, held_pid, "failed", note=f"could not re-queue: {e}")
