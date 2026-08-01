@@ -6,12 +6,12 @@ of in this GPU-less pod. The user's own IAM bearer token is forwarded, so the
 cloud derives org + project + linked billing account from it — one auth path, no
 shared keys. Falls back to the in-pod queue when there is no live worker.
 """
-import base64
 import json
 import logging
 import os
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 
 import folder_paths
@@ -34,67 +34,29 @@ STUDIO_PUBLIC_URL = os.environ.get("STUDIO_PUBLIC_URL", "https://studio.hanzo.ai
 # render runs on the worker's LOCAL disk, so any file a user UPLOADED here (it lands
 # in orgs/{org}/input, which the worker cannot read) must travel WITH the job.
 _IMAGE_INPUT_CLASSES = ("LoadImage", "LoadImageMask", "LoadImageOutput")
-# Cap the inlined payload so a graph can't blow the tasks-API body. MEASURED by
-# bisection against POST /v1/tasks/namespaces/gpu-jobs/activities: 2MB of raw bytes
-# (a ~2.7MB body) is accepted; 3MB (~4.0MB) answers 400 "Error when parsing request".
-# The API's body limit is therefore 4MB, and since base64 costs 4/3 and the graph JSON
-# rides along, the raw-bytes budget is 2MB.
-#
-# It was 48MB — six times what the API accepts — so an oversized source was never
-# skipped and the enqueue was attempted and refused every time. A 4K PNG (19MB → 25MB
-# encoded) could therefore never dispatch, and because the refusal was reported as
-# "GPU render worker is momentarily unavailable" the job spooled to wait for a fleet
-# that was never the problem. Ten of one org's renders sat that way for two days.
-#
-# Over the cap the file is SKIPPED, exactly as before. That is not a fix for the 4K
-# case — the worker cannot render what it was not sent — it only makes the failure
-# land quickly and honestly instead of stalling the queue. The fix is for the worker
-# to FETCH its inputs (the job body already carries STUDIO_PUBLIC_URL), and until
-# that exists, oversized_inputs() below refuses such a job up front with its real
-# reason rather than letting it wear transport words forever.
-_MAX_INLINE_BYTES = 2 * 1024 * 1024
+def _collect_input_images(prompt: dict, org_id: str) -> list[dict]:
+    """Name every LoadImage-referenced file under this org's input directory, as a
+    URL the worker FETCHES rather than bytes riding inside the job.
 
+    Inlining had a ceiling and photographs do not. The tasks API takes a 4MB body,
+    so base64 put a hard limit on how large a source could be — and a 4K PNG (19MB,
+    25MB encoded) was never enqueueable at all. It was skipped or the enqueue was
+    refused, the refusal was reported as "GPU render worker is momentarily
+    unavailable", and the render waited on a fleet that was healthy. Ten of one org's
+    renders sat that way for two days.
 
-def oversized_inputs(prompt: dict, org_id: str) -> int:
-    """Total bytes of this graph's staged inputs when they exceed what the tasks API
-    will accept, else 0 — computed from file SIZES, never by attempting the upload.
+    A reference has no such ceiling, and the file is already served, org-scoped and
+    authenticated, by GET /v1/library/file?input=1 — the same route the queue's own
+    thumbnails come from. So the job stays small whatever the source weighs, and the
+    bytes travel over a channel built to carry them (19MB in 0.4s, measured).
 
-    The enqueue is a synchronous urlopen on the event loop, so "try it and see" is not
-    free: each doomed attempt ships megabytes and blocks every other request in the
-    process until the far end gives up. Two of them per queue read was enough to starve
-    the readiness probe and take studio off the ingress. Asking the filesystem costs
-    nothing and answers the same question.
+    ONE way, not two: every input is a URL, including small ones. A second path that
+    only some inputs take is a second path to keep correct, and the size at which the
+    two diverged is exactly the boundary nobody could see.
     """
     in_dir = folder_paths.get_org_input_directory(org_id)
     seen: set[str] = set()
-    total = 0
-    for node in prompt.values():
-        if not isinstance(node, dict) or node.get("class_type") not in _IMAGE_INPUT_CLASSES:
-            continue
-        name = (node.get("inputs") or {}).get("image")
-        if not isinstance(name, str) or name in seen:
-            continue
-        seen.add(name)
-        rel = os.path.normpath(name)
-        if rel.startswith("..") or os.path.isabs(rel):
-            continue
-        try:
-            total += os.path.getsize(os.path.join(in_dir, rel))
-        except OSError:
-            continue
-    return total if total > _MAX_INLINE_BYTES else 0
-
-
-def _collect_input_images(prompt: dict, org_id: str) -> list[dict]:
-    """Read every LoadImage-referenced file that exists under this org's input
-    directory and return them base64-encoded for transport to the worker. Files
-    already resident on the worker (e.g. staged garment refs) are harmless to
-    resend — the worker overwrites byte-identical copies. Best-effort: an absent
-    or oversized file is skipped, never fatal."""
-    in_dir = folder_paths.get_org_input_directory(org_id)
-    seen: set[str] = set()
     out: list[dict] = []
-    total = 0
     for node in prompt.values():
         if not isinstance(node, dict) or node.get("class_type") not in _IMAGE_INPUT_CLASSES:
             continue
@@ -106,20 +68,16 @@ def _collect_input_images(prompt: dict, org_id: str) -> list[dict]:
         rel = os.path.normpath(name)
         if rel.startswith("..") or os.path.isabs(rel):
             continue
-        path = os.path.join(in_dir, rel)
-        try:
-            if not os.path.isfile(path):
-                continue
-            size = os.path.getsize(path)
-            if size == 0 or total + size > _MAX_INLINE_BYTES:
-                continue
-            with open(path, "rb") as f:
-                data = f.read()
-        except OSError:
+        if not os.path.isfile(os.path.join(in_dir, rel)):
             continue
-        total += len(data)
         sub, base = os.path.split(rel)
-        out.append({"name": base, "subfolder": sub, "data": base64.b64encode(data).decode()})
+        out.append({
+            "name": base,
+            "subfolder": sub,
+            # The serving route takes a bare name (it rejects traversal itself and
+            # resolves the org from the fetching worker's token, never from this URL).
+            "url": f"{STUDIO_PUBLIC_URL}/v1/library/file?input=1&path={urllib.parse.quote(base)}",
+        })
     return out
 
 

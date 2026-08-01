@@ -344,18 +344,44 @@ def test_two_concurrent_edits_are_isolated(in_dir, tmp_path):
     assert _save_prefix(gA) != _save_prefix(gB)
 
 
-def test_collect_input_images_ships_exact_source_and_is_org_scoped(in_dir, tmp_path):
-    """gpu_dispatch inlines the bytes the worker will LoadImage. It must ship the
-    SELECTED org's copy exactly — never a same-named file from another org."""
-    dA, dB = Path(in_dir("acme")), Path(in_dir("other"))
+def test_collect_input_images_references_the_source_instead_of_inlining_it(in_dir, tmp_path):
+    """The job NAMES each input; the worker fetches it. No bytes ride inside the job.
+
+    Inlining had a ceiling and photographs do not: the tasks API takes a 4MB body, so
+    base64 capped how large a source could be, and a 4K PNG (19MB) was never
+    enqueueable at all — its dispatch was refused and reported as "GPU render worker
+    is momentarily unavailable", so the render waited on a healthy fleet. A reference
+    has no ceiling.
+
+    Tenancy does not live in the URL: the serving route resolves the org from the
+    FETCHING worker's token, so the reference names only a file, never an org.
+    """
+    dA = Path(in_dir("acme"))
     src = tmp_path / "s.png"
     src.write_bytes(b"\x89PNG-real-source" + b"\x01" * 40)
     ref = sh._stage_source(dA, src, "fix")
-    (dB / ref).write_bytes(b"\x89PNG-WRONG-org" + b"\x02" * 40)   # decoy, same basename
     shipped = gd._collect_input_images(sh._fix_graph(ref, "brighten", "fixes/x"), "acme")
-    got = {s["name"]: base64.b64decode(s["data"]) for s in shipped}
-    assert ref in got and got[ref] == src.read_bytes()           # acme's exact bytes
-    assert b"WRONG-org" not in got[ref]
+    got = {s["name"]: s for s in shipped}
+    assert ref in got, shipped
+    assert "data" not in got[ref], "bytes must not ride inside the job"
+    url = got[ref]["url"]
+    assert url.startswith(gd.STUDIO_PUBLIC_URL) and "input=1" in url and ref in url
+    assert "acme" not in url, "the org comes from the fetcher's token, not the URL"
+
+
+def test_a_source_far_over_the_old_inline_cap_still_dispatches(in_dir, tmp_path):
+    """The 4K case, which is the whole reason this changed.
+
+    At 19MB this source could not be inlined into a 4MB body, so it never dispatched.
+    Referenced, its size stops being a property of the job at all.
+    """
+    dA = Path(in_dir("acme"))
+    big = tmp_path / "big.png"
+    big.write_bytes(b"\x89PNG" + b"\x07" * (19 * 1024 * 1024))
+    ref = sh._stage_source(dA, big, "fix")
+    shipped = gd._collect_input_images(sh._fix_graph(ref, "brighten", "fixes/x"), "acme")
+    assert [s["name"] for s in shipped] == [ref], "a large source must still be sent"
+    assert sum(len(str(s)) for s in shipped) < 4096, "the job must stay small"
 
 
 def test_assert_edit_graph_rejects_text_to_image_fallback():
