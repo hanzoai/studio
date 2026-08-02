@@ -47,7 +47,7 @@ def test_persist_and_restore_round_trip():
         q1.put(_item(2, "b"))
         assert os.path.exists(snap), "put() must write a snapshot"
         with open(snap) as f:
-            assert len(json.load(f)) == 2
+            assert len(json.load(f)["items"]) == 2
 
         # Start rendering 'a' (highest priority == lowest number). It moves to
         # currently_running; the snapshot must still cover BOTH so an in-flight
@@ -55,12 +55,12 @@ def test_persist_and_restore_round_trip():
         item, ident = q1.get(timeout=1)
         assert item[1] == "a"
         with open(snap) as f:
-            assert len(json.load(f)) == 2
+            assert len(json.load(f)["items"]) == 2
 
         # Finish 'a'. Snapshot now holds only the still-pending 'b'.
         q1.task_done(ident, {}, None)
         with open(snap) as f:
-            assert [row[1] for row in json.load(f)] == ["b"]
+            assert [row[1] for row in json.load(f)["items"]] == ["b"]
 
         # Simulate a restart: a brand-new PromptQueue must re-queue 'b'.
         q2 = PromptQueue(_StubServer())
@@ -104,3 +104,48 @@ if __name__ == "__main__":
     test_persist_and_restore_round_trip()
     test_disabled_by_default_is_inert()
     test_restore_skips_corrupt_rows()
+
+
+def test_a_prompt_that_keeps_killing_the_process_is_dropped(tmp_path, monkeypatch):
+    """Restoring the in-flight prompt must not become an infinite crash loop.
+
+    Re-queueing what was running is the point of this feature: a crash mid-render
+    must not lose the user's work. But a prompt the box CANNOT run turns that into a
+    loop — restored, kills the process, restored again. Observed on a worker whose
+    ROCm stack dies loading the Qwen VAE: seven restarts in thirty minutes, the node
+    useless throughout, and nothing in the queue explaining why.
+
+    After _MAX_RESTORE_ATTEMPTS the prompt is dropped and said so, and — critically —
+    the count is persisted at RESTORE time, because the crash being guarded against
+    happens before any later snapshot would have written it.
+    """
+    monkeypatch.setenv("STUDIO_PERSIST_QUEUE", "1")
+    monkeypatch.setattr(folder_paths, "get_user_directory", lambda: str(tmp_path))
+
+    q = PromptQueue(_StubServer())
+    q.put(_item(0, "poison"))
+    assert len(json.load(open(tmp_path / "queue_snapshot.json"))["items"]) == 1
+
+    # Each boot restores it; the process dies before finishing it, every time.
+    seen = []
+    for _ in range(PromptQueue._MAX_RESTORE_ATTEMPTS + 1):
+        q2 = PromptQueue(_StubServer())
+        seen.append(len(q2.queue))
+
+    assert seen[0] == 1, "the first restore must happen — that is the whole feature"
+    assert seen[-1] == 0, f"a repeatedly-fatal prompt must stop being restored: {seen}"
+    # Dropped for good: the snapshot no longer offers it to the next boot either.
+    assert len(PromptQueue(_StubServer()).queue) == 0
+
+
+def test_a_healthy_prompt_is_still_restored_after_one_crash(tmp_path, monkeypatch):
+    """The guard must not punish the ordinary case it exists to serve.
+
+    A power cut, an OOM, a deploy mid-render — one restart is normal, and the work
+    must come back.
+    """
+    monkeypatch.setenv("STUDIO_PERSIST_QUEUE", "1")
+    monkeypatch.setattr(folder_paths, "get_user_directory", lambda: str(tmp_path))
+    q = PromptQueue(_StubServer())
+    q.put(_item(0, "ordinary"))
+    assert len(PromptQueue(_StubServer()).queue) == 1, "one restart must restore the work"

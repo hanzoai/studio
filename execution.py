@@ -1155,10 +1155,15 @@ class PromptQueue:
         # with STUDIO_PERSIST_QUEUE=1. Persistence is strictly best-effort and
         # never affects the render path (all failures are caught and logged).
         self._persist_path = None
+        # How many times one prompt may be restored before it is treated as the
+        # reason this process keeps dying rather than a victim of it.
+        self._restore_attempts = {}
         if os.environ.get("STUDIO_PERSIST_QUEUE") == "1":
             import folder_paths
             self._persist_path = os.path.join(folder_paths.get_user_directory(), "queue_snapshot.json")
             self._restore_locked()
+
+    _MAX_RESTORE_ATTEMPTS = 2
 
     def _snapshot_items(self):
         # Pending queue plus any in-flight items, so a crash mid-render re-queues
@@ -1169,7 +1174,14 @@ class PromptQueue:
         if self._persist_path is None:
             return
         try:
-            data = json.dumps(self._snapshot_items())
+            items = self._snapshot_items()
+            live = {it[1] for it in items if len(it) >= 2 and isinstance(it[1], str)}
+            data = json.dumps({
+                "items": items,
+                # Only for prompts still present — a finished prompt's count is not
+                # history worth keeping, and left behind it would grow without bound.
+                "attempts": {k: v for k, v in self._restore_attempts.items() if k in live},
+            })
             tmp = self._persist_path + ".tmp"
             with open(tmp, "w") as f:
                 f.write(data)
@@ -1178,19 +1190,55 @@ class PromptQueue:
             logging.warning("[persist-queue] snapshot failed: %s", e)
 
     def _restore_locked(self):
+        """Re-queue what was pending, EXCEPT a prompt that keeps killing this process.
+
+        Restoring the in-flight prompt is the point: a crash mid-render must not lose
+        the user's work. But a prompt the box CANNOT run makes that a loop — it is
+        restored, it kills the process, it is restored again. Observed on a worker
+        whose ROCm stack dies loading the Qwen VAE: seven restarts in thirty minutes,
+        the node useless the whole time, and nothing in the queue to explain it.
+
+        So each restore is counted, and after _MAX_RESTORE_ATTEMPTS the prompt is
+        DROPPED with a loud line naming it. Two attempts because the first covers the
+        honest case this exists for (a power cut, an OOM, a deploy) and the second
+        covers one unlucky repeat; a third is evidence, not misfortune.
+        """
         try:
             if not os.path.exists(self._persist_path):
                 return
             with open(self._persist_path) as f:
-                items = json.load(f)
-            restored = 0
+                blob = json.load(f)
+            # The file was a bare list before attempts were tracked; a snapshot
+            # already on disk is still readable rather than silently discarded.
+            if isinstance(blob, list):
+                items, attempts = blob, {}
+            else:
+                items = blob.get("items") or []
+                attempts = blob.get("attempts") or {}
+            restored = dropped = 0
             for it in items:
                 # Minimal validation: (number, prompt_id:str, prompt:dict, ...)
-                if isinstance(it, list) and len(it) >= 3 and isinstance(it[1], str) and isinstance(it[2], dict):
-                    heapq.heappush(self.queue, tuple(it))
-                    restored += 1
-            if restored:
-                logging.info("[persist-queue] restored %d pending prompt(s) from previous run", restored)
+                if not (isinstance(it, list) and len(it) >= 3
+                        and isinstance(it[1], str) and isinstance(it[2], dict)):
+                    continue
+                pid = it[1]
+                n = int(attempts.get(pid, 0)) + 1
+                if n > self._MAX_RESTORE_ATTEMPTS:
+                    logging.warning(
+                        "[persist-queue] DROPPING prompt %s — it has been restored %d times "
+                        "and this process did not survive it. It will not be retried; "
+                        "re-run it deliberately if it is still wanted.", pid, n - 1)
+                    dropped += 1
+                    continue
+                self._restore_attempts[pid] = n
+                heapq.heappush(self.queue, tuple(it))
+                restored += 1
+            if restored or dropped:
+                logging.info("[persist-queue] restored %d pending prompt(s) from previous run"
+                             "%s", restored, f", dropped {dropped} that keep crashing" if dropped else "")
+            # Record the incremented counts NOW: the crash we are guarding against
+            # can happen before any later snapshot would have written them.
+            self._persist_locked()
         except Exception as e:
             logging.warning("[persist-queue] restore failed: %s", e)
 
