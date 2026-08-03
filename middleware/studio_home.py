@@ -464,6 +464,22 @@ def _mistakes(ratings: dict, family) -> list[str]:
     return out[:4]
 
 
+def _source_size(path: Path) -> tuple[int, int] | None:
+    """The source's own pixel dimensions, or None when they cannot be read.
+
+    The edit samples at the model's resolution whatever this says; this is only what
+    the OUTPUT is restored to, so an unreadable file costs the master's size and never
+    the render. None means "behave exactly as before".
+    """
+    try:
+        from PIL import Image  # local, like every other reader here
+        with Image.open(path) as im:
+            w, h = im.size
+        return (w, h) if w > 0 and h > 0 else None
+    except Exception:
+        return None
+
+
 def _lessons(org: str, root: Path | None, rels: list[str]) -> list[str]:
     """Every mistake the user has pointed out on these assets or their lineage —
     read at DISPATCH so the very next generation is conditioned against repeating
@@ -704,7 +720,8 @@ def _flow_of(kind) -> dict | None:
 
 def _fix_graph(ref_name: str, instruction: str, prefix: str, *, flow: dict | None = None,
                denoise: float = EDIT_DENOISE_DEFAULT,
-               seed: int | None = None, lessons: list[str] | None = None) -> dict:
+               seed: int | None = None, lessons: list[str] | None = None,
+               size: tuple[int, int] | None = None) -> dict:
     """LOW-DENOISE Qwen-Image-Edit-2511 instruction edit — the EDIT action.
 
     The source is LoadImage'd, scaled ONCE (FluxKontextImageScale), and fed to BOTH the
@@ -751,7 +768,28 @@ def _fix_graph(ref_name: str, instruction: str, prefix: str, *, flow: dict | Non
                  "seed": seed if seed is not None else random.randrange(2**31), "steps": 30, "cfg": 4.0,
                  "sampler_name": "euler", "scheduler": "simple", "denoise": float(denoise)}},
         "14": {"class_type": "VAEDecode", "inputs": {"samples": ["13", 0], "vae": ["5", 0]}},
-        "15": {"class_type": "SaveImage", "inputs": {"images": ["14", 0], "filename_prefix": prefix}},
+        # The edit runs at the model's own resolution; the OUTPUT keeps the master's.
+        #
+        # FluxKontextImageScale (node 2) rescales any input to a Kontext bucket of
+        # about a megapixel, because that is where Qwen-Image-Edit works. That is a
+        # property of the model and not a setting — but it silently became a property
+        # of the DELIVERABLE too: a 4096x6144 master (25.2MP) came back 832x1248
+        # (1.04MP), a twenty-fourth of the pixels the photographer shot. "Brighten
+        # very slightly" is not a request to resample someone's master down.
+        #
+        # So when the caller says what the source measured, the decode is scaled back
+        # to exactly that. It does not recover detail the sampler never saw — nothing
+        # can, short of tiling — but it returns a file at the size the rest of the
+        # pipeline (print, catalog, the gallery's own full-res view) expects, instead
+        # of one that has to be explained. lanczos because this is a photographic
+        # upscale and it is the sharpest of the resamplers here without ringing.
+        #
+        # Absent a size, the graph is exactly what it was: the bucket is the output.
+        **({"16": {"class_type": "ImageScale", "inputs": {
+            "image": ["14", 0], "upscale_method": "lanczos",
+            "width": int(size[0]), "height": int(size[1]), "crop": "disabled"}}} if size else {}),
+        "15": {"class_type": "SaveImage",
+               "inputs": {"images": ["16" if size else "14", 0], "filename_prefix": prefix}},
     }
 
 
@@ -1711,7 +1749,8 @@ async def dispatch_fix(request: web.Request, server, org: str, rel: str,
         kind = "edit_area"
     else:
         graph = _fix_graph(ref_name, instruction, f"fixes/{stem}",
-                           flow=flow, denoise=denoise, seed=eff_seed, lessons=lessons)
+                           flow=flow, denoise=denoise, seed=eff_seed, lessons=lessons,
+                           size=_source_size(in_dir / ref_name))
         # The work-log/queue row carries the LANE the user picked (cad_ghost,
         # product, …) so the queue shows the real flow, not a generic "fix".
         kind = flow_kind if flow else "fix"

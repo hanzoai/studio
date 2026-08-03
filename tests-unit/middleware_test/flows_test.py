@@ -560,3 +560,47 @@ def test_the_held_sweep_is_bounded_so_it_cannot_stall_the_server(tmp_path, monke
     assert len(attempts) <= sh._HOLD_TRIES, (
         f"one read attempted {len(attempts)} enqueues; each is a blocking upload")
     assert len(sh._list_held("acme")) == 10, "nothing was lost — they stay held"
+
+
+def test_an_edit_returns_the_master_at_its_own_resolution():
+    """The model's working size is not the deliverable's size.
+
+    FluxKontextImageScale rescales any input to a Kontext bucket of about a
+    megapixel, because that is where Qwen-Image-Edit works. That is the model's
+    property — but it silently became the OUTPUT's: a 4096x6144 master (25.2MP) came
+    back 832x1248 (1.04MP), a twenty-fourth of the pixels. "Brighten very slightly"
+    is not a request to resample someone's master down.
+
+    The sampler still runs at the bucket; only the saved file is restored.
+    """
+    g = sh._fix_graph("m.png", "brighten very slightly", "fixes/m", size=(4096, 6144))
+    save = g["15"]["inputs"]["images"][0]
+    assert g[save]["class_type"] == "ImageScale", "the saved image must be the restored one"
+    assert (g[save]["inputs"]["width"], g[save]["inputs"]["height"]) == (4096, 6144)
+    assert g[save]["inputs"]["crop"] == "disabled", "restoring size must not crop the frame"
+    # The edit itself is untouched: still the source latent, still the edit band.
+    assert not sh._assert_edit_graph(g)
+
+
+def test_without_a_known_size_the_graph_is_unchanged():
+    """An unreadable source costs the master's size, never the render.
+
+    Absent a size the graph is exactly what it was, so a source whose dimensions
+    cannot be read still edits — it just returns the bucket, as before.
+    """
+    g = sh._fix_graph("m.png", "brighten", "fixes/m")
+    assert g["15"]["inputs"]["images"][0] == "14", "saves the decode directly"
+    assert "16" not in g, "no scaling node is added when there is nothing to restore to"
+    assert not sh._assert_edit_graph(g)
+
+
+def test_source_size_reads_real_dimensions_and_never_raises(tmp_path):
+    """_source_size answers from the file, and answers None rather than failing."""
+    from PIL import Image
+    p = tmp_path / "s.png"
+    Image.new("RGB", (1234, 567)).save(p)
+    assert sh._source_size(p) == (1234, 567)
+    assert sh._source_size(tmp_path / "missing.png") is None
+    bad = tmp_path / "notimage.png"
+    bad.write_text("not an image")
+    assert sh._source_size(bad) is None
