@@ -594,6 +594,13 @@ def _repose_size(p: Path) -> tuple[int, int]:
 # 1.0 is the separate Regenerate action, so an Edit can NEVER silently become a regen.
 EDIT_DENOISE_DEFAULT = 0.25
 EDIT_DENOISE_MIN, EDIT_DENOISE_MAX = 0.05, 0.95
+# Where an EDIT stops and a CONVERSION begins. It is not the slider's range above —
+# that is only what a caller may ask for. This is the line the lanes already sit either
+# side of: style lanes ride the 0.25 default and a garment swap 0.45, while a
+# drawing→photograph conversion needs 0.85+ (flows_test pins both directions). It
+# decides whether the master's own pixels are still the subject, so it is stated once
+# and read wherever that question is asked.
+EDIT_BAND_MAX = 0.5
 
 
 # The instruction itself declares the transformation distance when no lane was picked.
@@ -785,12 +792,89 @@ def _fix_graph(ref_name: str, instruction: str, prefix: str, *, flow: dict | Non
         # upscale and it is the sharpest of the resamplers here without ringing.
         #
         # Absent a size, the graph is exactly what it was: the bucket is the output.
-        **({"16": {"class_type": "ImageScale", "inputs": {
-            "image": ["14", 0], "upscale_method": "lanczos",
-            "width": int(size[0]), "height": int(size[1]), "crop": "disabled"}}} if size else {}),
+        **(_restore_master(size, denoise) if size else {}),
         "15": {"class_type": "SaveImage",
-               "inputs": {"images": ["16" if size else "14", 0], "filename_prefix": prefix}},
+               "inputs": {"images": [_output_node(size, denoise), 0], "filename_prefix": prefix}},
     }
+
+
+# Which node holds the deliverable — the decode, the resize, or the composite.
+def _output_node(size, denoise) -> str:
+    if not size:
+        return "14"
+    return "21" if _composites(denoise) else "16"
+
+
+# WHEN the master's own pixels are the better answer.
+#
+# denoise already says how far the image must travel (see FLOWS): an EDIT adjusts what
+# was photographed, a CONVERSION replaces it. That distinction decides this too. Under
+# the edit band the original is still the subject and its detail is the thing being
+# preserved; at conversion strength the model's output IS the deliverable and
+# compositing would fight the conversion it was asked for.
+def _composites(denoise: float) -> bool:
+    return float(denoise) <= EDIT_BAND_MAX
+
+
+def _restore_master(size, denoise) -> dict:
+    """Return the master at full resolution with the edit's change applied to it.
+
+    RESIZING THE EDIT IS NOT RESTORING THE MASTER, and the numbers say so plainly. The
+    model works at a Kontext bucket of about a megapixel; scaling that back to
+    4096x6144 gives a file of the right SIZE whose detail is gone — measured against a
+    real render: high-frequency energy 10.3 in the camera original, 0.6 in the resized
+    edit, and 17.2MB of photograph arriving as 3.0MB of soft. The fabric weave and skin
+    texture were not recovered by making the picture bigger.
+
+    So the deliverable is built the other way round: keep every pixel the camera took,
+    and add only what the model CHANGED.
+
+        result = original + (edit_upscaled - original_at_the_model's_own_resolution)
+
+    The bracketed term is exactly the low-frequency change — tone, colour, the
+    adjustment that was asked for — because both sides passed through the same bucket.
+    Everything the model could not see, the original still has. Measured on the same
+    render: detail 9.9 against the master's 10.3, with the edit's brightness carried
+    through. 96% of the photograph, and the change.
+
+    ImageAddMulti clamps at zero, so the signed difference is taken as two one-sided
+    halves and applied in turn. pos and neg are disjoint by construction — where one
+    is non-zero the other is zero — so `original + pos - neg` reconstructs the signed
+    delta exactly, clipping only where a highlight genuinely reaches white.
+
+    NOT an upscaler. 4x-UltraSharp is installed and would look sharper immediately, but
+    it INVENTS texture, and a product photograph that shows fabric the garment does not
+    have is worse than a soft one. Nothing here synthesises detail; it only declines to
+    throw the original's away.
+    """
+    w, h = int(size[0]), int(size[1])
+    full = {"upscale_method": "lanczos", "width": w, "height": h, "crop": "disabled"}
+    g = {
+        # The edit, at the master's dimensions.
+        "16": {"class_type": "ImageScale", "inputs": {"image": ["14", 0], **full}},
+    }
+    if not _composites(denoise):
+        return g
+    g.update({
+        # The original as the MODEL saw it: through the same bucket, back up the same
+        # way, so the difference below is only what the model did — never resampling.
+        "17": {"class_type": "ImageScale", "inputs": {"image": ["2", 0], **full}},
+        # The signed change, as two non-negative halves.
+        "18": {"class_type": "ImageAddMulti", "inputs": {
+            "inputcount": 2, "image_1": ["16", 0], "image_2": ["17", 0],
+            "blending": "subtract", "blend_amount": 1.0}},
+        "19": {"class_type": "ImageAddMulti", "inputs": {
+            "inputcount": 2, "image_1": ["17", 0], "image_2": ["16", 0],
+            "blending": "subtract", "blend_amount": 1.0}},
+        # Applied to the full-resolution original, which supplies every real pixel.
+        "20": {"class_type": "ImageAddMulti", "inputs": {
+            "inputcount": 2, "image_1": ["1", 0], "image_2": ["18", 0],
+            "blending": "add", "blend_amount": 1.0}},
+        "21": {"class_type": "ImageAddMulti", "inputs": {
+            "inputcount": 2, "image_1": ["20", 0], "image_2": ["19", 0],
+            "blending": "subtract", "blend_amount": 1.0}},
+    })
+    return g
 
 
 def _inpaint_graph(ref_name: str, mask_name: str, instruction: str, prefix: str, *,

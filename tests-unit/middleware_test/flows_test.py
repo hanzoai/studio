@@ -562,24 +562,57 @@ def test_the_held_sweep_is_bounded_so_it_cannot_stall_the_server(tmp_path, monke
     assert len(sh._list_held("acme")) == 10, "nothing was lost — they stay held"
 
 
-def test_an_edit_returns_the_master_at_its_own_resolution():
-    """The model's working size is not the deliverable's size.
+def test_an_edit_keeps_the_master_and_adds_only_what_changed():
+    """Resizing the edit is not restoring the master.
 
-    FluxKontextImageScale rescales any input to a Kontext bucket of about a
-    megapixel, because that is where Qwen-Image-Edit works. That is the model's
-    property — but it silently became the OUTPUT's: a 4096x6144 master (25.2MP) came
-    back 832x1248 (1.04MP), a twenty-fourth of the pixels. "Brighten very slightly"
-    is not a request to resample someone's master down.
+    Measured on a real 4096x6144 render: high-frequency energy 10.3 in the camera
+    original, 0.6 in the resized edit — 17.2MB of photograph arriving as 3.0MB of soft.
+    Making the picture bigger recovered no fabric weave.
 
-    The sampler still runs at the bucket; only the saved file is restored.
+    So the deliverable keeps every photographed pixel and adds only the model's change:
+    original + (edit_upscaled - original_at_the_model's_resolution). Both sides pass
+    through the same bucket, so the bracket is exactly the adjustment that was asked
+    for. Same render: detail 9.9 against the master's 10.3, brightness carried through.
     """
-    g = sh._fix_graph("m.png", "brighten very slightly", "fixes/m", size=(4096, 6144))
+    g = sh._fix_graph("m.png", "brighten very slightly", "fixes/m",
+                      size=(4096, 6144), denoise=0.25)
     save = g["15"]["inputs"]["images"][0]
-    assert g[save]["class_type"] == "ImageScale", "the saved image must be the restored one"
-    assert (g[save]["inputs"]["width"], g[save]["inputs"]["height"]) == (4096, 6144)
-    assert g[save]["inputs"]["crop"] == "disabled", "restoring size must not crop the frame"
-    # The edit itself is untouched: still the source latent, still the edit band.
+    assert g[save]["class_type"] == "ImageAddMulti", "the master must be the base of the output"
+
+    # The original — node 1, the full-resolution LoadImage — is what is added TO.
+    assert g["20"]["inputs"]["image_1"] == ["1", 0], "the camera's own pixels are the base"
+    # The change is measured against the original AS THE MODEL SAW IT (node 2, the
+    # bucket), never against a resample — otherwise the difference includes our own
+    # scaling and the master gets edited by arithmetic it never asked for.
+    assert g["17"]["inputs"]["image"] == ["2", 0]
+    # Signed, as two disjoint one-sided halves, because the node clamps at zero.
+    assert g["18"]["inputs"]["blending"] == "subtract" and g["18"]["inputs"]["image_1"] == ["16", 0]
+    assert g["19"]["inputs"]["blending"] == "subtract" and g["19"]["inputs"]["image_1"] == ["17", 0]
+    assert g["20"]["inputs"]["blending"] == "add"
+    assert g["21"]["inputs"]["blending"] == "subtract"
+    # Full strength: a partial blend would apply a fraction of the edit the user asked for.
+    for n in ("18", "19", "20", "21"):
+        assert g[n]["inputs"]["blend_amount"] == 1.0, n
     assert not sh._assert_edit_graph(g)
+
+
+def test_a_conversion_delivers_the_model_not_the_master():
+    """At conversion strength the model's output IS the deliverable.
+
+    denoise already says how far the image must travel. A drawing→photograph
+    conversion (0.85+) is asked to REPLACE what was photographed, so compositing the
+    original back over it would fight the conversion. Only the edit band — where the
+    master is still the subject — keeps the master.
+    """
+    g = sh._fix_graph("m.png", "make it a photograph", "fixes/m",
+                      size=(4096, 6144), denoise=sh.CONVERSION_DENOISE)
+    save = g["15"]["inputs"]["images"][0]
+    assert g[save]["class_type"] == "ImageScale", "a conversion delivers the model's own image"
+    assert "21" not in g, "no composite at conversion strength"
+    # A garment swap replaces a large region but keeps the same photograph, so it stays
+    # on the master side of the line.
+    swap = sh._fix_graph("m.png", "swap the top", "fixes/m", size=(4096, 6144), denoise=0.45)
+    assert "21" in swap, "a swap still keeps the photograph it edits"
 
 
 def test_without_a_known_size_the_graph_is_unchanged():
