@@ -1,5 +1,5 @@
 """
-    This file is part of Hanzo Studio.
+    This file is part of Hanzo Studio, a fork of ComfyUI.
     Copyright (C) 2024 Stability AI
 
     This program is free software: you can redistribute it and/or modify

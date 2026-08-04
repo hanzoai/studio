@@ -3,6 +3,42 @@
 ## Overview
 **The most powerful and modular visual AI engine and application.**
 
+## Provenance & license
+
+Hanzo Studio is a fork of [ComfyUI](https://github.com/comfyanonymous/ComfyUI) by
+comfyanonymous and the ComfyUI contributors. A true fork, not a rewrite: this
+repository's root commit *is* ComfyUI's (`220afe33`, "Initial commit.",
+comfyanonymous, 2023-01-03) and the upstream history is intact beneath ours. We
+diverge at 2026-02-23, where `comfy*` modules were renamed to `studio*` and the
+product was rebranded — see the compat shim below for how upstream node packs
+still import `comfy*` unmodified.
+
+**The license is GPL-3.0, not AGPL-3.0.** `LICENSE` is the unmodified FSF GPL-3.0
+text inherited from upstream's root commit; its §13 reads "Use with the GNU Affero
+General Public License", which is the GPL-3.0 wording — AGPL-3.0's §13 is instead
+"Remote Network Interaction". That difference is the whole point: **GPL-3.0
+obligations trigger on _distribution_ — shipping a container image, binary, or
+tarball — not on letting users reach a running instance over the network.** Hosting
+Studio as a service does not by itself oblige us to publish source; shipping the
+image does, and since this repo is public and carries full corresponding source,
+that obligation is already met.
+
+Rules for this tree:
+
+- **Never edit `LICENSE`.** It is upstream's, and GPL-3.0 requires it be conveyed
+  intact.
+- **Never remove an existing copyright line.** GPL-3.0 §4 requires such notices be
+  kept intact. Add `Modifications Copyright (C) <year> Hanzo AI, Inc.` *alongside*
+  the upstream line — never in place of it. Fifteen files carry a GPL header
+  crediting Comfy or Stability AI upstream (`studio/model_management.py`,
+  `studio/ops.py`, `studio/ldm/cascade/*`, and others); leave those lines alone. A
+  blanket rebrand once rewrote `Copyright (C) 2024 Comfy` to Hanzo in seven of
+  them; the upstream notices have been restored.
+- `NOTICE` records the upstream link, the license, and this fork's deviations.
+  GPL-3.0 does **not** require a NOTICE file — that is an Apache-2.0 §4(d)
+  obligation — so it is kept as good practice, and must stay accurate as the
+  deviations change.
+
 ## Tech Stack
 - **Language**: Python
 

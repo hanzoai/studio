@@ -1,6 +1,7 @@
 """
-    This file is part of Hanzo Studio.
-    Copyright (C) 2024 Hanzo AI
+    This file is part of Hanzo Studio, a fork of ComfyUI.
+    Copyright (C) 2024 Comfy
+    Modifications Copyright (C) 2026 Hanzo AI, Inc.
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
