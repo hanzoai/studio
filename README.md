@@ -19,7 +19,7 @@
 [website-url]: https://www.hanzo.ai/
 <!-- Workaround to display total user from https://github.com/badges/shields/issues/4500#issuecomment-2060079995 -->
 [discord-shield]: https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fdiscord.com%2Fapi%2Finvites%2Fhanzoai%3Fwith_counts%3Dtrue&query=%24.approximate_member_count&logo=discord&logoColor=white&label=Discord&color=green&suffix=%20total
-[discord-url]: https://discord.gg/hanzoai
+[discord-url]: https://discord.gg/CJCyAsm9Vr
 [twitter-shield]: https://img.shields.io/twitter/follow/hanaboroai
 [twitter-url]: https://x.com/hanzoai
 
@@ -333,6 +333,6 @@ Use `--tls-keyfile key.pem --tls-certfile cert.pem` to enable TLS/SSL, the app w
 
 ## Support and dev channel
 
-[Discord](https://discord.gg/hanzoai): Try the #help or #feedback channels.
+[Discord](https://discord.gg/CJCyAsm9Vr): Try the #help or #feedback channels.
 
 See also: [https://www.hanzo.ai/](https://www.hanzo.ai/)

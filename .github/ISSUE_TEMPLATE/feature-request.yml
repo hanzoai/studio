@@ -11,7 +11,7 @@ body:
                 **2:** You have looked to make sure there is not already a feature that does what you need, and there is not already a Feature Request listed for the same idea.
                 **3:** This is something that makes sense to add to Hanzo Studio Core, and wouldn't make more sense as a custom node.
 
-                If unsure, ask on the [Hanzo AI Discord](https://discord.gg/hanzoai) first.
+                If unsure, ask on the [Hanzo AI Discord](https://discord.gg/CJCyAsm9Vr) first.
     - type: textarea
       attributes:
             label: Feature Idea

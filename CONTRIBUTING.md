@@ -6,7 +6,7 @@ There are several ways in which you can contribute, beyond writing code. The goa
 
 ## Asking Questions
 
-Have a question? Instead of opening an issue, please ask on [Discord](https://discord.gg/hanzoai) first. Our team and the community will help you.
+Have a question? Instead of opening an issue, please ask on [Discord](https://discord.gg/CJCyAsm9Vr) first. Our team and the community will help you.
 
 ## Providing Feedback
 

@@ -27,8 +27,8 @@ URL_REPLACEMENTS = [
     (r'github\.com/Comfy-Org', 'github.com/hanzoai'),
     (r'github\.com/comfyanonymous', 'github.com/hanzoai'),
     # Discord
-    (r'discord\.gg/comfyorg', 'discord.gg/hanzoai'),
-    (r'discord\.com/invite/comfyorg', 'discord.com/invite/hanzoai'),
+    (r'discord\.gg/comfyorg', 'discord.gg/CJCyAsm9Vr'),
+    (r'discord\.com/invite/comfyorg', 'discord.gg/CJCyAsm9Vr'),
     # Email
     (r'support@studio\.org', 'support@hanzo.ai'),
 ]
