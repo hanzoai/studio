@@ -139,7 +139,6 @@ jobs:
           KMS_CLIENT_ID: ${{ secrets.KMS_CLIENT_ID }}
           KMS_CLIENT_SECRET: ${{ secrets.KMS_CLIENT_SECRET }}
           KMS_ENDPOINT: ${{ vars.KMS_ENDPOINT || 'https://kms.hanzo.ai' }}
-          KMS_ORG: ${{ vars.KMS_ORG || 'hanzo' }}
           KMS_SECRET_ENV: ${{ vars.KMS_SECRET_ENV || 'prod' }}
           # pin.sh probes the registry before it moves anything; these let it read
           # a private manifest instead of falling back to anonymous.
@@ -156,10 +155,19 @@ jobs:
             | jq -r '.accessToken // empty')
           [ -n "$KMS_TOKEN" ] || { echo "::error::KMS login failed at ${KMS_ENDPOINT}"; exit 1; }
 
+          # Embedded KMS (HIP-0106): the ORG COMES FROM THE TOKEN, so the secret
+          # path is flat — /v1/kms/secrets/<path>/<NAME> — and the body is a flat
+          # {"env","name","value"}. The org-segmented form this used to call,
+          # /v1/kms/orgs/<org>/secrets/..., is gone and answers 404; `curl -fsS`
+          # then exits 22 inside the command substitution and `set -e` kills the
+          # step before the `[ -n ... ]` check can name what went missing. That is
+          # why this read failed with nothing but `curl: (22) ... 404` after the
+          # image had already been built and pushed — the build was fine, only the
+          # pin was lost, so studio kept publishing versions nothing pointed at.
           PIN_TOKEN=$(curl -fsS \
-            "${KMS_ENDPOINT}/v1/kms/orgs/${KMS_ORG}/secrets/deploy/UNIVERSE_PIN_TOKEN?env=${KMS_SECRET_ENV}" \
-            -H "Authorization: Bearer ${KMS_TOKEN}" | jq -r '.secret.value // empty')
-          [ -n "$PIN_TOKEN" ] || { echo "::error::UNIVERSE_PIN_TOKEN missing in KMS at ${KMS_ORG}/deploy (env ${KMS_SECRET_ENV})"; exit 1; }
+            "${KMS_ENDPOINT}/v1/kms/secrets/deploy/UNIVERSE_PIN_TOKEN?env=${KMS_SECRET_ENV}" \
+            -H "Authorization: Bearer ${KMS_TOKEN}" | jq -r '.value // empty')
+          [ -n "$PIN_TOKEN" ] || { echo "::error::UNIVERSE_PIN_TOKEN missing in KMS (path deploy, env ${KMS_SECRET_ENV})"; exit 1; }
           echo "::add-mask::${PIN_TOKEN}"
 
           # Shallow: universe is ~600MB of history and this needs one file from
