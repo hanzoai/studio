@@ -1158,7 +1158,11 @@ function emit(type,ev,props){if(NOTRACK)return;try{
     url:location.href,path:location.pathname,properties:props||{}}]})}).catch(()=>{});
 }catch(_){}}
 function track(ev,props){emit('event',ev,props);}
-emit('pageview','$pageview');
+// Exactly ONE pageview per load. This page loads BOTH this inline script and the
+// shared shell.js, which carries the same beacon (it is the editor's only one).
+// Whoever runs first claims the flag; the other skips. This inline script parses
+// before the deferred shell.js, so in practice it claims it here.
+if(!window.__hzPageviewSent){window.__hzPageviewSent=1;emit('pageview','$pageview');}
 let KIND='';   // the picked template lane ('' = default fix/compose composer; 'video' = Wan)
 function pickTemplate(k,t){KIND=k;$('tmpl').textContent=t; tab('assets'); $('pin').focus(); toast('Template: '+t); track('template_use',{template:t});}
 // Return the composer to the neutral fix/compose lane. Called after a video

@@ -2290,12 +2290,21 @@ async def home_redirect(request: web.Request, handler):
 _SHELL_HEAD = '<link rel="stylesheet" href="/studio/shell.css">'
 _SHELL_BODY = '<script src="/studio/shell.js" defer></script>'
 
-# Client chat config, injected as window.HZ before the shell loads. `pk` is a
-# PUBLISHABLE key (safe in the browser, scoped to chat completions) — the shell
-# streams enso from api.hanzo.ai/v1/chat/completions with it. When it is absent the
-# Chat sidebar falls back to the secure same-origin copilot path (httpOnly cookie),
-# so no key is exposed. NEVER a server secret.
-_PUBLISHABLE_KEY_ENV = ("NEXT_PUBLIC_HANZO_PUBLISHABLE_KEY", "STUDIO_PUBLISHABLE_KEY")
+# Client config, injected as window.HZ before the shell loads. `pk` is a
+# PUBLISHABLE key (safe in the browser) and it is the ONE credential the browser
+# carries to api.hanzo.ai: the Chat sidebar streams enso from
+# /v1/chat/completions with it, and the beacon attributes /v1/event with it —
+# Cloud resolves the tenant server-side from the key, so no page carries a
+# project key or a site id. When it is absent Chat falls back to the secure
+# same-origin copilot path (httpOnly cookie) and events go unattributed.
+# NEVER a server secret.
+#
+# EVENT_INGEST_KEY is the fleet's one spelling for this key, so it wins; the two
+# older studio-local names stay as fallbacks. A value that is not `pk-` is
+# dropped by the allowlist and the next name is tried, so a misconfigured
+# preferred slot degrades to the old behaviour instead of breaking the page.
+_PUBLISHABLE_KEY_ENV = ("EVENT_INGEST_KEY",
+                        "NEXT_PUBLIC_HANZO_PUBLISHABLE_KEY", "STUDIO_PUBLISHABLE_KEY")
 _PUBLISHABLE_PREFIX = "pk-"  # gateway iamauth.go: the ONE client-safe key family
 
 

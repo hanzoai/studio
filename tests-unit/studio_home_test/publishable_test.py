@@ -47,9 +47,34 @@ def test_publishable_passes_pk(pk, want):
     assert sh._publishable(pk) == want
 
 
-def test_hz_config_injects_publishable_env(monkeypatch):
+@pytest.mark.parametrize("env", ["EVENT_INGEST_KEY",
+                                 "NEXT_PUBLIC_HANZO_PUBLISHABLE_KEY", "STUDIO_PUBLISHABLE_KEY"])
+def test_hz_config_injects_publishable_env(monkeypatch, env):
     for k in sh._PUBLISHABLE_KEY_ENV:
         monkeypatch.delenv(k, raising=False)
+    monkeypatch.setenv(env, "pk-live-xyz")
+    assert _parse_hz(sh._hz_config_script())["pk"] == "pk-live-xyz"
+
+
+def test_event_ingest_key_is_the_preferred_spelling():
+    # EVENT_INGEST_KEY is the fleet's ONE name (KMS deploy/EVENT_INGEST_KEY); the
+    # studio-local names are only fallbacks, so it must be consulted first.
+    assert sh._PUBLISHABLE_KEY_ENV[0] == "EVENT_INGEST_KEY"
+
+
+def test_hz_config_prefers_event_ingest_key(monkeypatch):
+    for k in sh._PUBLISHABLE_KEY_ENV:
+        monkeypatch.setenv(k, "pk-live-fallback")
+    monkeypatch.setenv("EVENT_INGEST_KEY", "pk-live-fleet")
+    assert _parse_hz(sh._hz_config_script())["pk"] == "pk-live-fleet"
+
+
+def test_hz_config_falls_back_past_a_rejected_preferred_key(monkeypatch):
+    # A non-publishable value in the preferred slot is dropped, not fatal: the
+    # allowlist rejects it and the next name still supplies a real pk.
+    for k in sh._PUBLISHABLE_KEY_ENV:
+        monkeypatch.delenv(k, raising=False)
+    monkeypatch.setenv("EVENT_INGEST_KEY", "hk-live-server-secret")
     monkeypatch.setenv("NEXT_PUBLIC_HANZO_PUBLISHABLE_KEY", "pk-live-xyz")
     assert _parse_hz(sh._hz_config_script())["pk"] == "pk-live-xyz"
 

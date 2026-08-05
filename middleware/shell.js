@@ -29,6 +29,37 @@
   // separately (hz_create_model), so an image pick can never leak here; and a stale
   // hz_model that isn't a chat model is ignored (falls back to the enso assistant).
   function chatModel() { try { var m = localStorage.hz_model; if (m && /^(enso|zen5|zen-vl)/.test(m)) return m; } catch (_) {} return HZ.model || "enso"; }
+
+  // ── Telemetry → the ONE Hanzo Cloud front door, POST {aiBase}/v1/event ────────
+  // Same wire as the Studio home's inline beacon (middleware/studio_home.html):
+  // one stream that Cloud fans into the web (analytics), product (insights) and
+  // error (sentry) lenses, with the tenant resolved server-side from the
+  // publishable key — so nothing here carries a project key or a site id. This
+  // file is loaded by BOTH views, which is how the EDITOR gets attributed at all
+  // (it has no other emitter). Honors Global Privacy Control / Do-Not-Track.
+  // Fails silent — telemetry must never break the product.
+  //
+  // Exactly ONE pageview per load: whoever runs first claims
+  // window.__hzPageviewSent. On /studio the home's inline script parses before
+  // this deferred file and claims it, so this one skips; in the editor (no
+  // inline emitter) this one claims it and fires.
+  var NOTRACK = navigator.globalPrivacyControl === true || navigator.doNotTrack === "1" || navigator.doNotTrack === "yes";
+  function rid() { try { return crypto.randomUUID ? crypto.randomUUID() : String(Math.random()).slice(2); } catch (_) { return String(Math.random()).slice(2); } }
+  function did() { try { return localStorage.hz_did || (localStorage.hz_did = rid()); } catch (_) { return rid(); } }
+  function emit(type, ev, props) {
+    if (NOTRACK) return;
+    try {
+      var h = { "Content-Type": "application/json" }, id = did();
+      if (PK) h.Authorization = "Bearer " + PK;
+      fetch(AI_BASE + "/v1/event", { method: "POST", headers: h, credentials: "include", keepalive: true,
+        body: JSON.stringify({ batch: [{
+          messageId: rid(), type: type, event: ev,
+          timestamp: new Date().toISOString(), distinctId: id, anonymousId: id, product: "studio",
+          url: location.href, path: location.pathname, properties: props || {} }] }) }).catch(function () {});
+    } catch (_) {}
+  }
+  if (!window.__hzPageviewSent) { window.__hzPageviewSent = 1; emit("pageview", "$pageview"); }
+
   var $ = function (id) { return document.getElementById(id); };
   var el = function (tag, attrs, html) {
     var e = document.createElement(tag);
