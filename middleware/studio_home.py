@@ -2299,12 +2299,11 @@ _SHELL_BODY = '<script src="/studio/shell.js" defer></script>'
 # same-origin copilot path (httpOnly cookie) and events go unattributed.
 # NEVER a server secret.
 #
-# EVENT_INGEST_KEY is the fleet's one spelling for this key, so it wins; the two
-# older studio-local names stay as fallbacks. A value that is not `pk-` is
-# dropped by the allowlist and the next name is tried, so a misconfigured
-# preferred slot degrades to the old behaviour instead of breaking the page.
-_PUBLISHABLE_KEY_ENV = ("EVENT_INGEST_KEY",
-                        "NEXT_PUBLIC_HANZO_PUBLISHABLE_KEY", "STUDIO_PUBLISHABLE_KEY")
+# PUBLISHABLE_KEY is the fleet's ONE spelling for this key -- the name says what
+# the value is (`pk-`, which the allowlist below enforces). There are no
+# fallbacks on purpose: three accepted names meant three places to look when the
+# page shipped keyless, and the chart could satisfy a name the code did not read.
+_PUBLISHABLE_KEY_ENV = ("PUBLISHABLE_KEY",)
 _PUBLISHABLE_PREFIX = "pk-"  # gateway iamauth.go: the ONE client-safe key family
 
 
