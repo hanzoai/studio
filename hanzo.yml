@@ -27,16 +27,6 @@ test:
         tests-unit/studio_home_test \
         tests-unit/documents_test
 
-# Deploy: roll the freshly-built image onto the studio Service CR.
-deploy:
-  cluster: do-sfo3-hanzo-k8s
-  namespace: hanzo
-  # Quoted to dodge YAML 1.1 boolean coercion of a bare `on:` key.
-  "on": [main]
-  services:
-    - name: studio
-      image: studio
-
 # KMS (kms.hanzo.ai, Universal Auth) supplies the GHCR push token and the
 # target kubeconfig at run time. Only KMS_CLIENT_ID/KMS_CLIENT_SECRET live in
 # GitHub; everything else is fetched here.
