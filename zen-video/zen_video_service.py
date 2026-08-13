@@ -516,7 +516,7 @@ async def healthz(request: web.Request) -> web.Response:
 
 
 async def list_models(request: web.Request) -> web.Response:
-    data = [{"id": m, "object": "model", "owned_by": "hanzo",
+    data = [{"id": m, "object": "model", "owned_by": "zenlm",
              "max_seconds": s["max_seconds"], "default_size": f"{s['default_size'][0]}x{s['default_size'][1]}"}
             for m, s in MODELS.items()]
     return web.json_response({"object": "list", "data": data})

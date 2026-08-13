@@ -287,7 +287,7 @@ async def maybe_mirror_s3(vid: dict):
 
 async def handle_models(request):
     return web.json_response({"object": "list", "data": [
-        {"id": MODEL_NAME, "object": "model", "owned_by": "hanzo",
+        {"id": MODEL_NAME, "object": "model", "owned_by": "zenlm",
          "capabilities": ["text-to-video", "image-to-video"]}]})
 
 
