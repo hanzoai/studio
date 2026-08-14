@@ -6,12 +6,16 @@
 set -e
 
 STATIC_DIR=$(python3 -c "import comfyui_frontend_package, importlib.resources; print(str(importlib.resources.files(comfyui_frontend_package) / 'static'))")
-DOCS_DIR=$(python3 -c "import comfyui_embedded_docs, importlib.resources; print(str(importlib.resources.files(comfyui_embedded_docs) / 'docs'))")
+# The node docs ship in their own package, and not every image installs it. Ask
+# without asserting: a missing package leaves DOCS_DIR empty and the docs sweep
+# is skipped, rather than taking the whole branding pass -- and the build -- down
+# with `set -e` over an asset that is not there to brand.
+DOCS_DIR=$(python3 -c "import comfyui_embedded_docs, importlib.resources; print(str(importlib.resources.files(comfyui_embedded_docs) / 'docs'))" 2>/dev/null || true)
 BRANDING_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 echo "=== Hanzo Studio Branding ==="
 echo "Frontend: $STATIC_DIR"
-echo "Node docs: $DOCS_DIR"
+echo "Node docs: ${DOCS_DIR:-not installed}"
 
 # --- 1. Replace in-app logos ---
 echo "[1/13] Replacing logos..."
@@ -105,7 +109,11 @@ python3 "$BRANDING_DIR/patch_identity.py" "$STATIC_DIR" "$BRANDING_DIR"
 # passes so it mops up everything.
 echo "[11/13] De-Comfy display strings..."
 python3 "$BRANDING_DIR/patch_destring.py" "$STATIC_DIR"
-python3 "$BRANDING_DIR/patch_destring.py" "$DOCS_DIR"
+if [ -n "$DOCS_DIR" ] && [ -d "$DOCS_DIR" ]; then
+    python3 "$BRANDING_DIR/patch_destring.py" "$DOCS_DIR"
+else
+    echo "  No node docs package installed; skipping that tree."
+fi
 
 # --- 12. Force "Nodes 2.0" (Comfy.VueNodes.Enabled) on, remove the toggles ---
 # studio.hanzo.ai ships the modern DOM node renderer as the only node design:
