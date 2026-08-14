@@ -45,9 +45,12 @@ import sys
 ROOT = sys.argv[1]
 
 # A display word is bounded by ASCII quote/space/punctuation, or by any
-# non-ASCII character (see rule 1 above).
-OPEN = r"[\s`\"'>(]|[^\x00-\x7f]"
-CLOSE = r"[\s`\"'.,!?:;<)]|[^\x00-\x7f]"
+# non-ASCII character (see rule 1 above). '*' and '_' are boundaries because the
+# node docs are markdown and write the brand emphasised -- `**ComfyUI**` -- which
+# an otherwise-correct rule reads as unbounded and skips. That form carries most
+# of the remaining brand in the translated docs.
+OPEN = r"[\s`\"'>(*_]|[^\x00-\x7f]"
+CLOSE = r"[\s`\"'.,!?:;<)*_]|[^\x00-\x7f]"
 
 WORD_RE = re.compile(rf"(?<={OPEN})ComfyUI(?={CLOSE})")
 WORD_REPL = "Hanzo Studio"
