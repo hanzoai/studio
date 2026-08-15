@@ -1625,11 +1625,7 @@ _HOLD_TRIES = 2
 def _held_dir(org: str) -> Path:
     """orgs/<org>/held — the spool of jobs the render fabric could not be reached
     for. Same per-org tree as templates/worklog, so tenancy is structural."""
-    out = Path(folder_paths.get_org_output_directory(org))
-    base = out.parent if out.parent.name == org else out
-    d = base / "held"
-    d.mkdir(parents=True, exist_ok=True)
-    return d
+    return Path(folder_paths.get_org_directory(org, "held"))
 
 
 def _hold_job(org: str, graph: dict, common: dict) -> str:
@@ -2364,11 +2360,7 @@ def _templates_root(org: str) -> Path:
     """orgs/<org>/templates — a per-org sibling of the output tree that holds
     library.json/worklog.json, so templates are tenant-scoped exactly like every
     other per-org file. Created on demand."""
-    out = Path(folder_paths.get_org_output_directory(org))
-    base = out.parent if out.parent.name == org else out
-    d = base / "templates"
-    d.mkdir(parents=True, exist_ok=True)
-    return d
+    return Path(folder_paths.get_org_directory(org, "templates"))
 
 
 def _template_slug(name: str) -> str:

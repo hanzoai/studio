@@ -957,11 +957,7 @@ async def ai_fill(request, tmpl, description):
 
 def _docs_root(org):
     import folder_paths
-    out = Path(folder_paths.get_org_output_directory(org))
-    base = out.parent if out.parent.name == org else out
-    d = base / "documents"
-    d.mkdir(parents=True, exist_ok=True)
-    return d
+    return Path(folder_paths.get_org_directory(org, "documents"))
 
 
 def _write_atomic(path, obj):

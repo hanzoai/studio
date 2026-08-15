@@ -313,11 +313,7 @@ def render(film: dict, work: Path) -> dict:
 
 def _root(org: str) -> Path:
     import folder_paths
-    out = Path(folder_paths.get_org_output_directory(org))
-    base = out.parent if out.parent.name == org else out
-    d = base / "films"
-    d.mkdir(parents=True, exist_ok=True)
-    return d
+    return Path(folder_paths.get_org_directory(org, "films"))
 
 
 def _write(path: Path, obj) -> None:

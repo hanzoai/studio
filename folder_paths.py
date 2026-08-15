@@ -5,6 +5,7 @@ import re
 import time
 import mimetypes
 import logging
+from pathlib import Path
 from typing import Literal, List
 from collections.abc import Collection
 
@@ -129,6 +130,26 @@ def get_org_output_directory(org_id: str | None = None) -> str:
         os.makedirs(d, exist_ok=True)
         return d
     return output_directory
+
+
+def get_org_directory(org_id: str, name: str = "") -> str:
+    """The org's OWN directory — the parent of its output tree — and, given a
+    name, a subdirectory of it, created on demand.
+
+    Per-org state that is not an output lives here: templates, documents, films,
+    held jobs, stacks.db. Every one of them is a sibling of ``output/`` so that
+    tenancy is structural, and every one of them was re-deriving that same parent
+    for itself — five copies of one sentence, in four modules.
+
+    Single tenant has no ``orgs/<org>`` to be the parent of, so the output
+    directory is its own base and the per-org files sit inside it. That is the
+    behaviour those five copies had and it is why this is not
+    ``get_org_base_path``, which answers the repository root instead."""
+    out = Path(get_org_output_directory(org_id))
+    base = out.parent if out.parent.name == org_id else out
+    d = base / name if name else base
+    d.mkdir(parents=True, exist_ok=True)
+    return str(d)
 
 
 def get_org_input_directory(org_id: str | None = None) -> str:

@@ -90,11 +90,8 @@ _registry_lock = threading.Lock()
 def _db_path(org: str) -> Path:
     """``orgs/<org>/stacks.db`` — a per-org sibling of the output tree that holds
     library.json/worklog.json/templates, so a Stack DB is tenant-scoped exactly
-    like every other per-org file (same resolution as ``_templates_root``)."""
-    out = Path(folder_paths.get_org_output_directory(org))
-    base = out.parent if out.parent.name == org else out
-    base.mkdir(parents=True, exist_ok=True)
-    return base / "stacks.db"
+    like every other per-org file, by asking the one place that resolves it."""
+    return Path(folder_paths.get_org_directory(org)) / "stacks.db"
 
 
 def _conn(org: str) -> tuple[sqlite3.Connection, threading.Lock]:

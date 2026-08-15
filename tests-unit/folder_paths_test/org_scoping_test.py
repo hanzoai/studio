@@ -93,3 +93,39 @@ def test_execution_org_reset(tenant_env, monkeypatch):
     folder_paths.set_execution_org(None)
     # No active execution org and no process org -> base output dir
     assert folder_paths.get_output_directory() == os.path.join(tenant_env, "output")
+
+
+# ── The org's own directory: one resolver for every per-org file ───────────────
+#
+# templates, documents, films, held jobs and stacks.db are all siblings of the
+# org's output tree, and each of the five used to re-derive that parent for
+# itself. They ask here now, so a change of layout is one edit rather than five
+# that can disagree.
+
+def test_org_directory_is_the_parent_of_the_output_tree(tenant_env, monkeypatch):
+    monkeypatch.setattr(folder_paths, "_multi_tenant", True)
+    org = folder_paths.get_org_directory("acme")
+    assert org == os.path.join(tenant_env, "orgs", "acme")
+    assert folder_paths.get_org_output_directory("acme") == os.path.join(org, "output")
+
+
+def test_a_named_subdirectory_is_created_on_demand(tenant_env, monkeypatch):
+    monkeypatch.setattr(folder_paths, "_multi_tenant", True)
+    films = folder_paths.get_org_directory("acme", "films")
+    assert films == os.path.join(tenant_env, "orgs", "acme", "films")
+    assert os.path.isdir(films)
+
+
+def test_one_org_never_resolves_into_another(tenant_env, monkeypatch):
+    monkeypatch.setattr(folder_paths, "_multi_tenant", True)
+    assert folder_paths.get_org_directory("a", "films") != \
+        folder_paths.get_org_directory("b", "films")
+
+
+def test_single_tenant_keeps_per_org_files_inside_output(tenant_env, monkeypatch):
+    """There is no orgs/<org> to be the parent of, so the output directory is its
+    own base — which is what the five copies did, and why this is not
+    get_org_base_path (that answers the repository root)."""
+    monkeypatch.setattr(folder_paths, "_multi_tenant", False)
+    assert folder_paths.get_org_directory("default", "films") == \
+        os.path.join(tenant_env, "output", "films")

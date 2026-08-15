@@ -466,6 +466,14 @@ Office documents: a film is HTML rendered in headless Chrome, no model, no graph
   `GET /v1/films/{id}/composition?shape=` (the derivation, inspectable),
   `POST /v1/films/{id}/render`. `POST` returns the film plus `seconds`, the six
   `names`, and `frame` — the `<Frame …/>` line to paste, verbatim.
+- **One resolver for every per-org file** (`folder_paths.get_org_directory(org,
+  name)`): templates, documents, films, held jobs and `stacks.db` are all siblings
+  of the org's output tree, and each of the five was re-deriving that parent for
+  itself — one sentence, five copies, four modules. They ask the one place now.
+  Behaviour is unchanged, including the single-tenant case where there is no
+  `orgs/<org>` to be the parent of and the per-org files sit inside `output/`
+  (which is why it is not `get_org_base_path`, that being the repository root).
+  Tested: `folder_paths_test/org_scoping_test.py`.
 - **Fixed while in here:** `*{margin:0}` outranks the browser's own
   `dialog:modal{margin:auto}`, so EVERY dialog Studio has ever opened sat in the
   top-left corner (measured x=0 for `docdlg`/`filmdlg`/`ctxdlg` at 1440x900; x=440
