@@ -1,5 +1,5 @@
 """
-A film is its beats, and the composition is a derivation.
+A hero film is generated, and the generated thing is a composition.
 
 These hold the rules that were learned expensively and are now structural: the
 frame size and duration reach the renderer, frame 0 is not black, the last frame
@@ -8,27 +8,22 @@ nothing but opacity and translateY is ever animated. Each of them is a thing tha
 renders SUCCESSFULLY when it is wrong, which is why they are asserted rather than
 remembered.
 
-The render itself is a subprocess against headless Chrome. It is exercised by
-`film_render_test.py`, which skips where the toolchain is absent.
+Where a film is STORED and how it is authored is `documents_test` — a composition
+is a `frame` document and this module owns no store. The render itself is a
+subprocess against headless Chrome, exercised by `film_render_test.py`.
 """
-import asyncio
 import re
 import sys
 from pathlib import Path
 
 import pytest
-from aiohttp import web
-from aiohttp.test_utils import TestClient, TestServer
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-import folder_paths  # noqa: E402
-from middleware import film  # noqa: E402
+from middleware import doc_render, film  # noqa: E402
 
 FILM = {
     "title": "Custody",
-    "src": "custody",
-    "alt": "The credential is verified live, sealed in your org's own KMS namespace, and never returned.",
     "lead": "The credential your code never sees",
     "foot": "api.hanzo.ai/v1/cloud",
     "beats": [
@@ -37,9 +32,10 @@ FILM = {
         {"head": "Never returned", "note": "not in a response, an index, or a log line"},
     ],
 }
+ALT = "The credential is verified live, sealed in your org's own KMS namespace."
 
 
-# ── the value ─────────────────────────────────────────────────────────────────
+# ── the contract ──────────────────────────────────────────────────────────────
 
 def test_duration_is_derived_from_the_beats():
     """Typing a duration beside a list of beats is a second copy of the list's
@@ -56,12 +52,20 @@ def test_six_files_from_one_prefix():
 
 
 def test_call_site_is_two_props():
-    assert film.call_site(FILM) == f'<Frame src="/custody" alt="{FILM["alt"]}" />'
+    assert film.call_site("custody", ALT) == f'<Frame src="/custody" alt="{ALT}" />'
 
 
 def test_a_quote_in_the_message_cannot_break_the_call_site():
-    line = film.call_site({**FILM, "alt": 'She said "no"'})
+    line = film.call_site("custody", 'She said "no"')
     assert '"' not in line[line.index("alt=") + 5:-4]
+
+
+@pytest.mark.parametrize("typed,want", [
+    ("Custody Hero", "custody-hero"), ("  CUSTODY  ", "custody"),
+    ("a//b__c", "a-b-c"), ("...", ""), ("custody-hero", "custody-hero"),
+])
+def test_a_prefix_is_slugged_because_it_names_files(typed, want):
+    assert film.slug(typed) == want
 
 
 # ── the composition ───────────────────────────────────────────────────────────
@@ -83,8 +87,6 @@ def test_a_generated_master_is_a_composition_the_archetype_can_read(shape):
     """The generator WRITES the frames contract and `doc_render` READS it. Two places
     encoding one contract drift silently — a master that renders is no evidence the
     reader still understands it — so the reader is pointed at the writer's own output."""
-    from middleware import doc_render
-
     declared = doc_render.composition(film.compose(FILM, shape))
     f = film.SHAPES[shape]
     assert declared["id"] == "main"
@@ -116,11 +118,10 @@ def test_frame_zero_is_not_black():
 def test_the_film_ends_on_the_finished_thing():
     """The last frame is what every reduced-motion viewer is served instead of
     the film, so the last beat has to have landed with seconds to spare."""
-    last_beat_lands = film._OPEN + (len(FILM["beats"]) - 1) * film._STEP + film._RISE
-    assert film.seconds(FILM["beats"]) - last_beat_lands >= 3.0
+    lands = film._OPEN + (len(FILM["beats"]) - 1) * film._STEP + film._RISE
+    assert film.seconds(FILM["beats"]) - lands >= 3.0
     # `both` holds the end state after the animation finishes; without it every
     # beat snaps back to opacity 0 and the final frame is empty.
-    assert "animation: rise" in film.compose(FILM, "wide")
     assert "cubic-bezier(.16,1,.3,1) both" in film.compose(FILM, "wide")
 
 
@@ -132,8 +133,7 @@ def test_only_opacity_and_translate_are_animated():
     frames = re.findall(r"@keyframes\s+\w+\s*\{(.*?)\}\s*\}", html, re.S)
     assert len(frames) == 1
     body = frames[0]
-    props = set(re.findall(r"([a-z-]+)\s*:", body))
-    assert props == {"opacity", "transform"}
+    assert set(re.findall(r"([a-z-]+)\s*:", body)) == {"opacity", "transform"}
     assert "translateY" in body
     for banned in ("left", "top:", "margin-left", "font-size", "letter-spacing", "width"):
         assert banned not in body
@@ -153,48 +153,40 @@ def test_nothing_is_dimmer_than_the_contrast_floor():
 def test_the_words_stay_inside_the_crop():
     """`object-fit: cover` on a 390x844 phone leaves the middle 862px of the tall
     master. A word outside that column is a word nobody on a phone reads."""
-    col = film.SHAPES["tall"]["col"]
-    assert col <= 862
+    assert film.SHAPES["tall"]["col"] <= 862
 
 
 def test_the_timeline_wait_is_opted_out_of():
     """This composition registers no window.__timelines entry, and without the
-    renderer's own opt-out capture waits the full 45s player timeout every run."""
+    renderer's own opt-out capture waits the full player timeout every run."""
     assert "data-no-timeline" in film.compose(FILM, "wide")
 
 
 def test_the_clip_is_a_direct_child_of_the_root():
     """A visual clip that is not a direct child of the composition root is not
     scheduled, and one with no class="clip" is visible for the whole film."""
-    html = film.compose(FILM, "wide")
-    root = html[html.index('<div id="root"'):]
+    root = film.compose(FILM, "wide")
+    root = root[root.index('<div id="root"'):]
     assert re.match(r'<div id="root"[^>]*>\s*<section id="scene" class="clip"', root)
 
 
 def test_the_words_are_escaped():
-    html = film.compose({**FILM, "lead": '<script>x</script>'}, "wide")
-    assert "<script>x" not in html
-    assert "&lt;script&gt;" in html
+    html = film.compose({**FILM, "lead": "<script>x</script>"}, "wide")
+    assert "<script>x" not in html and "&lt;script&gt;" in html
 
 
-# ── reading a film ────────────────────────────────────────────────────────────
+def test_a_half_filled_film_still_composes():
+    """The generator is a template's builder, and a template degrades rather than
+    raising — every other one in the catalog does, and `prove` is what refuses
+    something unrenderable."""
+    html = film.compose({"lead": "Just a claim"}, "wide")
+    assert doc_render.composition(html)["duration"] == film.seconds([])
 
-def test_read_accepts_a_film():
-    assert film.read(FILM)["src"] == "custody"
 
-
-@pytest.mark.parametrize("bad,why", [
-    ({**FILM, "src": "Custody Hero"}, "src names six files"),
-    ({**FILM, "src": ""}, "src names six files"),
-    ({**FILM, "alt": "  "}, "alt is the film's own words"),
-    ({**FILM, "beats": []}, "at least one beat"),
-    ({**FILM, "beats": [{"note": "x"}]}, "no head"),
-    ({**FILM, "beats": [{"head": "a", "note": ""}] * 9}, "at most"),
-])
-def test_read_refuses_and_says_why(bad, why):
-    with pytest.raises(film.FilmError) as e:
-        film.read(bad)
-    assert why.split()[0] in str(e.value)
+def test_more_beats_than_a_film_holds_are_dropped():
+    many = [{"head": f"beat {i}", "note": ""} for i in range(20)]
+    html = film.compose({"lead": "x", "beats": many}, "wide")
+    assert html.count('class="beat"') == film.BEATS
 
 
 def test_tools_answers_honestly():
@@ -204,134 +196,22 @@ def test_tools_answers_honestly():
     assert all(isinstance(v, str) for v in t.values())
 
 
-# ── the REST surface, on a real app ───────────────────────────────────────────
-
-class _Sync:
-    def __init__(self, c, loop):
-        self.c, self.loop = c, loop
-
-    def __getattr__(self, verb):
-        def call(path, **kw):
-            r = self.loop.run_until_complete(getattr(self.c, verb)(path, **kw))
-            body = self.loop.run_until_complete(
-                r.json() if "json" in r.headers.get("Content-Type", "") else r.text())
-            return r.status, body
-        return call
-
-
-@pytest.fixture
-def client(tmp_path, monkeypatch):
-    def outd(org=None):
-        d = tmp_path / "orgs" / (org or "default") / "output"
-        d.mkdir(parents=True, exist_ok=True)
-        return str(d)
-    monkeypatch.setattr(folder_paths, "get_org_output_directory", outd)
-
-    app = web.Application()
-    routes = web.RouteTableDef()
-    film.add_film_routes(routes, object(),
-                         org_of=lambda r: r.headers.get("X-Org", "default"),
-                         owner_of=lambda r: r.headers.get("X-User", ""))
-    app.add_routes(routes)
-    loop = asyncio.new_event_loop()
-    tc = TestClient(TestServer(app), loop=loop)
-    loop.run_until_complete(tc.start_server())
-    try:
-        yield _Sync(tc, loop)
-    finally:
-        loop.run_until_complete(tc.close())
-        loop.close()
-
-
-def test_author_read_edit_delete(client):
-    s, doc = client.post("/v1/films", json=FILM)
-    assert s == 201, doc
-    fid = doc["id"]
-    assert doc["frame"] == film.call_site(FILM)
-    assert doc["names"] == film.names("custody")
-    assert doc["seconds"] == film.seconds(FILM["beats"])
-
-    s, got = client.get(f"/v1/films/{fid}")
-    assert s == 200 and got["film"]["lead"] == FILM["lead"]
-
-    s, ed = client.patch(f"/v1/films/{fid}", json={"lead": "Held, never handed over"})
-    assert s == 200 and ed["film"]["lead"] == "Held, never handed over"
-    assert ed["film"]["beats"] == FILM["beats"]      # a patch is an edit, not a replace
-
-    s, idx = client.get("/v1/films")
-    assert s == 200 and [f["id"] for f in idx["films"]] == [fid]
-
-    assert client.delete(f"/v1/films/{fid}")[0] == 200
-    assert client.get(f"/v1/films/{fid}")[0] == 404
-
-
-def test_an_edit_is_still_held_to_the_rules(client):
-    fid = client.post("/v1/films", json=FILM)[1]["id"]
-    s, err = client.patch(f"/v1/films/{fid}", json={"beats": []})
-    assert s == 400 and "beat" in err["error"]
-    assert client.get(f"/v1/films/{fid}")[1]["film"]["beats"] == FILM["beats"]
-
-
-def test_the_composition_is_inspectable(client):
-    fid = client.post("/v1/films", json=FILM)[1]["id"]
-    for shape in ("tall", "wide"):
-        s, html = client.get(f"/v1/films/{fid}/composition?shape={shape}")
-        assert s == 200 and html == film.compose(FILM, shape)
-    assert client.get(f"/v1/films/{fid}/composition?shape=square")[0] == 400
-
-
-def test_one_org_never_sees_another(client):
-    fid = client.post("/v1/films", json=FILM, headers={"X-Org": "a"})[1]["id"]
-    assert client.get(f"/v1/films/{fid}", headers={"X-Org": "b"})[0] == 404
-    assert client.get("/v1/films", headers={"X-Org": "b"})[1]["films"] == []
-
-
-def test_a_refused_film_stores_nothing(client):
-    assert client.post("/v1/films", json={**FILM, "src": "Not A Slug"})[0] == 400
-    assert client.get("/v1/films")[1]["films"] == []
-
-
-def test_render_lands_the_six_files_through_the_one_ingest(client, monkeypatch, tmp_path):
-    """Studio's library has ONE door, and a film's output goes through it like
-    every other render — so the six files are gallery assets, not a private pile."""
-    seen = []
-    monkeypatch.setattr(film, "tools", lambda: {t: "/x" for t in ("npx", "node", "ffmpeg", "ffprobe")})
-    monkeypatch.setattr(film, "render", lambda f, w: {
-        "files": {n: tmp_path / n for n in film.names(f["src"])},
-        "measured": {"tall": {"width": 1080, "height": 1920, "seconds": 5.2},
-                     "wide": {"width": 1920, "height": 1080, "seconds": 5.2}}})
-
-    app_routes = web.RouteTableDef()
-    film.add_film_routes(app_routes, object(), org_of=lambda r: "default",
-                         land=lambda org, rel, src: seen.append(rel))
-    app = web.Application()
-    app.add_routes(app_routes)
-    loop = asyncio.new_event_loop()
-    tc = TestClient(TestServer(app), loop=loop)
-    loop.run_until_complete(tc.start_server())
-    try:
-        c = _Sync(tc, loop)
-        fid = c.post("/v1/films", json=FILM)[1]["id"]
-        s, doc = c.post(f"/v1/films/{fid}/render")
-        assert s == 200, doc
-        assert seen == [f"film/{n}" for n in film.names("custody")]
-        assert doc["rendered"] == seen
-        assert doc["measured"]["wide"]["width"] == 1920
-    finally:
-        loop.run_until_complete(tc.close())
-        loop.close()
-
-
-def test_render_without_the_toolchain_refuses_and_names_it(client, monkeypatch):
+def test_a_render_without_the_toolchain_refuses_and_names_it(monkeypatch, tmp_path):
     """Studio's own image carries no Node and no Chrome. A film asked for there
     must say so, never report a film it did not make."""
     monkeypatch.setattr(film, "tools",
                         lambda: {"npx": "", "node": "", "ffmpeg": "/f", "ffprobe": "/p"})
-    fid = client.post("/v1/films", json=FILM)[1]["id"]
-    s, err = client.post(f"/v1/films/{fid}/render")
-    assert s == 503
-    assert "npx" in err["error"] and "node" in err["error"]
-    assert client.get(f"/v1/films/{fid}")[1]["rendered"] == []
+    with pytest.raises(film.FilmError) as e:
+        film.render("<html></html>", tmp_path / "x", "hero-wide")
+    assert "npx" in str(e.value) and "node" in str(e.value)
+
+
+def test_a_stem_that_is_not_a_filename_is_refused(monkeypatch, tmp_path):
+    monkeypatch.setattr(film, "tools",
+                        lambda: {k: "/x" for k in ("npx", "node", "ffmpeg", "ffprobe")})
+    with pytest.raises(film.FilmError) as e:
+        film.render("<html></html>", tmp_path / "x", "../../etc/passwd")
+    assert "names files" in str(e.value)
 
 
 # ── the served page ───────────────────────────────────────────────────────────
@@ -339,46 +219,40 @@ def test_render_without_the_toolchain_refuses_and_names_it(client, monkeypatch):
 _HTML = (Path(__file__).resolve().parents[2] / "middleware" / "studio_home.html").read_text()
 
 
-def test_films_is_a_tab_that_shows_its_own_section():
-    """Three edits make a tab, and missing the array is a button that hides
-    every panel including its own."""
-    assert """<button data-tab="films" onclick="tab('films')\"""" in _HTML
-    assert '<section id="films" hidden>' in _HTML
-    assert "'assets','documents','films','templates'" in _HTML
-    assert "if(name==='films')loadFilms();" in _HTML
+def test_a_film_has_no_surface_of_its_own():
+    """A composition is a document. A second tab, a second store and a second
+    authoring model for the same artifact is the thing this is not."""
+    for gone in ('data-tab="films"', "loadFilms", "filmdlg", "/v1/films"):
+        assert gone not in _HTML
 
 
-def test_render_is_not_offered_where_it_cannot_run():
-    """A button that always fails is worse than no button. The tab reads the
-    toolchain the API reports and says what is missing instead."""
-    assert "const miss=Object.entries(FILMS.tools||{}).filter(([,p])=>!p)" in _HTML
-    assert "can?`<button class=\"mini hot\" onclick=\"makeFilm(" in _HTML
-
-
-def test_the_form_has_no_knob_for_a_derived_thing():
-    """Length, frame size and fps come from the beats and the shape. A field for
-    one of them is a second copy of an answer the film already gives."""
-    form = _HTML[_HTML.index('<dialog id="filmdlg"'):_HTML.index("</dialog>", _HTML.index('<dialog id="filmdlg"'))]
-    for knob in ("fm_fps", "fm_duration", "fm_width", "fm_height", "fm_seconds"):
-        assert knob not in form
+def test_render_is_offered_on_a_composition_and_only_there():
+    """`html` is already how this card knows a composition — the same signal the
+    Play action reads, rather than a second field that can disagree with it."""
+    assert "(d.formats||[]).includes('html')" in _HTML
+    assert "renderDoc('${qq(d.id)}')" in _HTML
+    assert "async function renderDoc(" in _HTML
 
 
 def test_the_call_site_and_the_six_names_are_shown():
     """They are the contract: the files go in public/ under the prefix and the
     line goes in the page. Studio states both rather than describing them."""
-    assert "function showFilm(" in _HTML
     assert "d.frame" in _HTML and "d.names.join" in _HTML
+
+
+def test_a_failed_render_is_shown_and_not_swallowed():
+    assert "$('docderr').textContent=d.error" in _HTML
+
+
+def test_a_dialog_is_centred():
+    """`*{margin:0}` outranks the browser's own `dialog:modal{margin:auto}`, so
+    without this every dialog Studio opens sits in the top-left corner. Measured
+    at 1440x900: x=0, for all three of them."""
+    css = _HTML[_HTML.index("dialog{background:"):]
+    assert "margin:auto}" in css[:css.index("\n")]
 
 
 def test_the_dialog_field_style_is_not_scoped_to_one_dialog():
     assert "#docdlg .docl{" not in _HTML
     assert "\n.docl{display:block" in _HTML
     assert "dialog input:not([type])" in _HTML
-
-
-def test_a_dialog_is_centred():
-    """`*{margin:0}` outranks the browser's own `dialog:modal{margin:auto}`, so
-    without this every dialog Studio opens sits in the top-left corner. Measured
-    at 1440x900: 0px, for all three of them."""
-    css = _HTML[_HTML.index("dialog{background:"):]
-    assert "margin:auto}" in css[:css.index("\n")]

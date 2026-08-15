@@ -46,6 +46,13 @@ from middleware import doc_render as R
 def _valid(fmt: str, b: bytes) -> bool:
     if fmt == "pdf":
         return b[:5] == b"%PDF-" and b"%%EOF" in b[-64:]
+    if fmt == "html":
+        # A composition has no magic bytes; what makes it valid is that it declares a
+        # root the runtime can play, which is the same question `composition()` asks.
+        try:
+            return bool(R.composition(b.decode("utf-8"))["id"])
+        except (UnicodeDecodeError, ValueError):
+            return False
     if fmt == "md":
         try:
             return len(b) > 10 and bool(b.decode("utf-8").strip())  # real, non-empty UTF-8 text
@@ -747,3 +754,141 @@ def test_a_composition_files_itself_under_its_own_shelf(client):
              if d["id"] == doc["id"]][0]
     assert entry["category"] == "Compositions"
     assert set(D.SHELF) == set(R.KIND_FORMATS), "every archetype needs a shelf"
+
+
+# ── A hero film is a template, and its output is a composition ─────────────────
+#
+# The film generator (middleware/film.py) is a template's builder and nothing more:
+# there is one store, one surface and one authoring model for a composition,
+# whether a person wrote its HTML or the generator did. What the generator adds is
+# that the rules a hero film has to keep are written rather than remembered — those
+# are held in middleware_test/film_test.py, beside the generator.
+
+from middleware import film  # noqa: E402
+
+_FILM_FIELDS = {
+    "src": "Custody Hero", "shape": "wide",
+    "alt": "The credential is verified live and never returned.",
+    "lead": "The credential your code never sees",
+    "beats": [{"head": "Verified live", "note": "before anything is stored"},
+              {"head": "Sealed", "note": "in your org's own KMS namespace"}],
+    "foot": "api.hanzo.ai/v1/cloud",
+}
+
+
+def test_the_film_template_is_shelved_with_compositions():
+    t = D.get_template("film")
+    assert t["category"] == "Compositions" and t["formats"] == ["html"]
+    assert "Compositions" in D.CATEGORY_ORDER
+    assert any(g["name"] == "Compositions" for g in D.catalog_grouped())
+
+
+def test_a_film_builds_a_composition_titled_for_its_files():
+    """The document's TITLE is the stem the renderer names its master from, so the
+    six files fall out of the pair rather than needing a third thing to hold them
+    together — and a prefix somebody typed with spaces still names a file."""
+    kind, ir = D.build_ir(D.get_template("film"), _FILM_FIELDS)
+    assert kind == "frame"
+    assert ir["title"] == "custody-hero-wide"
+    assert R.composition(ir["html"])["width"] == 1920
+
+
+def test_the_other_shape_is_the_same_words():
+    tall = D.build_ir(D.get_template("film"), {**_FILM_FIELDS, "shape": "tall"})[1]
+    wide = D.build_ir(D.get_template("film"), _FILM_FIELDS)[1]
+    assert tall["title"] == "custody-hero-tall" and wide["title"] == "custody-hero-wide"
+    assert R.composition(tall["html"])["width"] == 1080
+    for beat in _FILM_FIELDS["beats"]:
+        assert beat["head"] in tall["html"] and beat["head"] in wide["html"]
+
+
+def test_a_shape_nobody_ships_falls_back_rather_than_raising():
+    """Every builder in this catalog degrades — `prove` is what refuses content
+    nothing can draw, and a template that raises makes that unreachable."""
+    ir = D.build_ir(D.get_template("film"), {**_FILM_FIELDS, "shape": "square"})[1]
+    assert ir["title"].endswith("-wide")
+
+
+def test_authoring_a_film_stores_a_composition(client):
+    r = client.post("/v1/documents/generate",
+                    json={"templateId": "film", "fields": _FILM_FIELDS})
+    assert r.status == 200, r.json()
+    doc = r.json()
+    assert doc["category"] == "Compositions" and doc["formats"] == ["html"]
+    assert doc["title"] == "custody-hero-wide"
+    # A composition is a page, and watching it IS the artifact — so what comes back
+    # from the store is the composition itself, unchanged.
+    played = client.get(f"/v1/documents/{doc['id']}/download?format=html")
+    assert played.status == 200
+    assert played.headers["Content-Disposition"].startswith("inline")
+    assert R.composition(played.text())["id"] == "main"
+
+
+def test_render_lands_the_files_through_the_one_ingest(tmp_path, monkeypatch):
+    """Studio's library has ONE door, and a rendered master goes through it like
+    every other render — so it is a gallery asset, not a private pile."""
+    def outd(org=None):
+        d = tmp_path / "orgs" / (org or "default") / "output"
+        d.mkdir(parents=True, exist_ok=True)
+        return str(d)
+    monkeypatch.setattr(folder_paths, "get_org_output_directory", outd)
+    monkeypatch.setattr(film, "render", lambda html, work, stem: {
+        "files": {n: tmp_path / n for n in
+                  (f"{stem}.mp4", f"{stem}-first.jpg", f"{stem}-last.jpg")},
+        "measured": {"width": 1920, "height": 1080, "seconds": 5.2}})
+
+    seen = []
+    app = web.Application()
+    routes = web.RouteTableDef()
+    D.add_documents_routes(routes, object(), org_of=lambda r: "default",
+                           land=lambda org, rel, path: seen.append(rel))
+    app.add_routes(routes)
+    loop = asyncio.new_event_loop()
+    tc = TestClient(TestServer(app), loop=loop)
+    loop.run_until_complete(tc.start_server())
+    try:
+        c = _SyncClient(tc, loop)
+        doc = c.post("/v1/documents/generate",
+                     json={"templateId": "film", "fields": _FILM_FIELDS}).json()
+        r = c.post(f"/v1/documents/{doc['id']}/render")
+        assert r.status == 200, r.json()
+        out = r.json()
+        assert seen == ["film/custody-hero-wide.mp4", "film/custody-hero-wide-first.jpg",
+                        "film/custody-hero-wide-last.jpg"]
+        assert out["rendered"] == seen
+        assert out["measured"]["width"] == 1920
+        # Half a pair still knows the whole contract, because the stem names the shape.
+        assert out["src"] == "custody-hero"
+        assert out["names"] == film.names("custody-hero")
+        assert out["frame"] == film.call_site("custody-hero", _FILM_FIELDS["alt"])
+    finally:
+        loop.run_until_complete(tc.close())
+        loop.close()
+
+
+def test_only_a_composition_renders_to_video(client):
+    doc = client.post("/v1/documents/generate",
+                      json={"templateId": "memo", "fields": {"subject": "hi"}}).json()
+    r = client.post(f"/v1/documents/{doc['id']}/render")
+    assert r.status == 400 and "composition" in r.json()["error"]
+
+
+def test_render_without_the_toolchain_refuses_and_names_it(client, monkeypatch):
+    """This image carries neither Node nor Chrome. A render asked for here says so,
+    rather than queueing against a service that does not exist."""
+    monkeypatch.setattr(film, "tools",
+                        lambda: {"npx": "", "node": "", "ffmpeg": "/f", "ffprobe": "/p"})
+    doc = client.post("/v1/documents/generate",
+                      json={"templateId": "film", "fields": _FILM_FIELDS}).json()
+    r = client.post(f"/v1/documents/{doc['id']}/render")
+    assert r.status == 503
+    body = r.json()
+    assert "npx" in body["error"] and "node" in body["error"]
+    assert body["tools"]["ffmpeg"] == "/f"
+
+
+def test_one_org_never_renders_another_orgs_document(client):
+    doc = client.post("/v1/documents/generate", json={"templateId": "film",
+                      "fields": _FILM_FIELDS}, headers={"X-Test-Org": "a"}).json()
+    r = client.post(f"/v1/documents/{doc['id']}/render", headers={"X-Test-Org": "b"})
+    assert r.status == 404

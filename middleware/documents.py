@@ -59,6 +59,7 @@ import json
 import logging
 import os
 import re
+import shutil
 import tempfile
 import time
 import uuid
@@ -68,6 +69,7 @@ import aiohttp
 from aiohttp import web
 
 from middleware import doc_render as R
+from middleware import film
 
 log = logging.getLogger("studio.documents")
 
@@ -475,6 +477,23 @@ def _b_project_update(g):
     return "deck", R.deck_ir(g("title") or "Project Update", _slides_from(g, g("period") or ""))
 
 
+# A hero film is one message at two shapes, and `film.py` is the generator that
+# writes it. A composition per shape, so the pair a page needs is two documents
+# sharing a prefix — and the document's TITLE is the file stem the renderer names
+# its master from, which is what makes the six-file contract fall out of the two
+# rather than needing a third thing to hold them together.
+def _b_film(g):
+    shape = g("shape") if g("shape") in film.SHAPES else "wide"
+    src = film.slug(g("src")) or "hero"
+    return "frame", R.frame_ir(f"{src}-{shape}", film.compose({
+        "title": g("lead") or src, "lead": g("lead"), "foot": g("foot"),
+        "beats": [b for b in g("beats") if b.get("head")],
+    }, shape))
+
+
+_BEAT_OF = [fd("head", "Beat", "text"), fd("note", "Note", "text")]
+
+
 # ── The catalog — grouped, declarative, DRY ────────────────────────────────────────
 
 def _t(id, category, name, icon, description, formats, fields, build):
@@ -718,10 +737,35 @@ CATALOG = [
             {"heading": "Risks", "bullets": ["App Store review timing", "One dependency upgrade pending"]},
         ], of=_SLIDE_OF),
     ], _b_project_update),
+
+    # ── Compositions (HTML that plays) ──
+    _t("film", "Compositions", "Hero film", "🎬",
+       "The film at the top of a page — one message at two shapes, for `<Frame src>`",
+       ["html"], [
+        fd("src", "Prefix — names the six files", "text", True, sample="custody-hero",
+           help="`<Frame src=\"/custody-hero\" />` resolves -tall.mp4, -wide.mp4 and a "
+                "-first and -last still for each. Make one film per shape with the same prefix."),
+        fd("shape", "Shape", "text", True, sample="wide",
+           help="wide (1920x1080) or tall (1080x1920). A page needs both."),
+        fd("alt", "What it says, in one sentence", "textarea", True,
+           sample="The credential is verified live, sealed in your org's own KMS "
+                  "namespace, and never returned.",
+           help="The `alt` on <Frame>, and the only place the film's words live for a "
+                "reader or a machine. Nothing is layered over a film."),
+        fd("lead", "The claim on screen", "text", True,
+           sample="The credential your code never sees",
+           help="Held from the first frame, because frame 0 is the poster."),
+        fd("beats", "Beats", "rows", sample=[
+            {"head": "Verified live", "note": "against the provider, before anything is stored"},
+            {"head": "Sealed", "note": "in your org's own KMS namespace"},
+            {"head": "Never returned", "note": "not in a response, an index, or a log line"},
+        ], of=_BEAT_OF, help=f"Each arrives in turn and stays. At most {film.BEATS}."),
+        fd("foot", "Footer", "text", sample="api.hanzo.ai/v1/cloud"),
+    ], _b_film),
 ]
 
 _BY_ID = {t["id"]: t for t in CATALOG}
-CATEGORY_ORDER = ("Documents", "Spreadsheets", "Presentations")
+CATEGORY_ORDER = ("Documents", "Spreadsheets", "Presentations", "Compositions")
 
 # Where a document authored from its IR files itself, by archetype. A template carries
 # its own category; without one the archetype is the only thing that knows.
@@ -1026,10 +1070,13 @@ def _slugify(s):
 
 # ── Routes ─────────────────────────────────────────────────────────────────────────
 
-def add_documents_routes(routes: web.RouteTableDef, server, *, org_of, owner_of=None):
+def add_documents_routes(routes: web.RouteTableDef, server, *, org_of, owner_of=None,
+                         land=None):
     """Register the office-document endpoints. Tenancy resolvers are injected (the same
     ``_org_of``/``_owner_of`` the home routes use) so this subsystem stays decoupled —
-    exactly the pattern stacks_store follows."""
+    exactly the pattern stacks_store follows. ``land(org, rel, path)`` is the library's
+    one ingest point, for the files a rendered composition produces: this module knows
+    what it made and not where an org's assets live."""
 
     def _download_urls(doc):
         return {fmt: f"/v1/documents/{doc['id']}/download?format={fmt}" for fmt in doc["formats"]}
@@ -1260,3 +1307,48 @@ def add_documents_routes(routes: web.RouteTableDef, server, *, org_of, owner_of=
         if page:
             headers["Content-Security-Policy"] = "sandbox allow-scripts"
         return web.Response(body=data, headers=headers)
+
+    @routes.post("/v1/documents/{id}/render")
+    async def documents_render(request: web.Request):
+        """A composition to video: its master and the two stills that go with it.
+
+        Only a composition has a video to make — every other archetype is drawn here
+        and downloaded. The files are named from the document's TITLE, which is why a
+        hero film's pair titles itself `<prefix>-tall` and `<prefix>-wide`: the six
+        files `@hanzo/frame` resolves fall out of the two documents rather than needing
+        a third thing to hold them together.
+
+        Synchronous, because a caller told a film is ready is told so by the thing that
+        made it. Where the toolchain is absent — this image carries neither Node nor
+        Chrome — it is refused by name rather than queued against a service that does
+        not exist.
+        """
+        org = org_of(request)
+        doc = _load_doc(org, request.match_info["id"])
+        if doc is None:
+            return web.json_response({"error": "not found"}, status=404)
+        kind, ir = stored_ir(doc)
+        if kind != "frame" or not isinstance(ir, dict):
+            return web.json_response(
+                {"error": "only a composition renders to video"}, status=400)
+        stem = film.slug(ir.get("title") or doc.get("title") or "")
+        work = _doc_dir(org, doc["id"]) / "render"
+        shutil.rmtree(work, ignore_errors=True)
+        try:
+            out = film.render(ir.get("html") or "", work, stem)
+        except film.FilmError as e:
+            return web.json_response({"error": str(e), "tools": film.tools()}, status=503)
+        landed = []
+        for name, path in out["files"].items():
+            rel = f"film/{name}"
+            if land:
+                land(org, rel, path)
+            landed.append(rel)
+        body = {"rendered": landed, "measured": out["measured"], "stem": stem}
+        # A stem that names a shape names half of a pair, so the whole contract can be
+        # stated: the six files, and the line that puts them at the top of a page.
+        if stem.endswith(("-tall", "-wide")):
+            src = stem[:-5]
+            alt = (doc.get("fields") or {}).get("alt") or ""
+            body |= {"src": src, "names": film.names(src), "frame": film.call_site(src, alt)}
+        return web.json_response(body)

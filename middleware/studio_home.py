@@ -2644,9 +2644,9 @@ def _index_upload(org: str, root: Path, rel: str, *, design, kind, role, node) -
 def _land_film(org: str, rel: str, src: Path) -> bool:
     """A rendered master or still, entering the org's library through the SAME
     ingest point every render uses — so it carries a work-log row, joins a Stack
-    that was asked for, and is refused if it is truncated. The film module knows
-    what it made; it does not know where an org's assets live, and this is the
-    one function that does."""
+    that was asked for, and is refused if it is truncated. The documents module
+    knows what it made; it does not know where an org's assets live, and this is
+    the one function that does."""
     root = Path(folder_paths.get_org_output_directory(org))
     dest = root / rel
     dest.parent.mkdir(parents=True, exist_ok=True)
@@ -2690,21 +2690,17 @@ def add_studio_home_routes(routes: web.RouteTableDef, server) -> None:
     # Office documents — the non-GPU pipeline (catalog + AI-fill + renderers) — are
     # their own orthogonal subsystem, registered here through the same injected tenancy
     # resolvers so the module stays decoupled (identical seam to stacks_store).
+    # `land` is the library's one ingest point, for the master and stills a rendered
+    # composition produces.
     from middleware.documents import add_documents_routes
-    add_documents_routes(routes, server, org_of=_org_of, owner_of=_owner_of)
+    add_documents_routes(routes, server, org_of=_org_of, owner_of=_owner_of,
+                         land=_land_film)
 
     # Commerce ⇄ Studio — READ the product catalog / store / listing, and publish a
     # render straight to the storefront listing karma.style serves. Same injected
     # tenancy seam; the module owns the upstream shapes, this file owns nothing of them.
     from middleware.commerce_catalog import add_commerce_routes
     add_commerce_routes(routes, org_of=_org_of)
-
-    # Films — the six files `@hanzo/frame` resolves from one prefix, composed and
-    # rendered here instead of by a Makefile in a website's repository. Same
-    # injected tenancy seam, plus the ONE library ingest point so a rendered
-    # master is an asset like every other thing Studio makes.
-    from middleware.film import add_film_routes
-    add_film_routes(routes, server, org_of=_org_of, owner_of=_owner_of, land=_land_film)
 
     @routes.get("/studio")
     async def studio_home(request: web.Request):

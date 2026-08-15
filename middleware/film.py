@@ -1,68 +1,59 @@
 """
-A film, authored here and rendered here.
+Writing a hero film, and turning a composition into video.
 
-`@hanzo/frame` is the player every Hanzo surface embeds — `<Frame src="/hero"
-alt="…" />`, two props, no options — and `src` is the shared PREFIX of six files
-whose names are the contract: a `-tall.mp4` and a `-wide.mp4` master, and for
-each a `-first` still (frame 0, the poster) and a `-last` still (the final
-frame, which is the whole film for a reduced-motion viewer). Until now the six
-were produced by copying a directory of hand-written HTML into a website's
-repository, editing it, and running `make`. That is a developer's workflow in
-one repo; this is the same six files as an operation on a document.
+A composition IS the artifact and Studio stores it as a `frame` document —
+`documents.py` keeps it, `doc_render.composition()` reads what it declares. This
+module is the two things that sit either side of that store, and it owns no
+store, no surface and no second authoring model of its own.
 
-A FILM IS ITS BEATS, and the composition is a derivation — the same shape
-`documents.py` takes, for the same reason. An author edits the words; the HTML
-that goes to the renderer is written from them, twice, once per shape. Nobody
-hand-keeps two files that must say the same thing, because the first copy edit
-drifts them.
+WRITING ONE. `@hanzo/frame` is the player every Hanzo surface embeds —
+`<Frame src="/hero" alt="…" />`, two props, no options — and `src` is the shared
+PREFIX of six files whose names are the contract: a `-tall` and a `-wide` master,
+and for each a `-first` still (frame 0, the poster) and a `-last` still (the final
+frame, which is the whole film for a reduced-motion viewer). A hero film is one
+message at two shapes, so it is a GENERATOR — a template, in the sense
+`documents.py` already means — rather than two HTML files somebody keeps in step
+by hand, which drift on the first copy edit.
 
-What the generator being the only writer buys is that the rules learned
-expensively stop being prose someone has to remember:
+The generator being the only writer is what turns rules that were learned
+expensively into rules that cannot be broken. Every one of them renders
+SUCCESSFULLY when it is wrong, which is exactly why they are generated instead of
+remembered:
 
   * ``data-width`` / ``data-height`` / ``data-fps`` / ``data-duration`` are
-    written from the shape and from the beats. A master that renders 1080x1920
-    when it meant to be 1920x1080 is the failure those attributes exist to
-    prevent, and it is now unreachable — there is no path through here that
-    omits them.
-  * The only animated properties are ``opacity`` and ``translateY``. The
-    renderer REFUSES layout and text-reflow tweens (they snap to integer device
-    pixels and stutter under frame-seek capture) and we render with ``--strict``
-    so that refusal is fatal rather than advisory.
-  * The lead is drawn at full opacity from t=0, so frame 0 — the poster a motion
-    viewer stares at until the player takes over — is never a black rectangle.
-  * The last beat holds for seconds at the end, so the final frame is the
-    finished thing, which is what a reduced-motion viewer is served instead of
-    the film.
-  * Nothing is dimmer than ``#777``: the measured floor that passes AA on true
-    black. Nothing sits outside the safe middle of the tall master, which a
-    390px phone crops to.
+    written from the shape and the beats. Without them a master renders 1080x1920
+    portrait and nothing reports it.
+  * The only animated properties are ``opacity`` and ``translateY``. The renderer
+    REFUSES layout and text-reflow tweens — they snap to integer device pixels and
+    stutter under seek-by-frame capture — and we render with ``--strict`` so that
+    refusal is fatal rather than advisory.
+  * The lead is drawn at full opacity from t=0, so frame 0 is never a black
+    rectangle.
+  * The last beat holds for seconds, so the film ends on the finished thing.
+  * Nothing is dimmer than ``#777``, the measured floor that passes AA on true
+    black, and nothing sits outside the middle of the tall master, which a 390px
+    phone crops to.
 
-Motion is CSS, not a library. The renderer's own capture waits for a GSAP
-timeline at ``window.__timelines[id]`` and stalls the full 45s player timeout
-when none arrives; ``data-no-timeline`` on the root is its documented opt-out
-for compositions driven purely by CSS animation, and taking it costs a film
-nothing and saves 45 seconds a render. It also means a composition is one
-self-contained file with no vendored third-party script.
+Motion is CSS rather than a library. Capture polls for a GSAP timeline at
+``window.__timelines[id]`` and, finding none, waits out the full player-ready
+timeout — measured 51.5s against 5.8s for the same four seconds of film.
+``data-no-timeline`` is the renderer's own opt-out for a CSS-driven composition,
+and taking it means a composition is one self-contained file with no vendored
+third-party script.
 
-The render is a subprocess: the published `@hanzo/frames` CLI in headless
-Chrome, then ffmpeg for the four stills. Where that toolchain is absent —
-studio's own image carries no Node and no Chrome today — every render is
-REFUSED with the name of what is missing. It never half-succeeds and it never
-reports a film it did not make.
+RENDERING ONE. The published `@hanzo/frames` CLI in headless Chrome, then ffmpeg
+for the two stills — a subprocess, for any composition, whoever wrote it. Where
+that toolchain is absent, and Studio's own image carries neither Node nor Chrome,
+a render is REFUSED with the name of what is missing. It never half-succeeds and
+never reports a film it did not make.
 """
 from __future__ import annotations
 
 import json
-import os
 import re
 import shutil
 import subprocess
-import tempfile
-import time
-import uuid
 from pathlib import Path
-
-from aiohttp import web
 
 from middleware import design
 
@@ -74,16 +65,16 @@ RENDERER = "@hanzo/frames@0.7.83"
 # calibration on this class of hardware and the render dies at frame 0.
 _FLAGS = ["--quality", "high", "--no-browser-gpu", "--workers", "1", "--strict"]
 
-_RENDER_TIMEOUT = 900          # a 20s film at 30fps is ~60s; this is the ceiling
-_ID = re.compile(r"^[0-9a-f]{32}\Z")   # \Z, so a trailing newline cannot pass
-_SRC = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*\Z")
-_BEATS = 8                     # a film nobody rewinds says at most this many things
-_MAX = 4000                    # bytes of words in one film
+_TIMEOUT = 900          # a 20s film at 30fps is ~60s; this is the ceiling
+BEATS = 8               # a film nobody rewinds says at most this many things
+
+# A stem names files, so it is held to what a filename may be.
+STEM = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*\Z")
 
 # The two shapes, and the numbers are measured rather than chosen. A phone is
 # 0.46 wide-to-tall and a laptop 1.6, so one master cannot be both. `col` is the
-# column the words live in: 840 of the tall master's 1080 keeps every word
-# inside the middle 862px a 390x844 phone leaves after `object-fit: cover`.
+# column the words live in: 840 of the tall master's 1080 keeps every word inside
+# the middle 862px a 390x844 phone leaves after `object-fit: cover`.
 SHAPES = {
     "tall": {"w": 1080, "h": 1920, "base": 22, "col": 840},
     "wide": {"w": 1920, "h": 1080, "base": 18, "col": 1240},
@@ -101,54 +92,59 @@ class FilmError(Exception):
 
 
 def seconds(beats: list) -> float:
-    """How long the film is, DERIVED. A duration typed beside a list of beats is
-    a second copy of the list's length, and it is the copy that goes stale."""
+    """How long the film is, DERIVED. A duration typed beside a list of beats is a
+    second copy of the list's length, and it is the copy that goes stale."""
     return round(_OPEN + max(len(beats) - 1, 0) * _STEP + _RISE + _HOLD, 1)
+
+
+def slug(text: str) -> str:
+    """A filename prefix from whatever the author typed."""
+    return re.sub(r"-+", "-", re.sub(r"[^a-z0-9]+", "-", str(text or "").lower())).strip("-")
 
 
 def names(src: str) -> list[str]:
     """The six files `@hanzo/frame` resolves from one prefix. The names ARE the
     contract — change one and the hero goes blank — so they are stated once."""
-    out = []
-    for shape in ("tall", "wide"):
-        out.append(f"{src}-{shape}.mp4")
-        out += [f"{src}-{shape}-first.jpg", f"{src}-{shape}-last.jpg"]
-    return out
+    return [f"{src}-{shape}{suffix}"
+            for shape in ("tall", "wide")
+            for suffix in (".mp4", "-first.jpg", "-last.jpg")]
 
 
-def call_site(film: dict) -> str:
+def call_site(src: str, alt: str) -> str:
     """The whole embed. Two props, because the component takes two."""
-    alt = film["alt"].replace('"', "&quot;")
-    return f'<Frame src="/{film["src"]}" alt="{alt}" />'
+    return f'<Frame src="/{src}" alt="{str(alt).replace(chr(34), "&quot;")}" />'
 
 
-# ── The composition ───────────────────────────────────────────────────────────
+# ── Writing one ───────────────────────────────────────────────────────────────
 
-def _esc(s: str) -> str:
+def _esc(s) -> str:
     return (str(s).replace("&", "&amp;").replace("<", "&lt;")
             .replace(">", "&gt;").replace('"', "&quot;"))
 
 
 def compose(film: dict, shape: str) -> str:
     """One film, one shape, one HTML document. Pure: no clock, no filesystem, no
-    network — the renderer bans all three anyway, since a frame must be the same
-    frame every time it is captured."""
+    network — the renderer bans all three, since a frame must be the same frame
+    every time it is captured."""
     f = SHAPES[shape]
-    b, col, dur = f["base"], f["col"], seconds(film["beats"])
+    b, col = f["base"], f["col"]
+    got = list(film.get("beats") or [])[:BEATS]
+    dur = seconds(got)
     beats = "".join(
         f'<div class="beat" style="animation-delay:{round(_OPEN + i * _STEP, 2)}s">'
-        f'<span class="dot"></span><span class="head">{_esc(x["head"])}</span>'
-        f'<span class="note">{_esc(x["note"])}</span></div>'
-        for i, x in enumerate(film["beats"]))
-    foot = (f'<div class="foot" style="animation-delay:{round(_OPEN + max(len(film["beats"]) - 1, 0) * _STEP, 2)}s">'
-            f'{_esc(film["foot"])}</div>') if film.get("foot") else ""
+        f'<span class="dot"></span><span class="head">{_esc(x.get("head"))}</span>'
+        f'<span class="note">{_esc(x.get("note"))}</span></div>'
+        for i, x in enumerate(got))
+    foot = (f'<div class="foot" style="animation-delay:'
+            f'{round(_OPEN + max(len(got) - 1, 0) * _STEP, 2)}s">{_esc(film["foot"])}</div>'
+            ) if film.get("foot") else ""
 
     return f"""<!doctype html>
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width={f['w']}, height={f['h']}" />
-<title>{_esc(film['title'])}</title>
+<title>{_esc(film.get('title') or 'Film')}</title>
 <style>
 @font-face {{ font-family: "Geist"; src: url("./assets/geist.woff2") format("woff2"); font-weight: 100 900; font-display: swap; }}
 @font-face {{ font-family: "Geist Mono"; src: url("./assets/geist-mono.woff2") format("woff2"); font-weight: 100 900; font-display: swap; }}
@@ -187,13 +183,13 @@ body {{ font-family: "Geist", system-ui, -apple-system, "Helvetica Neue", Arial,
 <body>
 <!-- data-no-timeline: this composition is driven by CSS animation and registers
      no window.__timelines entry, so without the opt-out capture waits out the
-     full 45s player-ready timeout on every single render. -->
+     full player-ready timeout on every single render. -->
 <div id="root" data-composition-id="main" data-no-timeline data-start="0"
      data-duration="{dur}" data-width="{f['w']}" data-height="{f['h']}" data-fps="{FPS}">
   <section id="scene" class="clip" data-start="0" data-duration="{dur}" data-track-index="1">
     <div class="glow"></div>
     <div class="stage">
-      <div class="lead">{_esc(film['lead'])}</div>
+      <div class="lead">{_esc(film.get('lead') or '')}</div>
       {beats}
       {foot}
     </div>
@@ -204,43 +200,7 @@ body {{ font-family: "Geist", system-ui, -apple-system, "Helvetica Neue", Arial,
 """
 
 
-# ── Reading a film ────────────────────────────────────────────────────────────
-
-def read(body) -> dict:
-    """A film, or the reason this is not one. Every field is words except `src`,
-    which is a filename prefix and is held to one."""
-    if not isinstance(body, dict):
-        raise FilmError("expected a film object")
-    out = {}
-    for key in ("title", "alt", "lead"):
-        v = body.get(key)
-        if not isinstance(v, str) or not v.strip():
-            raise FilmError(f"{key} is the film's own words and cannot be empty")
-        out[key] = v.strip()
-    src = (body.get("src") or "").strip()
-    if not _SRC.match(src):
-        raise FilmError("src names six files, so it is lowercase words joined by hyphens")
-    out["src"] = src
-    beats = body.get("beats")
-    if not isinstance(beats, list) or not beats:
-        raise FilmError("a film says something, so it has at least one beat")
-    if len(beats) > _BEATS:
-        raise FilmError(f"a film nobody rewinds holds at most {_BEATS} beats")
-    out["beats"] = []
-    for i, x in enumerate(beats):
-        if not isinstance(x, dict):
-            raise FilmError(f"beat {i + 1} is an object of head and note")
-        head, note = str(x.get("head", "")).strip(), str(x.get("note", "")).strip()
-        if not head:
-            raise FilmError(f"beat {i + 1} has no head, and the head is what it says")
-        out["beats"].append({"head": head, "note": note})
-    out["foot"] = str(body.get("foot") or "").strip()
-    if len(json.dumps(out)) > _MAX:
-        raise FilmError("a film is a fold, not a page — this is too many words")
-    return out
-
-
-# ── The render ────────────────────────────────────────────────────────────────
+# ── Rendering one ─────────────────────────────────────────────────────────────
 
 def tools() -> dict:
     """What a render needs, and where it is. An empty value is the honest answer
@@ -251,9 +211,9 @@ def tools() -> dict:
 def _run(cmd: list[str], cwd: Path | None = None) -> str:
     try:
         p = subprocess.run(cmd, cwd=str(cwd) if cwd else None, capture_output=True,
-                           text=True, timeout=_RENDER_TIMEOUT)
+                           text=True, timeout=_TIMEOUT)
     except subprocess.TimeoutExpired:
-        raise FilmError(f"{cmd[0]} did not finish within {_RENDER_TIMEOUT}s")
+        raise FilmError(f"{cmd[0]} did not finish within {_TIMEOUT}s")
     except OSError as e:
         raise FilmError(f"{cmd[0]}: {e}")
     if p.returncode != 0:
@@ -263,7 +223,7 @@ def _run(cmd: list[str], cwd: Path | None = None) -> str:
 
 
 def measure(mp4: Path) -> dict:
-    """The master's own account of itself. A film that renders the wrong size
+    """The master's own account of itself. A film that renders at the wrong size
     renders successfully, so the size is read back rather than assumed."""
     out = _run(["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries",
                 "stream=width,height", "-show_entries", "format=duration",
@@ -274,191 +234,33 @@ def measure(mp4: Path) -> dict:
             "seconds": round(float(d.get("format", {}).get("duration", 0)), 2)}
 
 
-def render(film: dict, work: Path) -> dict:
-    """Compose both shapes, render both masters, cut the four stills. Returns the
-    six files by name, each measured. The whole thing or the reason why not."""
+def render(html: str, work: Path, stem: str) -> dict:
+    """One composition to its master and the two stills that go with it. Named from
+    the stem, which is the half of a film's six-file contract this shape owns."""
     missing = [t for t, p in tools().items() if not p]
     if missing:
-        raise FilmError("this machine cannot render a film: no " + ", ".join(missing))
+        raise FilmError("this machine cannot render a composition: no " + ", ".join(missing))
+    if not STEM.match(stem or ""):
+        raise FilmError("a stem names files, so it is lowercase words joined by hyphens")
     work.mkdir(parents=True, exist_ok=True)
-    made, size = {}, {}
-    for shape in SHAPES:
-        d = work / shape
-        (d / "assets").mkdir(parents=True, exist_ok=True)
-        (d / "index.html").write_text(compose(film, shape))
-        for family, path in design.faces().items():
-            shutil.copyfile(path, d / "assets" /
-                            ("geist-mono.woff2" if "Mono" in family else "geist.woff2"))
-        mp4 = f"{film['src']}-{shape}.mp4"
-        # cwd is the project: the CLI resolves --output against the process
-        # directory, not against the project it was handed.
-        _run(["npx", "--yes", RENDERER, "render", *_FLAGS, "--output", mp4], cwd=d)
-        if not (d / mp4).is_file():
-            raise FilmError(f"the renderer reported success and wrote no {mp4}")
-        # Frame 0 is the poster; the last frame is the film for anyone who asked
-        # not to see it. -sseof seeks from the end, the only way to name the last
-        # frame without knowing the frame count.
-        first, last = f"{film['src']}-{shape}-first.jpg", f"{film['src']}-{shape}-last.jpg"
-        _run(["ffmpeg", "-y", "-loglevel", "error", "-i", mp4,
-              "-vf", "select=eq(n\\,0)", "-vframes", "1", "-q:v", "3", first], cwd=d)
-        _run(["ffmpeg", "-y", "-loglevel", "error", "-sseof", "-0.1", "-i", mp4,
-              "-update", "1", "-q:v", "3", last], cwd=d)
-        for n in (mp4, first, last):
-            made[n] = d / n
-        size[shape] = measure(d / mp4)
-    return {"files": made, "measured": size}
+    (work / "assets").mkdir(exist_ok=True)
+    (work / "index.html").write_text(html)
+    for family, path in design.faces().items():
+        shutil.copyfile(path, work / "assets" /
+                        ("geist-mono.woff2" if "Mono" in family else "geist.woff2"))
 
-
-# ── The store — per-org, atomic, the same tenancy every other module has ───────
-
-def _root(org: str) -> Path:
-    import folder_paths
-    return Path(folder_paths.get_org_directory(org, "films"))
-
-
-def _write(path: Path, obj) -> None:
-    fd, tmp = tempfile.mkstemp(prefix=path.name + ".", suffix=".tmp", dir=str(path.parent))
-    try:
-        with os.fdopen(fd, "w") as fh:
-            json.dump(obj, fh)
-        os.replace(tmp, str(path))
-    finally:
-        if os.path.exists(tmp):
-            os.unlink(tmp)
-
-
-def _index(org: str) -> dict:
-    f = _root(org) / "index.json"
-    try:
-        return json.loads(f.read_text())
-    except Exception:
-        return {"films": []}
-
-
-def _load(org: str, fid: str) -> dict | None:
-    if not _ID.match(fid or ""):
-        return None
-    try:
-        return json.loads((_root(org) / fid / "film.json").read_text())
-    except Exception:
-        return None
-
-
-def _save(org: str, doc: dict) -> None:
-    d = _root(org) / doc["id"]
-    d.mkdir(parents=True, exist_ok=True)
-    _write(d / "film.json", doc)
-    idx = _index(org)
-    row = {"id": doc["id"], "title": doc["film"]["title"], "src": doc["film"]["src"],
-           "seconds": seconds(doc["film"]["beats"]), "updatedAt": doc["updatedAt"],
-           "rendered": doc.get("rendered") or []}
-    films = [r for r in idx.get("films", []) if r.get("id") != doc["id"]]
-    _write(_root(org) / "index.json", {"films": [row] + films})
-
-
-def _public(doc: dict) -> dict:
-    return dict(doc, seconds=seconds(doc["film"]["beats"]),
-                names=names(doc["film"]["src"]), frame=call_site(doc["film"]))
-
-
-# ── REST ──────────────────────────────────────────────────────────────────────
-
-def add_film_routes(routes: web.RouteTableDef, server, *, org_of, owner_of=None,
-                    land=None) -> None:
-    """Register /v1/films. `land(org, rel)` — injected — puts a rendered file into
-    the org's library at the one ingest point every other render goes through, so
-    a film's six files are gallery assets like anything else Studio makes."""
-
-    @routes.get("/v1/films")
-    async def list_films(request: web.Request):
-        return web.json_response({"films": _index(org_of(request)).get("films", []),
-                                  "shapes": SHAPES, "renderer": RENDERER,
-                                  "tools": tools()})
-
-    @routes.post("/v1/films")
-    async def create(request: web.Request):
-        try:
-            film = read(await request.json())
-        except FilmError as e:
-            return web.json_response({"error": str(e)}, status=400)
-        except Exception:
-            return web.json_response({"error": "expected a film object"}, status=400)
-        now = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
-        doc = {"id": uuid.uuid4().hex, "film": film, "rendered": [],
-               "owner": owner_of(request) if owner_of else "",
-               "createdAt": now, "updatedAt": now}
-        _save(org_of(request), doc)
-        return web.json_response(_public(doc), status=201)
-
-    @routes.get("/v1/films/{id}")
-    async def get_film(request: web.Request):
-        doc = _load(org_of(request), request.match_info["id"])
-        if doc is None:
-            return web.json_response({"error": "not found"}, status=404)
-        return web.json_response(_public(doc))
-
-    @routes.patch("/v1/films/{id}")
-    async def edit(request: web.Request):
-        org = org_of(request)
-        doc = _load(org, request.match_info["id"])
-        if doc is None:
-            return web.json_response({"error": "not found"}, status=404)
-        try:
-            doc["film"] = read({**doc["film"], **(await request.json())})
-        except FilmError as e:
-            return web.json_response({"error": str(e)}, status=400)
-        except Exception:
-            return web.json_response({"error": "expected a film object"}, status=400)
-        doc["updatedAt"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
-        _save(org, doc)
-        return web.json_response(_public(doc))
-
-    @routes.delete("/v1/films/{id}")
-    async def remove(request: web.Request):
-        org = org_of(request)
-        doc = _load(org, request.match_info["id"])
-        if doc is None:
-            return web.json_response({"error": "not found"}, status=404)
-        shutil.rmtree(_root(org) / doc["id"], ignore_errors=True)
-        _write(_root(org) / "index.json",
-               {"films": [r for r in _index(org).get("films", []) if r.get("id") != doc["id"]]})
-        return web.json_response({"ok": True})
-
-    @routes.get("/v1/films/{id}/composition")
-    async def composition(request: web.Request):
-        """The HTML that goes to the renderer, for the shape asked for. This is
-        what makes the derivation inspectable rather than a black box."""
-        doc = _load(org_of(request), request.match_info["id"])
-        if doc is None:
-            return web.json_response({"error": "not found"}, status=404)
-        shape = request.query.get("shape", "wide")
-        if shape not in SHAPES:
-            return web.json_response({"error": f"shape is one of {', '.join(SHAPES)}"},
-                                     status=400)
-        return web.Response(text=compose(doc["film"], shape), content_type="text/html")
-
-    @routes.post("/v1/films/{id}/render")
-    async def make(request: web.Request):
-        """Render both masters and cut the four stills. Synchronous, because a
-        caller that is told a film is ready is told it by the thing that made it."""
-        org = org_of(request)
-        doc = _load(org, request.match_info["id"])
-        if doc is None:
-            return web.json_response({"error": "not found"}, status=404)
-        work = _root(org) / doc["id"] / "render"
-        shutil.rmtree(work, ignore_errors=True)
-        try:
-            out = render(doc["film"], work)
-        except FilmError as e:
-            return web.json_response({"error": str(e), "tools": tools()}, status=503)
-        landed = []
-        for name, path in out["files"].items():
-            rel = f"film/{name}"
-            if land:
-                land(org, rel, path)
-            landed.append(rel)
-        doc["rendered"] = landed
-        doc["measured"] = out["measured"]
-        doc["updatedAt"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
-        _save(org, doc)
-        return web.json_response(_public(doc))
+    mp4, first, last = f"{stem}.mp4", f"{stem}-first.jpg", f"{stem}-last.jpg"
+    # cwd is the project: the CLI resolves --output against the process directory,
+    # not against the project it was handed.
+    _run(["npx", "--yes", RENDERER, "render", *_FLAGS, "--output", mp4], cwd=work)
+    if not (work / mp4).is_file():
+        raise FilmError(f"the renderer reported success and wrote no {mp4}")
+    # Frame 0 is the poster; the last frame is the film for anyone who asked not to
+    # see it. -sseof seeks from the end, the only way to name the last frame without
+    # knowing the frame count.
+    _run(["ffmpeg", "-y", "-loglevel", "error", "-i", mp4,
+          "-vf", "select=eq(n\\,0)", "-vframes", "1", "-q:v", "3", first], cwd=work)
+    _run(["ffmpeg", "-y", "-loglevel", "error", "-sseof", "-0.1", "-i", mp4,
+          "-update", "1", "-q:v", "3", last], cwd=work)
+    return {"files": {n: work / n for n in (mp4, first, last)},
+            "measured": measure(work / mp4)}
