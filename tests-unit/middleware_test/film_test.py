@@ -256,3 +256,27 @@ def test_the_dialog_field_style_is_not_scoped_to_one_dialog():
     assert "#docdlg .docl{" not in _HTML
     assert "\n.docl{display:block" in _HTML
     assert "dialog input:not([type])" in _HTML
+
+
+# ── The image renders what the code invokes ───────────────────────────────────
+
+def test_the_image_installs_the_renderer_the_code_names():
+    """The Dockerfile reads `RENDERER` out of film.py rather than repeating it,
+    so the pin has one home. That coupling is a sed expression, which a
+    reformatting of the assignment would silently stop matching — the build
+    fails loudly on an empty pin, but only after a push, so it is asserted here
+    where an edit is being made."""
+    root = Path(__file__).resolve().parents[2]
+    dockerfile = (root / "Dockerfile").read_text()
+    assert "middleware/film.py" in dockerfile, "the image no longer reads the pin from the source"
+
+    # The expression the image applies, asked of the source the image reads.
+    src = (root / "middleware" / "film.py").read_text()
+    found = re.findall(r'^RENDERER = "(.*)"$', src, re.M)
+    assert found == [film.RENDERER], f"the image would install {found}, the code invokes {film.RENDERER}"
+
+
+def test_the_renderer_pin_names_a_version():
+    """`@hanzo/frames` unpinned would install whatever npm serves that day, and a
+    film is supposed to render the same twice."""
+    assert "@" in film.RENDERER.removeprefix("@"), f"{film.RENDERER} names no version"
