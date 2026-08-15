@@ -20,9 +20,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # naming whichever of npx/node/ffmpeg/ffprobe it cannot find. The CLI version is
 # pinned in film.py, so it is named once and not here. `chromium` is installed
 # for the shared libraries a browser links against, which apt resolves as its
-# own dependencies.
+# own dependencies, and `unzip` because the browser installer below extracts a
+# zip and treats a missing archiver as every download provider failing.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        ca-certificates ffmpeg chromium \
+        ca-certificates unzip ffmpeg chromium \
         fonts-noto-core fonts-noto-color-emoji fonts-dejavu-core fontconfig \
     && rm -rf /var/lib/apt/lists/* && apt-get clean && fc-cache -f
 
