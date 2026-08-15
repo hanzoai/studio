@@ -37,6 +37,7 @@ _ROOT = Path(__file__).resolve().parents[2]     # the checkout studio sits in
 _BRAND = _ROOT / "brand" / "brand.json"
 _TOKENS = _ROOT / "design" / "tokens"
 _MARKS = _ROOT / "logo" / "dist"
+_FONTS = _ROOT / "design" / "assets" / "fonts"
 
 _COMMENT = re.compile(r"(/\*.*?\*/)", re.S)     # capturing: a split keeps the comments
 _DECL = re.compile(r"(--[\w-]+)\s*:\s*([^;]+);")
@@ -111,6 +112,16 @@ def _tokens() -> dict:
 
 def _marks() -> dict:
     return {f.stem: f.read_text() for f in sorted(_MARKS.glob("*.svg"))}
+
+
+def faces() -> dict[str, Path]:
+    """The two typefaces the design system ships, by the family name that names
+    them in CSS. Geist and Geist Mono are the only faces a Hanzo surface draws,
+    so anything that composes one — the film generator does — asks here rather
+    than carrying its own copy. Absent design checkout: an empty answer, and the
+    caller falls through its own font stack, exactly like every other kind."""
+    want = {"Geist": "Geist-Variable.woff2", "Geist Mono": "GeistMono-Variable.woff2"}
+    return {name: _FONTS / f for name, f in want.items() if (_FONTS / f).is_file()}
 
 
 def _decl(name: str) -> re.Pattern:

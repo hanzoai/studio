@@ -46,6 +46,7 @@ import logging
 import os
 import random
 import re
+import shutil
 import tempfile
 import time
 import uuid
@@ -2648,6 +2649,20 @@ def _index_upload(org: str, root: Path, rel: str, *, design, kind, role, node) -
     return created
 
 
+def _land_film(org: str, rel: str, src: Path) -> bool:
+    """A rendered master or still, entering the org's library through the SAME
+    ingest point every render uses — so it carries a work-log row, joins a Stack
+    that was asked for, and is refused if it is truncated. The film module knows
+    what it made; it does not know where an org's assets live, and this is the
+    one function that does."""
+    root = Path(folder_paths.get_org_output_directory(org))
+    dest = root / rel
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(src, dest)
+    return _index_upload(org, root, rel, design=None, kind="film", role=None,
+                         node="studio pod")
+
+
 def _org_store(org: str, name: str) -> Path:
     """A per-org metadata file beside worklog.json/library.json (favorites, stacks).
     The same tenant-scoped output tree every per-org file uses; created on demand so
@@ -2691,6 +2706,13 @@ def add_studio_home_routes(routes: web.RouteTableDef, server) -> None:
     # tenancy seam; the module owns the upstream shapes, this file owns nothing of them.
     from middleware.commerce_catalog import add_commerce_routes
     add_commerce_routes(routes, org_of=_org_of)
+
+    # Films — the six files `@hanzo/frame` resolves from one prefix, composed and
+    # rendered here instead of by a Makefile in a website's repository. Same
+    # injected tenancy seam, plus the ONE library ingest point so a rendered
+    # master is an asset like every other thing Studio makes.
+    from middleware.film import add_film_routes
+    add_film_routes(routes, server, org_of=_org_of, owner_of=_owner_of, land=_land_film)
 
     @routes.get("/studio")
     async def studio_home(request: web.Request):

@@ -343,6 +343,69 @@ NOT bolted onto graphs; its own module, store, endpoints, and Home tab.
   re-open a saved doc to edit (PATCH). The dead `doc/sheet/paper` composer KIND placeholders
   were replaced with one "Office documents" card that opens the tab.
 
+## Films — the six files `@hanzo/frame` resolves
+`middleware/film.py` + the **🎞 Films** Home tab. Orthogonal to the GPU lanes and to
+Office documents: a film is HTML rendered in headless Chrome, no model, no graph.
+
+- **Two homes, and they do not mix.** `hanzoai/frames` is the RENDERER (our fork of
+  the local HTML→mp4 renderer; published `@hanzo/frames@0.7.83`, bin `frames`).
+  `@hanzo/frame` is the PLAYER — the one `<Frame src alt />` every Hanzo surface
+  embeds. Studio is now the place the six files between them are MADE. Before this
+  a film was `cp -r film/cloud film/x`, edit `film.mjs`, `make` — a developer's
+  workflow living in one website's repo, seven copies of ~200 lines of hand-written
+  HTML+GSAP.
+- **A film IS its beats; the composition is a DERIVATION** — the same shape
+  `documents.py` takes. `{title, src, alt, lead, beats:[{head,note}], foot}`. One
+  generator writes BOTH shapes (`tall` 1080x1920, `wide` 1920x1080), because a phone
+  is 0.46 wide-to-tall and a laptop 1.6 and hand-keeping two files that must say the
+  same thing drifts on the first copy edit. **Duration is derived** from the beat
+  count — a typed duration beside a list is a second copy of the list's length.
+- **The expensive rules are STRUCTURAL, not remembered.** Each of them renders
+  SUCCESSFULLY when it is wrong, which is why they are generated rather than
+  documented: `data-width/height/fps/duration` are always written (without them
+  every master renders 1080x1920 portrait); only `opacity` and `translateY` are ever
+  animated (the renderer refuses layout/text-reflow tweens — they snap to integer
+  device pixels and stutter under seek-by-frame capture — and we render `--strict`
+  so that refusal is fatal); the lead carries NO entrance, so frame 0 (the poster) is
+  never black; the last beat holds 3s, so the final frame — what every reduced-motion
+  viewer is served instead of the film — is the finished thing; nothing is dimmer
+  than `#777` (the measured AA floor on true black); the tall column is 840px, inside
+  the middle 862 a 390x844 phone leaves after `object-fit: cover`.
+- **Motion is CSS, and `data-no-timeline` is why that is free.** Capture polls for a
+  GSAP timeline at `window.__timelines[id]` and, finding none, waits the full 45s
+  player-ready timeout — measured 51.5s vs 5.8s for the same 4s composition. That
+  attribute is the renderer's own opt-out for CSS-driven compositions
+  (`packages/engine/src/services/frameCapture.ts`), and taking it means a composition
+  is one self-contained file with no vendored third-party script and no licence
+  question. Geist comes from the sibling `design` checkout via `design.faces()` —
+  absent, the composition falls through its own font stack and still renders.
+- **The render is a subprocess, and a refusal names what is missing.**
+  `npx --yes @hanzo/frames@0.7.83 render --quality high --no-browser-gpu --workers 1
+  --strict` (host GPU auto-probing fails capture calibration on our hardware and the
+  render dies at frame 0), cwd = the project because the CLI resolves `--output`
+  against the PROCESS directory; then ffmpeg cuts `-first` (frame 0) and `-last`
+  (`-sseof`, the only way to name the last frame without the frame count).
+  `film.tools()` reports npx/node/ffmpeg/ffprobe; missing any → **503** naming them,
+  and the Films tab does not draw a Render button it knows would fail. **Studio's own
+  image carries none of them**, so studio.hanzo.ai authors and stores films today and
+  renders them where the renderer lives.
+- **Sizes are read BACK, not assumed** (`measure()` → ffprobe): a master of the wrong
+  shape renders successfully, so the response states the measured width/height/seconds.
+- **The six files land through the ONE library ingest** (`_land_film` →
+  `_index_upload`, injected like every other resolver), so they are `kind:"film"`
+  assets with a work-log row and the truncation guard, and **☁ Publish to CMS**
+  already works on them.
+- REST (`/v1` house style): `GET|POST /v1/films`, `GET|PATCH|DELETE /v1/films/{id}`,
+  `GET /v1/films/{id}/composition?shape=` (the derivation, inspectable),
+  `POST /v1/films/{id}/render`. `POST` returns the film plus `seconds`, the six
+  `names`, and `frame` — the `<Frame …/>` line to paste, verbatim.
+- **Fixed while in here:** `*{margin:0}` outranks the browser's own
+  `dialog:modal{margin:auto}`, so EVERY dialog Studio has ever opened sat in the
+  top-left corner (measured x=0 for `docdlg`/`filmdlg`/`ctxdlg` at 1440x900; x=440
+  after). The document form's inputs also had no rule at all — browser default chrome
+  in a dark panel — so the dialog field style now covers inputs as well as textareas
+  and `.docl` is no longer scoped to one dialog.
+
 ## Create composer + gateway auth (v0.18.1 — the intuitive first Create)
 The "What should we create?" composer must PRODUCE something on the first ↑, and Chat must
 reach the gateway. Both were fixed here.
@@ -399,8 +462,18 @@ matrix asserted by magic numbers, AI-fill parse + fail-closed bearer allowlist, 
 surface incl. per-org isolation on a real aiohttp app, and the IR as the document: the
 grammar↔renderer drift gate, authoring with no template, an IR edit reaching the file, a
 fields PATCH rebuilding from the template, a retired template not orphaning a document, a
-pre-IR document still rendering, and an unrenderable IR storing nothing). Create composer + gateway
-auth: `middleware_test/gateway_auth_test.py` (the fail-closed allowlist — HS256/`sk-` refused,
+pre-IR document still rendering, and an unrenderable IR storing nothing).
+Films: `middleware_test/film_test.py` (the derivation — duration from the beats, both
+shapes from one generator, the four `data-*` reaching the renderer, one keyframe block
+holding only opacity+transform, frame 0 not black, the contrast floor, the crop column,
+`data-no-timeline`; the REST surface on a real app incl. per-org isolation, an edit still
+held to the rules, the six files reaching the one library ingest, and a toolchain-less
+render refused by name) and `middleware_test/film_render_test.py` — the ONE test that
+leaves the process, skipped where npx/node/ffmpeg/ffprobe are absent, which measures the
+rendered masters with ffprobe (1920x1080 and 1080x1920, duration = the derived seconds),
+proves the poster is not a black rectangle and the last frame is richer than the first,
+and renders twice to the same sha256. Create composer + gateway auth:
+`middleware_test/gateway_auth_test.py` (the fail-closed allowlist — HS256/`sk-` refused,
 `pk-`/asymmetric forwarded, server-key precedence, session-cookie path),
 `middleware_test/copilot_test.py::test_resolve_target_never_forwards_hs256_session_token`,
 and `studio_home_test/create_image_test.py` (the Z-Image-Turbo graph shape, `dispatch_image`

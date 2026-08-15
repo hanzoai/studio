@@ -109,8 +109,18 @@ body:not(.hzdev) .pico.dev{display:none}
 #toast.show{opacity:1}
 #zoom{position:fixed;inset:0;background:rgba(0,0,0,.9);display:none;align-items:center;justify-content:center;z-index:40;cursor:zoom-out}
 #zoom img{max-width:94vw;max-height:94vh;border-radius:8px}
-dialog{background:var(--panel);color:var(--txt);border:1px solid var(--line);border-radius:14px;padding:22px;max-width:460px;width:92vw}
-dialog::backdrop{background:rgba(0,0,0,.6)} dialog textarea{width:100%;background:#0f0f12;color:var(--txt);border:1px solid var(--line);border-radius:8px;padding:10px;font:inherit;font-size:.9rem;min-height:90px;margin:12px 0}
+/* margin:auto is how a modal dialog centres itself — the browser's own rule for
+   dialog:modal, and `*{margin:0}` at the top of this sheet outranks it. Every
+   dialog Studio has ever opened was pinned to the top-left corner of the
+   viewport because of that one word. */
+dialog{background:var(--panel);color:var(--txt);border:1px solid var(--line);border-radius:14px;padding:22px;max-width:460px;width:92vw;margin:auto}
+dialog::backdrop{background:rgba(0,0,0,.6)}
+/* One field style for every dialog. A typed field is a typed field whether it
+   holds a line or a paragraph, and the inputs the document form builds had no
+   rule at all — browser default chrome inside a dark panel. */
+dialog textarea,dialog input[type=text],dialog input[type=number],dialog input:not([type]){width:100%;background:#0f0f12;color:var(--txt);border:1px solid var(--line);border-radius:8px;padding:10px;font:inherit;font-size:.9rem;margin:12px 0}
+dialog textarea{min-height:90px}
+dialog input[type=text],dialog input[type=number],dialog input:not([type]){margin:4px 0}
 #bulkbar{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#1a1a24;border:1px solid #34344a;border-radius:12px;padding:9px 14px;display:none;gap:9px;align-items:center;z-index:45;box-shadow:0 10px 32px #000a}
 #bulkbar.on{display:flex} #bulkn{font-size:.82rem;color:#cfcfe0;margin-right:4px}
 .card.sel-mode{cursor:pointer} .card.picked{outline:2px solid var(--brand);outline-offset:-2px}
@@ -503,8 +513,10 @@ body.immersive #stage{display:block}
   .tpick-grid{grid-template-columns:repeat(auto-fill,minmax(44vw,1fr))}
 }
 /* Office documents — describe/fill dialog + generated-doc cards (house monochrome) */
-#docdlg{max-width:560px}
-#docdlg .docl{display:block;font-size:.7rem;color:var(--dim);margin:10px 0 4px;text-transform:uppercase;letter-spacing:.04em}
+#docdlg,#filmdlg{max-width:560px}
+/* The label above a dialog field. Unscoped, because it says what it is and both
+   the document form and the film form ask the same question of a reader. */
+.docl{display:block;font-size:.7rem;color:var(--dim);margin:10px 0 4px;text-transform:uppercase;letter-spacing:.04em}
 #docform{max-height:44vh;overflow:auto;padding-right:4px}
 #docform .docfield input,#docform .docfield textarea{width:100%;background:#0f0f12;color:var(--txt);border:1px solid var(--line);border-radius:8px;padding:8px 10px;font:inherit;font-size:.86rem;min-height:0;margin:0;resize:vertical}
 #docform .docfield textarea{line-height:1.45}
@@ -544,6 +556,7 @@ body.immersive #stage{display:block}
   <div class="tabs">
     <button class="on" data-tab="assets" onclick="tab('assets')">Assets</button>
     <button data-tab="documents" onclick="tab('documents')" title="Create office documents — PDF, Word, Excel, PowerPoint"><span class="ic-slot" data-ic="doc"></span>Documents</button>
+    <button data-tab="films" onclick="tab('films')" title="Films — the hero video every Hanzo page embeds with one &lt;Frame&gt;"><span class="ic-slot" data-ic="film"></span>Films</button>
     <button data-tab="templates" onclick="tab('templates')">Templates</button>
     <button data-tab="designsys" onclick="tab('designsys')">Design systems</button>
     <button data-tab="pipelines" onclick="tab('pipelines')">Workflows</button>
@@ -633,6 +646,17 @@ body.immersive #stage{display:block}
     <div id="docgall" class="grid" style="margin-top:16px"></div>
     <div class="sec-l">Your documents</div>
     <div id="doclib" class="grid"></div>
+  </section>
+  <section id="films" hidden>
+    <div class="row" style="justify-content:space-between;align-items:flex-end;flex-wrap:wrap;gap:10px">
+      <div>
+        <div class="sec-l" style="margin:0">Films</div>
+        <div style="color:var(--dim);font-size:.78rem;margin-top:3px">The film at the top of a page. Write what it says; both masters, the two posters and the two final stills are rendered from it — the six files <code>&lt;Frame src&gt;</code> resolves.</div>
+      </div>
+      <button class="btn" onclick="openFilm()">New film</button>
+    </div>
+    <div id="filmtools" style="margin-top:10px"></div>
+    <div id="filmlib" class="grid" style="margin-top:16px"></div>
   </section>
   <section id="designsys" hidden></section>
   <section id="pipelines" hidden><div class="grid" id="wfgrid"></div></section>
@@ -853,6 +877,30 @@ body.immersive #stage{display:block}
   <div id="docderr" class="dlgerr"></div>
   <div id="docresult" hidden style="margin-top:14px;border-top:1px solid var(--line);padding-top:12px"></div>
 </dialog>
+<!-- A film is what it says. The fields below ARE the film — its length, both
+     frame sizes and the whole composition are written from them, so there is
+     nothing here to set that the words do not already decide. -->
+<dialog id="filmdlg" aria-label="Write a film">
+  <h3 id="filmdt" style="margin:0 0 4px">New film</h3>
+  <p id="filmdd" style="color:var(--dim);font-size:.82rem;margin:0 0 12px">Six files come out of this, and one <code>&lt;Frame&gt;</code> puts them at the top of a page.</p>
+  <label class="docl">Name</label><input id="fm_title" placeholder="Custody">
+  <label class="docl">Prefix — names the six files, lowercase and hyphens</label><input id="fm_src" placeholder="custody-hero">
+  <label class="docl">What it says, in one sentence — this is the <code>alt</code>, and the only place the words live for a reader or a machine</label>
+  <textarea id="fm_alt" rows="2" placeholder="The credential is verified live, sealed in your org's own KMS namespace, and never returned."></textarea>
+  <label class="docl">The claim on screen — held from the first frame</label><input id="fm_lead" placeholder="The credential your code never sees">
+  <label class="docl">Beats — one per line, <code>head | note</code>. Each arrives in turn and stays.</label>
+  <textarea id="fm_beats" rows="5" placeholder="Verified live | against the provider, before anything is stored
+Sealed | in your org's own KMS namespace
+Never returned | not in a response, an index, or a log line"></textarea>
+  <label class="docl">Footer (optional)</label><input id="fm_foot" placeholder="api.hanzo.ai/v1/cloud">
+  <div class="row" style="justify-content:flex-end;margin-top:12px;gap:8px">
+    <button class="mini" onclick="filmdlg.close()">Close</button>
+    <button class="mini" id="fm_preview" onclick="previewFilm()" hidden>Preview composition</button>
+    <button class="mini hot" id="fm_save" onclick="saveFilm()">Save</button>
+  </div>
+  <div id="fm_err" class="dlgerr"></div>
+  <div id="fm_out" hidden style="margin-top:14px;border-top:1px solid var(--line);padding-top:12px"></div>
+</dialog>
 <div id="live" class="sr-only" aria-live="polite" role="status"></div>
 <script type="module" src="https://unpkg.com/@google/model-viewer@3.5.0/dist/model-viewer.min.js"></script>
 <script>
@@ -987,9 +1035,10 @@ function tab(name){document.querySelectorAll('.tabs button').forEach(b=>b.classL
   if(CURSTACK){CURSTACK=null;if(SELMODE){SELMODE=false;SEL.clear();updateBulk();}}
   $('stackview').hidden=true;
   const sec=name==='deleted'?'assets':name;   // Archive reuses the assets grid, filtered to archived (status==='deleted')
-  for(const s of ['assets','documents','templates','pipelines','runs','designsys'])$(s).hidden=s!==sec;
+  for(const s of ['assets','documents','films','templates','pipelines','runs','designsys'])$(s).hidden=s!==sec;
   if(name==='designsys')renderDesignSystems();
   if(name==='documents')loadDocuments();
+  if(name==='films')loadFilms();
   if(name==='deleted'){FILTER='deleted';}
   else if(name==='assets'&&(FILTER==='deleted'||FILTER==='flagged')){FILTER='all';}
   if(sec==='assets'){paintChips();render();updateBulk();}
@@ -2641,6 +2690,77 @@ function openDesignSystemPicker(anchor){
     el.onclick=go; el.onkeydown=e=>{ if(e.key==='Enter'||e.key===' '){e.preventDefault();go();} }; });
   _popover(anchor,m);
   const f=m.querySelector('.pm-i.ds[aria-checked="true"]')||m.querySelector('.pm-i'); f&&f.focus();
+}
+// ── Films — the six files `@hanzo/frame` resolves from one prefix, composed and
+//        rendered here. A film is its beats: the composition, both frame sizes
+//        and the length are DERIVED, so this form has no knob for any of them.
+//        Rendering needs Node, headless Chrome and ffmpeg; where the machine
+//        Studio runs on has none, /v1/films says so and Render is not offered —
+//        never a button that fails. ────────────────────────────────────────────
+let FILMS=null, FILMID=null;
+async function loadFilms(){
+  try{FILMS=await (await fetch('/v1/films')).json();}catch(_){FILMS={films:[],tools:{}};}
+  const miss=Object.entries(FILMS.tools||{}).filter(([,p])=>!p).map(([t])=>t);
+  $('filmtools').innerHTML=miss.length
+    ? `<div class="empty" style="text-align:left">Films are written here and rendered where the renderer lives — this machine has no ${esc(miss.join(', '))}, so Render is not offered. Save the film, then render it on a machine that does.</div>` : '';
+  renderFilms();
+}
+function renderFilms(){
+  const fs=(FILMS&&FILMS.films)||[], can=Object.values((FILMS&&FILMS.tools)||{}).every(Boolean);
+  $('filmlib').innerHTML=fs.length?fs.map(f=>`<div class="card" style="padding:14px">
+      <div style="font-weight:500">${esc(f.title)}</div>
+      <div class="sub">${esc(f.src)} · ${esc(String(f.seconds))}s · ${f.rendered&&f.rendered.length?'rendered':'not rendered'}</div>
+      <div class="row" style="gap:6px;margin-top:10px">
+        <button class="mini" onclick="openFilm('${qq(f.id)}')">Edit</button>
+        ${can?`<button class="mini hot" onclick="makeFilm('${qq(f.id)}')">Render</button>`:''}
+        <button class="mini" onclick="dropFilm('${qq(f.id)}')">Delete</button>
+      </div></div>`).join('')
+    :'<div class="empty" style="grid-column:1/-1">No films yet.</div>';
+}
+const beatsToText=b=>(b||[]).map(x=>x.note?`${x.head} | ${x.note}`:x.head).join('\n');
+const textToBeats=t=>String(t||'').split('\n').map(l=>l.trim()).filter(Boolean)
+  .map(l=>{const i=l.indexOf('|');return i<0?{head:l,note:''}:{head:l.slice(0,i).trim(),note:l.slice(i+1).trim()};});
+const filmForm=()=>({title:$('fm_title').value,src:$('fm_src').value,alt:$('fm_alt').value,
+  lead:$('fm_lead').value,foot:$('fm_foot').value,beats:textToBeats($('fm_beats').value)});
+async function openFilm(id){
+  FILMID=id||null; $('fm_err').textContent=''; $('fm_out').hidden=true;
+  $('fm_preview').hidden=!id; $('fm_save').textContent=id?'Save changes':'Save';
+  $('filmdt').textContent=id?'Edit film':'New film';
+  let f={title:'',src:'',alt:'',lead:'',foot:'',beats:[]};
+  if(id){ try{f=(await (await fetch('/v1/films/'+encodeURIComponent(id))).json()).film;}catch(_){} }
+  $('fm_title').value=f.title||''; $('fm_src').value=f.src||''; $('fm_alt').value=f.alt||'';
+  $('fm_lead').value=f.lead||''; $('fm_foot').value=f.foot||''; $('fm_beats').value=beatsToText(f.beats);
+  $('filmdlg').showModal(); setTimeout(()=>$('fm_title').focus(),40);
+}
+async function saveFilm(){
+  $('fm_err').textContent='';
+  const r=await fetch(FILMID?'/v1/films/'+encodeURIComponent(FILMID):'/v1/films',
+    {method:FILMID?'PATCH':'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(filmForm())});
+  const d=await r.json().catch(()=>({error:'could not save'}));
+  if(!r.ok){ $('fm_err').textContent=d.error||('save failed ('+r.status+')'); return; }
+  FILMID=d.id; $('fm_preview').hidden=false; $('filmdt').textContent='Edit film';
+  showFilm(d); loadFilms();
+}
+// The call site and the six names, verbatim, because they ARE the contract:
+// copy the files into the app's public/ under this prefix and paste the line.
+function showFilm(d){
+  const o=$('fm_out'); o.hidden=false;
+  o.innerHTML=`<div class="docl">${esc(String(d.seconds))}s · ${esc(String(d.film.beats.length))} beats</div>
+    <pre style="white-space:pre-wrap;font-size:.8rem;margin:6px 0">${esc(d.frame)}</pre>
+    <div class="docl">The six files</div>
+    <pre style="white-space:pre-wrap;font-size:.75rem;color:var(--dim);margin:6px 0">${esc(d.names.join('\n'))}</pre>`;
+}
+function previewFilm(){ if(FILMID)window.open('/v1/films/'+encodeURIComponent(FILMID)+'/composition?shape=wide','_blank'); }
+async function makeFilm(id){
+  toast('Rendering both masters…');
+  const r=await fetch('/v1/films/'+encodeURIComponent(id)+'/render',{method:'POST'});
+  const d=await r.json().catch(()=>({error:'render failed'}));
+  if(!r.ok){ toast(d.error||'render failed'); return; }
+  toast('Rendered '+d.names.length+' files into Assets'); loadFilms();
+}
+async function dropFilm(id){
+  if(!confirm('Delete this film? The rendered files stay in Assets.'))return;
+  await fetch('/v1/films/'+encodeURIComponent(id),{method:'DELETE'}); loadFilms();
 }
 // ── The canon — the design system Studio itself ships, read from disk through
 //        /v1/design: brand.json's identity, design/tokens/*.css, the rendered
