@@ -723,6 +723,11 @@ CATALOG = [
 _BY_ID = {t["id"]: t for t in CATALOG}
 CATEGORY_ORDER = ("Documents", "Spreadsheets", "Presentations")
 
+# Where a document authored from its IR files itself, by archetype. A template carries
+# its own category; without one the archetype is the only thing that knows.
+SHELF = {"doc": ("Documents", "\U0001F4C4"), "sheet": ("Spreadsheets", "\U0001F4CA"),
+         "deck": ("Presentations", "\U0001F4FD"), "frame": ("Compositions", "\U0001F3AC")}
+
 
 def get_template(tid):
     return _BY_ID.get(tid)
@@ -789,16 +794,15 @@ def render_stored(doc, fmt):
     return R.render(kind, ir, fmt), ir.get("title") or doc.get("title") or "Document"
 
 
-# Markdown is the check because it is the one format every archetype renders from the
-# standard library alone. Rendering the PRIMARY format instead asks a second question —
-# is python-pptx installed here — and answers "this document is invalid" when the honest
-# answer is "this pod cannot draw that one format".
-_PROOF_FORMAT = "md"
-
-
 def prove(kind, ir):
-    """Render ``ir`` once so nothing unrenderable is ever stored. Raises on refusal."""
-    R.render(kind, ir, _PROOF_FORMAT)
+    """Render ``ir`` once so nothing unrenderable is ever stored. Raises on refusal.
+
+    The format is the archetype's own ``R.PROOF`` — the one it draws with the standard
+    library alone. Rendering the PRIMARY format instead asks a second question — is
+    python-pptx installed here — and answers "this document is invalid" when the honest
+    answer is "this pod cannot draw that one format".
+    """
+    R.render(kind, ir, R.PROOF[kind])
 
 
 def read_ir(body, kind_hint=None):
@@ -1071,8 +1075,9 @@ def add_documents_routes(routes: web.RouteTableDef, server, *, org_of, owner_of=
         org = org_of(request)
         now = int(time.time())
         title = (body.get("title") or "").strip() or ir.get("title") or "Document"
+        category, icon = SHELF[kind]
         doc = {"id": uuid.uuid4().hex, "templateId": "", "title": title,
-               "category": "Documents", "icon": "\U0001F4C4", "formats": formats,
+               "category": category, "icon": icon, "formats": formats,
                "kind": kind, "ir": ir, "fields": {}, "createdAt": now, "updatedAt": now,
                "createdBy": (owner_of(request) if owner_of else "")}
         _save_doc(org, doc)
@@ -1178,11 +1183,15 @@ def add_documents_routes(routes: web.RouteTableDef, server, *, org_of, owner_of=
         if body.get("ir") is not None:
             # The content itself. It wins over fields in the same body: the fields wrote
             # the IR once, and after an edit they no longer describe it.
+            # Two questions, two answers — the same pair the author route gives. Asking
+            # them together reported "bad request" for content that was well-formed and
+            # simply undrawable, which tells an author to fix the wrong thing.
             try:
                 kind, ir = read_ir(body, kind_hint=doc.get("kind") or stored_ir(doc)[0])
-                prove(kind, ir)
             except ValueError as e:
                 return web.json_response({"error": str(e)}, status=400)
+            try:
+                prove(kind, ir)
             except Exception as e:
                 log.warning("documents.update render failed: %s", e)
                 return web.json_response({"error": "could not render this document"}, status=422)
@@ -1241,8 +1250,17 @@ def add_documents_routes(routes: web.RouteTableDef, server, *, org_of, owner_of=
             log.warning("documents.download render failed: %s", e)
             return web.json_response({"error": "could not render this document"}, status=500)
         filename = f"{_slugify(title)}.{fmt}"
-        return web.Response(body=data, headers={
+        # A composition is a page — handed over as an attachment it cannot be watched,
+        # and watching it IS the web/ad artifact. It is served into an opaque origin
+        # (sandbox, no allow-same-origin) so authored markup runs its own animation and
+        # can never read this session or call these endpoints as the signed-in person.
+        page = fmt == "html"
+        headers = {
             "Content-Type": R.content_type(fmt),
-            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Content-Disposition": f'{"inline" if page else "attachment"}; filename="{filename}"',
             "Cache-Control": "no-store",
-        })
+            "X-Content-Type-Options": "nosniff",
+        }
+        if page:
+            headers["Content-Security-Policy"] = "sandbox allow-scripts"
+        return web.Response(body=data, headers=headers)

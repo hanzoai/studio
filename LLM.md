@@ -281,11 +281,12 @@ shared Hanzo IAM (standard OIDC code flow). No embedding.
   behind disabled API-nodes) are intentionally left. patch_frontend.py keeps its
   orthogonal concern (URLs/domains + `Comfy-Org` → `Hanzo AI`).
 
-## Office documents (the non-GPU pipeline)
-Studio's creative side is ComfyUI graphs → GPU. Office documents are the **orthogonal**
-subsystem: structured content (a template's typed fields, filled by a person OR by the AI)
-→ a pure-Python renderer → a real `.pdf/.docx/.xlsx/.pptx/.md`. No graph, no model, no GPU.
-NOT bolted onto graphs; its own module, store, endpoints, and Home tab.
+## Authored content (the non-GPU pipeline)
+Studio's creative side is ComfyUI graphs → GPU. Authored content is the **orthogonal**
+subsystem: content a person or an agent WRITES → a renderer → a real file. No graph, no
+model, no GPU. NOT bolted onto graphs; its own module, store, endpoints, and Home tab.
+Four archetypes: `doc` · `sheet` · `deck` (office documents, drawn here) and `frame`
+(a Frames composition, which is already the artifact — see below).
 
 - **Renderers** (`middleware/doc_render.py`, pure — no HTTP/storage/org): one neutral IR
   per archetype (`doc` prose blocks · `sheet` sheets · `deck` slides) and EXACTLY ONE
@@ -322,9 +323,75 @@ NOT bolted onto graphs; its own module, store, endpoints, and Home tab.
   the renderers, and `test_schema_names_every_block_the_renderer_draws` walks the doc
   renderer so a block the grammar names and the renderer ignores cannot ship.
 - **One proof, and it asks about the IR rather than about the pod** (`documents.prove`):
-  every write renders once to `md`, the one format every archetype draws from the standard
-  library. Rendering the primary format instead answered "this document is invalid" when
-  the honest answer was "this pod has no python-pptx".
+  every write renders once to the archetype's `doc_render.PROOF` format — the one it draws
+  with the standard library alone (`md` for prose, and a composition already IS its `html`).
+  Rendering the primary format instead answered "this document is invalid" when the honest
+  answer was "this pod has no python-pptx". `POST` and `PATCH` now give the SAME pair of
+  answers: **400** the body is not an IR, **422** nothing can draw it. PATCH used to ask both
+  in one `except ValueError`, so well-formed-but-undrawable content was reported as a bad
+  request — telling an author to fix the wrong thing.
+
+### Frames compositions — studio holds the source, `frames` renders it
+The `frame` archetype is web/ad/video content from **hanzoai/frames** (published
+`@hanzo/frames`, bin `frames`; the repo is `~/work/hanzo/frames`, NOT `hanzoai/frame`,
+which is an unrelated React hero-film component). A composition is **HTML that plays** —
+text a model can write precisely — so it needs no IR of its own and gets no second
+authoring model: the composition IS the source, stored verbatim.
+
+- **Nothing is drawn here** (`doc_render.py`, `_render_frame` + `composition()`):
+  `KIND_FORMATS["frame"] = ("html",)` and the renderer hands back the authored bytes
+  unchanged. `composition(html)` reads the root `[data-composition-id]` element — which
+  names the timeline the runtime plays — and returns its declared `{id,width,height,duration}`.
+  Reading it and proving the document IS a composition are one act.
+- **The check stops exactly where frames begins.** `data-duration` may be omitted when the
+  timeline implies the length, so requiring it would be STRICTER than frames and would
+  refuse valid work. Only a STATED number is checked, and then it must be positive and
+  finite — frames reads the root with `parseFloat` and keeps the result only when it is
+  finite and non-zero, so a typo there is not an error, it is a silently different film.
+  `frames lint` and `frames check` are the full check and they run where the renderer runs.
+  `GRAMMAR["frame"]` publishes the contract (root attrs · `class="clip"` + `data-start`/
+  `data-duration`/`data-track-index` · one paused GSAP timeline at `window.__timelines[id]` ·
+  determinism) and names frames as the authority instead of restating its doctrine.
+- **A composition is served as a page, not as a download** (`documents_download`): `inline`
+  + `text/html`, because watching it IS the web/ad artifact. It lands in an **opaque origin**
+  (`Content-Security-Policy: sandbox allow-scripts`, no `allow-same-origin`) so authored
+  markup animates but can never read this session or call these endpoints as the signed-in
+  person. Every other format stays an `attachment`. The library card reads **▶ Play** and
+  opens in a new tab; an authored document files itself by archetype (`SHELF`), so a
+  composition lands under **Compositions** rather than in with the memos.
+- **A generator writes one; the archetype IS one.** `film.py` and this are the same pair
+  `documents.py` already draws: a **template is a generator** (`{beats} →` composition
+  HTML, twice, one per shape) and the **archetype is the content** (a composition an
+  author reads, edits and writes back). A film keeps its structural rules precisely
+  because a generator is its only writer; a composition nothing generates is written
+  directly and is bounded only by what plays. The two cannot drift on the contract
+  itself: `film_test.py` puts every generated master through `doc_render.composition()`,
+  so the writer and the reader of the frames contract agree by construction. They are NOT
+  folded into one store, and that is deliberate — a film's product is six files with a
+  naming contract `@hanzo/frame` resolves, not one document, and its IR is the beats
+  rather than the HTML. What WOULD be duplication is a second composition writer; there
+  is one, and `frame` deliberately does not add another.
+- **The Python↔Node boundary, stated honestly.** The renderer is Node ≥22 + a pinned
+  `chrome-headless-shell` + FFmpeg + a font set (~25 apt packages); studio's image is
+  `python:3.11-slim` + torch and carries none of them. Rendering is therefore a
+  subprocess against the pinned CLI (`film.py` `RENDERER`/`render()`/`tools()`), refused **503** by
+  name where the toolchain is absent — never faked, and no URL knob for an absent service
+  was invented. So studio authors and stores today, and renders where the renderer lives:
+  download the composition to `<proj>/index.html`, `frames render <proj> -o out.mp4`.
+  **Proven end to end**: the stored bytes pass `frames lint` (0 errors, 0 warnings) and
+  render to h264 1920×1080, 150 frames, exactly the 5.000s the root declared.
+  When rendering is wanted in-cluster, the crossing already takes exactly what is stored —
+  `@frames/producer` serves `POST /render {"html": …}` → `{outputUrl}` (port 9847). That is
+  a deploy plus one caller, not a second authoring model.
+- **One file, so assets go by URL.** A document is a single file; a composition needing a
+  folder beside it (fonts, bgm, sub-compositions via `data-composition-src`) is a frames
+  project, not a document. The grammar says so rather than letting an author find out at
+  render time.
+- **Who can author one.** The IR door (`POST /v1/documents`, `PATCH {ir}`) was already
+  agent-shaped for every archetype — the Documents dialog drives templates and typed
+  fields, and no archetype has a raw-IR editor. A composition is the same: an agent writes
+  it against `GET /v1/documents/schema`, and a person finds it in the library, plays it,
+  and deletes it. A person's own composition editor does not exist and is not faked.
 - **AI-fill is a LAYERED ENHANCEMENT** — the structured-form path renders a valid document
   with NO LLM, so a broken/unauthorized gateway can NEVER block creation (`422 needFields`
   → the UI reveals the prefilled form). It reuses the SAME working token the shipped Chat
@@ -462,7 +529,15 @@ matrix asserted by magic numbers, AI-fill parse + fail-closed bearer allowlist, 
 surface incl. per-org isolation on a real aiohttp app, and the IR as the document: the
 grammar↔renderer drift gate, authoring with no template, an IR edit reaching the file, a
 fields PATCH rebuilding from the template, a retired template not orphaning a document, a
-pre-IR document still rendering, and an unrenderable IR storing nothing).
+pre-IR document still rendering, and an unrenderable IR storing nothing; and the frame
+archetype: a composition stored and served byte-for-byte, served inline in a sandboxed
+origin while every other format stays an attachment, HTML that is not a composition refused
+with nothing stored, a root leaving its length to the timeline ACCEPTED — the frames-parity
+check that keeps studio from out-stricting frames — the declared shape read off the root, an
+edit reaching the page while a broken edit leaves it untouched, the grammar naming only
+attributes a real composition carries, every archetype having a shelf, and `film.py`'s
+generated masters passing the archetype's own reader, so the writer and the reader of the
+frames contract cannot drift).
 Films: `middleware_test/film_test.py` (the derivation — duration from the beats, both
 shapes from one generator, the four `data-*` reaching the renderer, one keyframe block
 holding only opacity+transform, frame 0 not black, the contrast floor, the crop column,

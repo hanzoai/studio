@@ -78,6 +78,20 @@ def test_the_frame_size_reaches_the_renderer(shape):
     assert f'data-duration="{film.seconds(FILM["beats"])}"' in html
 
 
+@pytest.mark.parametrize("shape", ["tall", "wide"])
+def test_a_generated_master_is_a_composition_the_archetype_can_read(shape):
+    """The generator WRITES the frames contract and `doc_render` READS it. Two places
+    encoding one contract drift silently — a master that renders is no evidence the
+    reader still understands it — so the reader is pointed at the writer's own output."""
+    from middleware import doc_render
+
+    declared = doc_render.composition(film.compose(FILM, shape))
+    f = film.SHAPES[shape]
+    assert declared["id"] == "main"
+    assert (declared["width"], declared["height"]) == (f["w"], f["h"])
+    assert declared["duration"] == film.seconds(FILM["beats"])
+
+
 def test_the_two_shapes_are_not_the_same_document():
     """One master cannot be both a phone and a laptop, and hand-keeping two files
     that must say the same thing drifts on the first copy edit — so one generator

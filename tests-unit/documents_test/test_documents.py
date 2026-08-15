@@ -604,3 +604,146 @@ def test_authored_documents_stay_in_their_own_org(client):
     assert client.get(f"/v1/documents/{doc['id']}").status == 404
     assert client.get(f"/v1/documents/{doc['id']}",
                       headers={"X-Test-Org": "acme"}).status == 200
+
+
+# ── the frame archetype: a Frames composition ──────────────────────────────────────
+# The other three archetypes hold content a renderer here draws. This one holds content
+# that is ALREADY the artifact — a page that plays, which is the deliverable for web and
+# for ads, and which `frames render` reads to make video. So the tests ask what studio
+# can honestly assert about it, and never re-ask what `frames lint` asks.
+
+# The canonical minimal composition (hanzoai/frames, skills/hyperframes-core references).
+_COMPOSITION = """<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=1920, height=1080" />
+    <title>Minimal Frames Composition</title>
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+  </head>
+  <body>
+    <div id="root" data-composition-id="main" data-start="0"
+         data-width="1920" data-height="1080" data-duration="5">
+      <section id="title-card" class="clip" data-start="0" data-duration="5"
+               data-track-index="1"><h1 id="title">Hello Frames</h1></section>
+    </div>
+    <script>
+      window.__timelines = window.__timelines || {};
+      const tl = gsap.timeline({ paused: true });
+      tl.from("#title", { y: 48, opacity: 0, duration: 0.6, ease: "power3.out" }, 0.2);
+      window.__timelines["main"] = tl;
+    </script>
+  </body>
+</html>
+"""
+
+
+def test_a_composition_is_stored_and_served_exactly_as_authored(client):
+    r = client.post("/v1/documents",
+                    json={"kind": "frame", "ir": R.frame_ir("Hello Frames", _COMPOSITION)})
+    assert r.status == 200, r.text()
+    doc = r.json()
+    assert doc["kind"] == "frame" and doc["formats"] == ["html"]
+    assert doc["title"] == "Hello Frames"
+
+    page = client.get(doc["download"]["html"])
+    assert page.status == 200
+    # Byte-for-byte: studio keeps the source, it does not rewrite it.
+    assert page.read().decode() == _COMPOSITION
+
+
+def test_a_composition_is_served_as_a_page_in_an_opaque_origin(client):
+    """Watching it IS the web/ad artifact, so it is served inline — and authored markup
+    must never be able to read this session or call these endpoints as the signed-in
+    person, so it lands in a sandboxed origin with no same-origin grant."""
+    doc = client.post("/v1/documents",
+                      json={"kind": "frame", "ir": R.frame_ir("Ad", _COMPOSITION)}).json()
+    page = client.get(doc["download"]["html"])
+    assert page.headers["Content-Type"] == "text/html; charset=utf-8"
+    assert page.headers["Content-Disposition"].startswith("inline;")
+    assert page.headers["X-Content-Type-Options"] == "nosniff"
+    csp = page.headers["Content-Security-Policy"]
+    assert "sandbox" in csp and "allow-same-origin" not in csp
+
+    # Every other format stays a file.
+    other = _gen(client, "memo", fields=D.get_template("memo")["sample"]).json()
+    assert client.get(other["download"]["md"]).headers["Content-Disposition"].startswith("attachment;")
+
+
+def test_html_that_is_not_a_composition_is_refused_and_stores_nothing(client):
+    before = len(client.get("/v1/documents/library").json()["documents"])
+    for html in ("<html><body><h1>a page, not a composition</h1></body></html>", "", "   "):
+        r = client.post("/v1/documents", json={"kind": "frame", "ir": {"html": html}})
+        assert r.status == 422, f"{html!r} -> {r.status}"
+    # A root that states a length must state a real one.
+    bad = _COMPOSITION.replace('data-duration="5"', 'data-duration="0"')
+    assert client.post("/v1/documents", json={"kind": "frame", "ir": {"html": bad}}).status == 422
+    assert len(client.get("/v1/documents/library").json()["documents"]) == before
+
+
+def test_a_composition_may_leave_its_length_to_the_timeline(client):
+    """`data-duration` is optional when the timeline implies it, so refusing a root
+    without one would be stricter than frames — and would reject valid work."""
+    html = _COMPOSITION.replace(' data-duration="5"', "", 1)
+    r = client.post("/v1/documents", json={"kind": "frame", "ir": {"html": html}})
+    assert r.status == 200, r.text()
+    assert R.composition(html)["duration"] is None
+
+
+def test_the_declared_shape_is_read_from_the_root(client):
+    shape = R.composition(_COMPOSITION)
+    assert shape == {"id": "main", "width": 1920.0, "height": 1080.0, "duration": 5.0}
+    with pytest.raises(ValueError):
+        R.composition("<html><body>no root</body></html>")
+    with pytest.raises(ValueError):
+        R.composition(_COMPOSITION.replace('data-width="1920"', 'data-width="wide"'))
+
+
+def test_editing_the_composition_changes_the_page(client):
+    doc = client.post("/v1/documents",
+                      json={"kind": "frame", "ir": R.frame_ir("Ad", _COMPOSITION)}).json()
+    ir = client.get(f"/v1/documents/{doc['id']}").json()["ir"]
+    ir["html"] = ir["html"].replace("Hello Frames</h1>", "Ship it</h1>")
+
+    r = client.patch(f"/v1/documents/{doc['id']}", json={"ir": ir})
+    assert r.status == 200, r.text()
+    assert "Ship it</h1>" in client.get(doc["download"]["html"]).read().decode()
+
+    # A broken edit is refused and the stored page is untouched.
+    assert client.patch(f"/v1/documents/{doc['id']}",
+                        json={"ir": {"html": "<html>gone</html>"}}).status == 422
+    assert "Ship it</h1>" in client.get(doc["download"]["html"]).read().decode()
+
+
+def test_the_grammar_names_only_attributes_a_composition_really_carries(client):
+    """The grammar exists so an author is accurate instead of guessing, which is worth
+    nothing if it names an attribute the runtime never reads — an agent would write it
+    and get a page that does not play."""
+    g = R.GRAMMAR["frame"]
+    for section in ("root", "clip"):
+        for name in g[section]:
+            if name.startswith("data-"):
+                assert f'{name}="' in _COMPOSITION, f"grammar names {name}, no composition uses it"
+    assert 'class="clip"' in _COMPOSITION
+    assert "window.__timelines" in g["motion"] and "window.__timelines" in _COMPOSITION
+
+    arch = client.get("/v1/documents/schema").json()["archetypes"]
+    assert arch["frame"]["formats"] == ["html"]
+
+
+def test_the_library_plays_a_composition_instead_of_downloading_it():
+    """Served-HTML invariants: a page is opened, not saved to disk, and the click on a
+    document with no template no longer claims a failure that did not happen."""
+    home = (Path(__file__).resolve().parents[2] / "middleware" / "studio_home.html").read_text()
+    assert "▶ Play" in home and 'target="_blank" rel="noopener"' in home
+    assert "doc.kind==='frame'" in home            # the card click plays a composition
+    assert "toast('Could not open document')" not in home
+
+
+def test_a_composition_files_itself_under_its_own_shelf(client):
+    doc = client.post("/v1/documents",
+                      json={"kind": "frame", "ir": R.frame_ir("Ad", _COMPOSITION)}).json()
+    entry = [d for d in client.get("/v1/documents/library").json()["documents"]
+             if d["id"] == doc["id"]][0]
+    assert entry["category"] == "Compositions"
+    assert set(D.SHELF) == set(R.KIND_FORMATS), "every archetype needs a shelf"

@@ -1076,7 +1076,7 @@ function editorCtx(){ if(CTX&&CTX.id)location.href='/?advanced=1&load='+encodeUR
 // AI-fill reuses the SAME token the shipped Chat uses: window.HZ.pk (publishable pk- key),
 // sent as the bearer; the backend forwards it (pk- allowlist) or a server key, else falls back.
 let DOCCAT=null, DOCLIB=[], DOCTMPL=null, DOCID=null;
-const DOCFMT={pdf:'PDF',docx:'Word',xlsx:'Excel',pptx:'PowerPoint',md:'Markdown'};
+const DOCFMT={pdf:'PDF',docx:'Word',xlsx:'Excel',pptx:'PowerPoint',md:'Markdown',html:'composition'};
 function docHeaders(){ const h=genHeaders(); try{const pk=window.HZ&&window.HZ.pk; if(pk)h['Authorization']='Bearer '+pk;}catch(_){} return h; }
 async function loadDocuments(){
   if(!DOCCAT){ try{DOCCAT=await (await fetch('/v1/documents')).json();}catch(_){DOCCAT={categories:[]};} }
@@ -1129,7 +1129,12 @@ function openDoc(id){
 }
 async function editDoc(id){
   let doc; try{doc=await (await fetch('/v1/documents/'+encodeURIComponent(id))).json();}catch(_){doc=null;}
-  if(!doc||!doc.template){toast('Could not open document');return;}
+  // No template means no form to fill. A composition is a page, so the click plays it;
+  // anything else written straight from its IR says so instead of claiming a failure.
+  if(!doc||!doc.template){
+    if(doc&&doc.kind==='frame')window.open('/v1/documents/'+encodeURIComponent(id)+'/download?format=html','_blank','noopener');
+    else toast(doc?'Written directly — there is no form to edit.':'Could not open document');
+    return;}
   DOCTMPL=doc.template; DOCID=id;
   $('docdtitle').textContent=(doc.icon?doc.icon+' ':'')+(doc.title||doc.template.name);
   $('docddesc').textContent='Edit the details, then re-generate.';
@@ -1180,7 +1185,8 @@ async function docGenerate(mode){
 async function loadDocLib(){ let d={documents:[]}; try{d=await (await fetch('/v1/documents/library')).json();}catch(_){}
   DOCLIB=d.documents||[]; renderDocLib(); }
 function docLibCard(d){
-  const dl=(d.formats||[]).map(f=>`<a class="mini" href="/v1/documents/${encodeURIComponent(d.id)}/download?format=${f}" style="text-decoration:none" title="Download ${DOCFMT[f]||f}">⬇ ${DOCFMT[f]||f.toUpperCase()}</a>`).join(' ');
+  // A composition is a page, so it opens and plays; every other format is a file.
+  const dl=(d.formats||[]).map(f=>{const p=f==='html';return `<a class="mini" href="/v1/documents/${encodeURIComponent(d.id)}/download?format=${f}"${p?' target="_blank" rel="noopener"':''} style="text-decoration:none" title="${p?'Play':'Download'} ${DOCFMT[f]||f}">${p?'▶ Play':'⬇ '+(DOCFMT[f]||f.toUpperCase())}</a>`;}).join(' ');
   const dt=d.createdAt?new Date(d.createdAt*1000).toLocaleDateString():'';
   return `<div class="card"><div class="doc" onclick="editDoc('${qq(d.id)}')" style="cursor:pointer" title="Edit"><div style="font-size:1.7rem">${esc(d.icon||'📄')}</div><div style="color:var(--txt);font-size:.82rem;padding:0 8px">${esc(d.title)}</div></div>`
     +`<div style="padding:8px"><div class="sub">${esc(d.category||'')}${dt?' · '+dt:''}</div><div class="row" style="gap:5px;margin-top:6px;flex-wrap:wrap">${dl}<button class="mini" onclick="delDoc('${qq(d.id)}')" title="Delete">🗑</button></div></div></div>`;

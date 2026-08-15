@@ -28,12 +28,14 @@ from __future__ import annotations
 
 import html as _html
 import io
+import math
 import zlib
+from html.parser import HTMLParser
 from typing import Any
 
 # ── Public surface ────────────────────────────────────────────────────────────────
 
-FORMATS = ("pdf", "docx", "xlsx", "pptx", "md")
+FORMATS = ("pdf", "docx", "xlsx", "pptx", "md", "html")
 
 CONTENT_TYPE = {
     "pdf": "application/pdf",
@@ -41,6 +43,7 @@ CONTENT_TYPE = {
     "xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     "pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
     "md": "text/markdown; charset=utf-8",
+    "html": "text/html; charset=utf-8",
 }
 
 # Which formats each archetype can produce. The catalog's per-template ``formats`` is
@@ -49,7 +52,14 @@ KIND_FORMATS = {
     "doc": ("pdf", "docx", "md"),
     "sheet": ("xlsx", "pdf", "docx", "md"),
     "deck": ("pptx", "pdf", "md"),
+    "frame": ("html",),
 }
+
+# The one format each archetype draws with the standard library alone. Every write
+# renders to it to prove the content is renderable before anything is stored, so it must
+# never be the format that also asks whether some wheel is installed here. For prose that
+# is Markdown; a composition already IS its HTML.
+PROOF = {"doc": "md", "sheet": "md", "deck": "md", "frame": "html"}
 
 
 # The grammar an author writes, published so a person or an agent can be ACCURATE
@@ -87,6 +97,25 @@ GRAMMAR = {
         "slide": {"layout": "title|bullets|section", "title": "str", "subtitle": "str",
                   "bullets": "[str]", "notes": "str"},
     },
+    "frame": {
+        "of": "a Frames composition — HTML that plays; a page for web and ads, and what "
+              "`frames render` turns into video",
+        "shape": {"title": "str", "html": "str — the whole document"},
+        "root": {"data-composition-id": "str, usually 'main' — names the timeline",
+                 "data-width": "px", "data-height": "px",
+                 "data-duration": "seconds; may be left off when the timeline implies it"},
+        "clip": {"class": "clip — on every visible timed element, a direct child of root",
+                 "id": "str", "data-start": "seconds", "data-duration": "seconds",
+                 "data-track-index": "int — clips on one track never overlap"},
+        "motion": "one paused GSAP timeline per composition at window.__timelines[id], "
+                  "built synchronously at load",
+        "deterministic": "no Date.now, no unseeded Math.random, no fetch while rendering, "
+                         "no endless repeat",
+        "assets": "reference them by URL — a document is one file, so a composition that "
+                  "needs a folder beside it belongs in a frames project",
+        "authority": "hanzoai/frames — `frames lint` and `frames check` are the full "
+                     "check, and they run where the renderer runs",
+    },
 }
 
 
@@ -113,6 +142,8 @@ def render(kind: str, ir: dict, fmt: str) -> bytes:
         return _render_sheet(ir, fmt)
     if kind == "deck":
         return _render_deck(ir, fmt)
+    if kind == "frame":
+        return _render_frame(ir)
     raise ValueError(f"unknown archetype {kind!r}")  # pragma: no cover
 
 
@@ -928,3 +959,73 @@ def _deck_as_doc(ir: dict) -> dict:
         if sd.get("notes"):
             blocks.append(para(sd["notes"]))
     return doc_ir(ir.get("title") or "Presentation", blocks)
+
+
+# ── frame archetype: HTML ─────────────────────────────────────────────────────────
+# A Frames composition (hanzoai/frames). The other three archetypes hold content that a
+# renderer here draws; this one holds content that is ALREADY the artifact — an HTML
+# document that plays in a browser, which is the deliverable for web and for ads, and
+# which `frames render` reads to produce video. So there is nothing to draw and no
+# second authoring model: the composition is the source, exactly as its authors write it.
+# FrameIR = {"title", "html"}.
+
+def frame_ir(title_text: str, html: str) -> dict:
+    return {"title": title_text or "Composition", "html": html or ""}
+
+
+def _render_frame(ir: dict) -> bytes:
+    html = ir.get("html")
+    if not isinstance(html, str) or not html.strip():
+        raise ValueError("a frame is its html")
+    composition(html)
+    return html.encode("utf-8")
+
+
+class _Root(HTMLParser):
+    """The first element carrying ``data-composition-id`` — the composition's root."""
+
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.attrs: dict | None = None
+
+    def handle_starttag(self, tag, attrs):
+        got = dict(attrs)
+        if self.attrs is None and "data-composition-id" in got:
+            self.attrs = got
+
+
+def _positive(attrs: dict, name: str) -> float | None:
+    raw = attrs.get(name)
+    if raw is None or str(raw).strip() == "":
+        return None
+    try:
+        val = float(raw)
+    except ValueError:
+        raise ValueError(f"{name} is not a number") from None
+    if not math.isfinite(val) or val <= 0:
+        raise ValueError(f"{name} must be above zero")
+    return val
+
+
+def composition(html: str) -> dict:
+    """What the document declares itself to be — and, in the same act, proof that it is
+    a composition at all.
+
+    The root ``[data-composition-id]`` element names the timeline the runtime plays, so
+    an HTML file without one has nothing to play. Everything past that is checked ONLY
+    when it is STATED: a length may be left off, because frames infers it from the
+    timeline, and refusing that would reject valid work. A length that is stated and
+    unreadable is refused, though — frames reads the root with `parseFloat` and keeps
+    the result only when it is finite and non-zero, so a typo is not an error there, it
+    is a silently different film. The full check is `frames lint` and `frames check`,
+    which run where the renderer runs.
+    """
+    p = _Root()
+    p.feed(html)
+    p.close()
+    if p.attrs is None:
+        raise ValueError("no [data-composition-id] root element")
+    return {"id": p.attrs.get("data-composition-id") or "",
+            "width": _positive(p.attrs, "data-width"),
+            "height": _positive(p.attrs, "data-height"),
+            "duration": _positive(p.attrs, "data-duration")}
