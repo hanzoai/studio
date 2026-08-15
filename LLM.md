@@ -304,9 +304,27 @@ NOT bolted onto graphs; its own module, store, endpoints, and Home tab.
   (`org_of`/`owner_of`). Per-org store `orgs/<org>/documents/` (atomic `index.json` +
   `<id>/doc.json`), doc.json is the source of truth, files rendered on demand at download.
   Endpoints (`/v1` house style): `GET /v1/documents` (grouped catalog),
+  `GET /v1/documents/schema`, `POST /v1/documents` `{kind, ir, title?}`,
   `POST /v1/documents/generate` `{templateId, description?|fields?}`,
   `GET /v1/documents/library`, `GET|PATCH|DELETE /v1/documents/{id}`,
   `GET /v1/documents/{id}/download?format=`.
+- **A stored document IS its `(kind, ir)`, and a template is a GENERATOR** — not a schema.
+  An author (a person or an agent) `GET`s the document, edits the IR, and `PATCH`es
+  `{ir}`, so a change is as precise as an edit to a file and is bounded by what the
+  renderers can draw rather than by what some template's fields can say. `POST
+  /v1/documents` skips the generator entirely: no template, no fields, no LLM. `fields`
+  stay beside the IR as the form's own state, and `PATCH {fields}` REBUILDS from the
+  template — the one way back to a generated document, and it discards an authored IR,
+  which is what "regenerate" means. Two things fall out: a retired template no longer
+  orphans a document (it carries its own IR; only a document written before this asks its
+  template, and that read never writes back), and `GET /v1/documents/schema` publishes the
+  grammar so an author is accurate instead of guessing — `doc_render.GRAMMAR` lives beside
+  the renderers, and `test_schema_names_every_block_the_renderer_draws` walks the doc
+  renderer so a block the grammar names and the renderer ignores cannot ship.
+- **One proof, and it asks about the IR rather than about the pod** (`documents.prove`):
+  every write renders once to `md`, the one format every archetype draws from the standard
+  library. Rendering the primary format instead answered "this document is invalid" when
+  the honest answer was "this pod has no python-pptx".
 - **AI-fill is a LAYERED ENHANCEMENT** — the structured-form path renders a valid document
   with NO LLM, so a broken/unauthorized gateway can NEVER block creation (`422 needFields`
   → the UI reveals the prefilled form). It reuses the SAME working token the shipped Chat
@@ -377,8 +395,11 @@ covered by `middleware_test/iam_auth_test.py`,
 `middleware_test/session_test.py` and
 `folder_paths_test/org_scoping_test.py`. Office documents:
 `documents_test/test_documents.py` (catalog invariants, the full template×format render
-matrix asserted by magic numbers, AI-fill parse + fail-closed bearer allowlist, and the
-REST surface incl. per-org isolation on a real aiohttp app). Create composer + gateway
+matrix asserted by magic numbers, AI-fill parse + fail-closed bearer allowlist, the REST
+surface incl. per-org isolation on a real aiohttp app, and the IR as the document: the
+grammar↔renderer drift gate, authoring with no template, an IR edit reaching the file, a
+fields PATCH rebuilding from the template, a retired template not orphaning a document, a
+pre-IR document still rendering, and an unrenderable IR storing nothing). Create composer + gateway
 auth: `middleware_test/gateway_auth_test.py` (the fail-closed allowlist — HS256/`sk-` refused,
 `pk-`/asymmetric forwarded, server-key precedence, session-cookie path),
 `middleware_test/copilot_test.py::test_resolve_target_never_forwards_hs256_session_token`,

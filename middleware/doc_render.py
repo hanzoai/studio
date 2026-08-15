@@ -52,6 +52,49 @@ KIND_FORMATS = {
 }
 
 
+# The grammar an author writes, published so a person or an agent can be ACCURATE
+# instead of guessing. It lives beside the renderers because they are the only thing
+# that decides what a block means; ``doc_render_test`` walks the doc renderer and fails
+# if a tag here is one it does not draw, or if a tag it draws is missing here.
+GRAMMAR = {
+    "doc": {
+        "of": "prose — a title, headings, paragraphs, tables, lists",
+        "shape": {"title": "str", "blocks": "[block]", "meta": "{}"},
+        "blocks": {
+            "title": {"text": "str", "sub": "str"},
+            "h": {"text": "str", "level": "1|2|3"},
+            "p": {"text": "str — newlines break lines"},
+            "kv": {"pairs": "[[key, value]]", "cols": "1|2"},
+            "party": {"left": "{title, lines:[str]}", "right": "{title, lines:[str]}"},
+            "table": {"headers": "[str]", "rows": "[[cell]]",
+                      "align": "[''|'num'] per column", "foot": "[[cell]]"},
+            "ul": {"items": "[str]"},
+            "hr": {},
+            "sp": {"h": "points"},
+            "sign": {"label": "str"},
+        },
+    },
+    "sheet": {
+        "of": "tabular data — one or more named sheets",
+        "shape": {"title": "str", "sheets": "[sheet]"},
+        "sheet": {"name": "str",
+                  "columns": "[{key, label, width, fmt}] — fmt money|int|pct|date|null",
+                  "rows": "[{key: value}]", "totals": "[{key: value}]"},
+    },
+    "deck": {
+        "of": "slides",
+        "shape": {"title": "str", "slides": "[slide]"},
+        "slide": {"layout": "title|bullets|section", "title": "str", "subtitle": "str",
+                  "bullets": "[str]", "notes": "str"},
+    },
+}
+
+
+def grammar() -> dict:
+    """The grammar plus the formats each archetype renders. One value, two facts."""
+    return {k: {**v, "formats": list(KIND_FORMATS[k])} for k, v in GRAMMAR.items()}
+
+
 def content_type(fmt: str) -> str:
     return CONTENT_TYPE[fmt]
 

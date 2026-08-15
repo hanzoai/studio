@@ -498,3 +498,109 @@ def test_ai_token_delegates_to_canonical_gateway_auth(monkeypatch):
     assert D._ai_token(_Req("Bearer " + jwt_with_alg("RS256"))) == "Bearer " + jwt_with_alg("RS256")
     monkeypatch.setenv("STUDIO_DOC_TOKEN", "sk-server")                    # server key wins
     assert D._ai_token(_Req("Bearer pk-x")) == "Bearer sk-server"
+
+
+# ── The IR is the document ─────────────────────────────────────────────────────────
+# A template writes the first one and is a generator, not a schema. What follows is the
+# consequence: an author reads the IR, edits it, and writes it back, and the file that
+# comes out is the edit.
+
+def test_schema_names_every_block_the_renderer_draws(client):
+    """The published grammar and the doc renderer cannot drift.
+
+    The grammar exists so an author is accurate instead of guessing, which is worth
+    nothing if it names a block the renderer ignores — an agent would write it, get a
+    200, and download a file with the block silently missing.
+    """
+    import inspect
+    import re as _re
+    drawn = set(_re.findall(r't == "([a-z]+)"', inspect.getsource(R._doc_html_body)))
+    assert drawn == set(R.GRAMMAR["doc"]["blocks"]), drawn ^ set(R.GRAMMAR["doc"]["blocks"])
+
+    r = client.get("/v1/documents/schema")
+    assert r.status == 200
+    arch = r.json()["archetypes"]
+    assert set(arch) == set(R.KIND_FORMATS)
+    assert arch["deck"]["formats"] == ["pptx", "pdf", "md"]
+
+
+def test_author_a_document_the_catalog_cannot_express(client):
+    """No template, no fields, no LLM — the IR alone."""
+    ir = R.deck_ir("Series A", [
+        {"layout": "title", "title": "Series A", "subtitle": "Hanzo"},
+        {"layout": "bullets", "title": "Why now", "bullets": ["One", "Two", "Three"]},
+    ])
+    r = client.post("/v1/documents", json={"kind": "deck", "ir": ir})
+    assert r.status == 200, r.text()
+    doc = r.json()
+    assert doc["kind"] == "deck" and doc["title"] == "Series A"
+    assert doc["formats"] == ["pptx", "pdf", "md"]
+
+    md = client.get(doc["download"]["md"]).read().decode()
+    assert "Why now" in md and "Three" in md
+
+
+def test_editing_the_ir_changes_the_file(client):
+    doc = _gen(client, "pitch_deck", fields=D.get_template("pitch_deck")["sample"]).json()
+    ir = client.get(f"/v1/documents/{doc['id']}").json()["ir"]
+    ir["slides"].append({"layout": "bullets", "title": "Pricing", "bullets": ["$20 a seat"]})
+
+    r = client.patch(f"/v1/documents/{doc['id']}", json={"ir": ir})
+    assert r.status == 200, r.text()
+    md = client.get(doc["download"]["md"]).read().decode()
+    assert "Pricing" in md and "$20 a seat" in md
+
+
+def test_patching_fields_rebuilds_from_the_template(client):
+    """The one way back to a generated document — and it discards the authored IR,
+    which is what "regenerate" means."""
+    doc = _gen(client, "memo", fields=D.get_template("memo")["sample"]).json()
+    ir = client.get(f"/v1/documents/{doc['id']}").json()["ir"]
+    ir["blocks"].append(R.para("An authored line."))
+    client.patch(f"/v1/documents/{doc['id']}", json={"ir": ir})
+    assert "An authored line." in client.get(doc["download"]["md"]).read().decode()
+
+    r = client.patch(f"/v1/documents/{doc['id']}", json={"fields": {"subject": "Rebuilt"}})
+    assert r.status == 200
+    md = client.get(doc["download"]["md"]).read().decode()
+    assert "Rebuilt" in md and "An authored line." not in md
+
+
+def test_a_retired_template_no_longer_orphans_a_document(client):
+    """A document carrying its own IR outlives the template that wrote it."""
+    doc = _gen(client, "memo", fields=D.get_template("memo")["sample"]).json()
+    stored = D._load_doc("default", doc["id"])
+    stored["templateId"] = "retired-in-a-later-release"
+    D._save_doc("default", stored)
+
+    assert client.get(doc["download"]["md"]).status == 200
+    assert client.get(f"/v1/documents/{doc['id']}").json()["kind"] == "doc"
+
+
+def test_a_document_written_before_the_ir_still_renders(client):
+    """Back-compat: {templateId, fields} and nothing else is asked of its template."""
+    doc = _gen(client, "memo", fields=D.get_template("memo")["sample"]).json()
+    stored = D._load_doc("default", doc["id"])
+    stored.pop("ir"); stored.pop("kind")
+    D._save_doc("default", stored)
+
+    assert client.get(doc["download"]["md"]).status == 200
+    assert client.get(f"/v1/documents/{doc['id']}").json()["kind"] == "doc"
+
+
+def test_an_unrenderable_ir_is_refused_and_stores_nothing(client):
+    before = len(client.get("/v1/documents/library").json()["documents"])
+    assert client.post("/v1/documents", json={"kind": "sonnet", "ir": {}}).status == 400
+    assert client.post("/v1/documents", json={"kind": "doc", "ir": "not an object"}).status == 400
+    r = client.post("/v1/documents", json={"kind": "sheet", "ir": {"title": "x", "sheets": 7}})
+    assert r.status == 422, r.text()
+    assert len(client.get("/v1/documents/library").json()["documents"]) == before
+
+
+def test_authored_documents_stay_in_their_own_org(client):
+    ir = R.doc_ir("Private", [R.para("acme only")])
+    doc = client.post("/v1/documents", json={"kind": "doc", "ir": ir},
+                      headers={"X-Test-Org": "acme"}).json()
+    assert client.get(f"/v1/documents/{doc['id']}").status == 404
+    assert client.get(f"/v1/documents/{doc['id']}",
+                      headers={"X-Test-Org": "acme"}).status == 200

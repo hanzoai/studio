@@ -25,6 +25,13 @@ DRY, one source of truth per concern:
                           token is NEVER forwarded (the gateway rejects it: "unsupported
                           signing method: HS256"), nor is any secret ``sk-``/``hk-`` key.
                      On any gateway error the route degrades to the form — honest, never blank.
+  * the document   — a stored document IS its ``(kind, ir)``. A template writes the first
+                     one and is a GENERATOR, not a schema: an author — a person or an
+                     agent — reads the IR, edits it, and writes it back, so a change is as
+                     precise as an edit to a file and is not bounded by what some
+                     template's fields can say. ``fields`` stay beside it as the form's
+                     own state; PATCHing them REBUILDS the IR from the template, which is
+                     the one way back to a generated document.
   * storage        — per-org tree ``orgs/<org>/documents/`` with an atomic ``index.json``
                      and one ``<id>/doc.json`` per document, tenant-scoped exactly like
                      templates and the library. doc.json is the source of truth; the files
@@ -32,10 +39,12 @@ DRY, one source of truth per concern:
 
 Endpoints (Hanzo /v1 house style, no /api/ prefix):
     GET    /v1/documents                       the office-template catalog (grouped)
-    POST   /v1/documents/generate              {templateId, description?|fields?, format?}
+    GET    /v1/documents/schema                the IR grammar — what an author may write
+    POST   /v1/documents                       {kind, ir, title?} — author one directly
+    POST   /v1/documents/generate              {templateId, description?|fields?}
     GET    /v1/documents/library               the org's generated documents
-    GET    /v1/documents/{id}                  one document's fields (for editing)
-    PATCH  /v1/documents/{id}                  update fields/title
+    GET    /v1/documents/{id}                  one document — its IR and its fields
+    PATCH  /v1/documents/{id}                  {ir} the content, or {fields} to rebuild it
     DELETE /v1/documents/{id}                  remove a document
     GET    /v1/documents/{id}/download?format= stream the rendered file
 
@@ -64,6 +73,7 @@ log = logging.getLogger("studio.documents")
 
 _MAX_DESC = 4000          # one-line-ish description cap
 _MAX_FIELDS_BYTES = 256 * 1024
+_MAX_IR_BYTES = 1024 * 1024   # an authored IR is content, not a form; bound it separately
 _MAX_LIST = 200           # cap list/lineitem/row counts (bound render + storage)
 _ID_RE = re.compile(r"^[0-9a-f]{32}\Z")  # \Z (not $) so a trailing "\n" can't sneak past the id gate
 
@@ -755,6 +765,59 @@ def render_document(tmpl, fields, fmt):
     return R.render(kind, ir, fmt), ir.get("title") or tmpl["name"]
 
 
+def stored_ir(doc):
+    """``(kind, ir)`` for a stored document, or ``(None, None)`` when neither is reachable.
+
+    A document written before documents carried their own IR holds only
+    ``{templateId, fields}``, so its template is asked. The answer is not written back —
+    a read never mutates the store, and the rebuild is what PATCHing ``fields`` does.
+    """
+    kind, ir = doc.get("kind"), doc.get("ir")
+    if kind in R.KIND_FORMATS and isinstance(ir, dict):
+        return kind, ir
+    tmpl = get_template(doc.get("templateId"))
+    if tmpl is None:
+        return None, None
+    return build_ir(tmpl, doc.get("fields") or {})
+
+
+def render_stored(doc, fmt):
+    """Render a stored document. Raises ``LookupError`` when it has no reachable IR."""
+    kind, ir = stored_ir(doc)
+    if ir is None:
+        raise LookupError("no IR and no template")
+    return R.render(kind, ir, fmt), ir.get("title") or doc.get("title") or "Document"
+
+
+# Markdown is the check because it is the one format every archetype renders from the
+# standard library alone. Rendering the PRIMARY format instead asks a second question —
+# is python-pptx installed here — and answers "this document is invalid" when the honest
+# answer is "this pod cannot draw that one format".
+_PROOF_FORMAT = "md"
+
+
+def prove(kind, ir):
+    """Render ``ir`` once so nothing unrenderable is ever stored. Raises on refusal."""
+    R.render(kind, ir, _PROOF_FORMAT)
+
+
+def read_ir(body, kind_hint=None):
+    """The authored ``(kind, ir)`` in a request body, validated. Raises ``ValueError``.
+
+    An IR is data, so the check is its shape and its size — what it MEANS is settled by
+    rendering it, which every write does before it stores anything.
+    """
+    ir = body.get("ir")
+    if not isinstance(ir, dict):
+        raise ValueError("ir must be an object")
+    if len(json.dumps(ir)) > _MAX_IR_BYTES:
+        raise ValueError("ir too large")
+    kind = body.get("kind") or kind_hint
+    if kind not in R.KIND_FORMATS:
+        raise ValueError(f"kind must be one of {sorted(R.KIND_FORMATS)}")
+    return kind, ir
+
+
 # ── AI-fill: description -> structured fields via the Hanzo gateway ─────────────────
 
 # AI-gateway server keys only — a commerce service token is a different audience (it used
@@ -975,6 +1038,48 @@ def add_documents_routes(routes: web.RouteTableDef, server, *, org_of, owner_of=
     async def documents_catalog(request: web.Request):
         return web.json_response({"categories": catalog_grouped()})
 
+    @routes.get("/v1/documents/schema")
+    async def documents_schema(request: web.Request):
+        """What an author may write. Registered ahead of ``/{id}`` so the word wins."""
+        return web.json_response({"archetypes": R.grammar()})
+
+    @routes.post("/v1/documents")
+    async def documents_author(request: web.Request):
+        """Author a document directly from its IR — no template, no fields, no LLM.
+
+        A template is a generator, so this is the same door with the generator skipped:
+        anything the renderers can draw can be written here, which is the whole reason an
+        author is not bounded by the 22 shapes the catalog happens to ship.
+        """
+        try:
+            body = await request.json()
+        except Exception:
+            return web.json_response({"error": "invalid JSON"}, status=400)
+        if not isinstance(body, dict):
+            return web.json_response({"error": "object body required"}, status=400)
+        try:
+            kind, ir = read_ir(body)
+        except ValueError as e:
+            return web.json_response({"error": str(e)}, status=400)
+        formats = list(R.KIND_FORMATS[kind])
+        try:
+            prove(kind, ir)
+        except Exception as e:
+            log.warning("documents.author render failed: %s", e)
+            return web.json_response({"error": "could not render this document"}, status=422)
+
+        org = org_of(request)
+        now = int(time.time())
+        title = (body.get("title") or "").strip() or ir.get("title") or "Document"
+        doc = {"id": uuid.uuid4().hex, "templateId": "", "title": title,
+               "category": "Documents", "icon": "\U0001F4C4", "formats": formats,
+               "kind": kind, "ir": ir, "fields": {}, "createdAt": now, "updatedAt": now,
+               "createdBy": (owner_of(request) if owner_of else "")}
+        _save_doc(org, doc)
+        _upsert_index(org, doc)
+        return web.json_response({"id": doc["id"], "title": title, "kind": kind, "ir": ir,
+                                  "formats": formats, "download": _download_urls(doc)})
+
     @routes.post("/v1/documents/generate")
     async def documents_generate(request: web.Request):
         try:
@@ -1010,18 +1115,20 @@ def add_documents_routes(routes: web.RouteTableDef, server, *, org_of, owner_of=
         merged = {**fields, **form_fields}
         merged = coerce_fields(tmpl, merged)
 
-        # Validate by actually rendering the primary format — never store a doc we can't produce.
-        primary = tmpl["formats"][0]
+        # Render once — never store a document nothing can draw.
         try:
-            _bytes, title = render_document(tmpl, merged, primary)
+            kind, ir = build_ir(tmpl, merged)
+            prove(kind, ir)
         except Exception as e:  # pragma: no cover - defensive
             log.warning("documents.generate render failed: %s", e)
             return web.json_response({"error": "could not render this document"}, status=500)
+        title = ir.get("title") or tmpl["name"]
 
         org = org_of(request)
         now = int(time.time())
         doc = {"id": uuid.uuid4().hex, "templateId": tmpl["id"], "title": title,
                "category": tmpl["category"], "icon": tmpl["icon"], "formats": tmpl["formats"],
+               "kind": kind, "ir": ir,
                "fields": merged, "createdAt": now, "updatedAt": now,
                "createdBy": (owner_of(request) if owner_of else "")}
         _save_doc(org, doc)
@@ -1046,7 +1153,12 @@ def add_documents_routes(routes: web.RouteTableDef, server, *, org_of, owner_of=
             return web.json_response({"error": "not found"}, status=404)
         doc = dict(doc)
         doc["download"] = _download_urls(doc)
-        doc["template"] = public_template(get_template(doc["templateId"])) if get_template(doc["templateId"]) else None
+        tmpl = get_template(doc.get("templateId"))
+        doc["template"] = public_template(tmpl) if tmpl else None
+        # An older document has no IR of its own; derive it so every reader sees the same
+        # shape and an agent never has to know which generation wrote it.
+        kind, ir = stored_ir(doc)
+        doc["kind"], doc["ir"] = kind, ir
         return web.json_response(doc)
 
     @routes.patch("/v1/documents/{id}")
@@ -1055,22 +1167,42 @@ def add_documents_routes(routes: web.RouteTableDef, server, *, org_of, owner_of=
         doc = _load_doc(org, request.match_info["id"])
         if doc is None:
             return web.json_response({"error": "not found"}, status=404)
-        tmpl = get_template(doc["templateId"])
-        if tmpl is None:
-            return web.json_response({"error": "template retired"}, status=410)
         try:
             body = await request.json()
         except Exception:
             return web.json_response({"error": "invalid JSON"}, status=400)
-        if isinstance(body.get("fields"), dict):
+        if not isinstance(body, dict):
+            return web.json_response({"error": "object body required"}, status=400)
+        tmpl = get_template(doc.get("templateId"))
+
+        if body.get("ir") is not None:
+            # The content itself. It wins over fields in the same body: the fields wrote
+            # the IR once, and after an edit they no longer describe it.
+            try:
+                kind, ir = read_ir(body, kind_hint=doc.get("kind") or stored_ir(doc)[0])
+                prove(kind, ir)
+            except ValueError as e:
+                return web.json_response({"error": str(e)}, status=400)
+            except Exception as e:
+                log.warning("documents.update render failed: %s", e)
+                return web.json_response({"error": "could not render this document"}, status=422)
+            doc["kind"], doc["ir"] = kind, ir
+        elif isinstance(body.get("fields"), dict):
+            # Rebuilding from the template is the one way back to a generated document,
+            # and it DISCARDS an authored IR — which is what "regenerate" means.
+            if tmpl is None:
+                return web.json_response({"error": "template retired"}, status=410)
             doc["fields"] = coerce_fields(tmpl, {**doc.get("fields", {}), **body["fields"]})
-        # Re-derive the title from the rebuilt IR (fields are the source of truth).
-        _kind, ir = build_ir(tmpl, doc["fields"])
-        doc["title"] = (body.get("title") or ir.get("title") or doc["title"]).strip() if body.get("title") else (ir.get("title") or doc["title"])
+            doc["kind"], doc["ir"] = build_ir(tmpl, doc["fields"])
+
+        ir = doc.get("ir") or {}
+        asked = (body.get("title") or "").strip()
+        doc["title"] = asked or ir.get("title") or doc["title"]
         doc["updatedAt"] = int(time.time())
         _save_doc(org, doc)
         _upsert_index(org, doc)
-        return web.json_response({"id": doc["id"], "title": doc["title"], "fields": doc["fields"],
+        return web.json_response({"id": doc["id"], "title": doc["title"], "kind": doc.get("kind"),
+                                  "ir": doc.get("ir"), "fields": doc.get("fields", {}),
                                   "download": _download_urls(doc)})
 
     @routes.delete("/v1/documents/{id}")
@@ -1101,11 +1233,10 @@ def add_documents_routes(routes: web.RouteTableDef, server, *, org_of, owner_of=
         fmt = (request.query.get("format") or doc["formats"][0]).lower()
         if fmt not in doc["formats"]:
             return web.json_response({"error": f"format must be one of {doc['formats']}"}, status=400)
-        tmpl = get_template(doc["templateId"])
-        if tmpl is None:
-            return web.json_response({"error": "template retired"}, status=410)
         try:
-            data, title = render_document(tmpl, doc.get("fields", {}), fmt)
+            data, title = render_stored(doc, fmt)
+        except LookupError:
+            return web.json_response({"error": "template retired"}, status=410)
         except Exception as e:  # pragma: no cover - defensive
             log.warning("documents.download render failed: %s", e)
             return web.json_response({"error": "could not render this document"}, status=500)
