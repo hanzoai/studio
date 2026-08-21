@@ -4,7 +4,7 @@ import { Rail } from './rail'
 import { useLayout, startDrag, clamp, DEFAULT, RAIL_MIN, RAIL_MAX } from './layout'
 
 // Studio-chat: the specialized chat surface. You say what to create; the cloud
-// /v1/agent "create" preset drives studio's render tools (fix/compose) and the runs
+// /v1/agents/chat "create" preset drives studio's render tools (fix/compose) and the runs
 // land in the queue/history rail on the right — Up next while they render, History
 // once done. The main area is the conversation / current generation; the rail is the
 // whole YouTube-watch-page-style queue + history + stacks + ratings surface.

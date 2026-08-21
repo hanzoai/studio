@@ -2657,12 +2657,12 @@ def add_studio_home_routes(routes: web.RouteTableDef, server) -> None:
         org = _org_of(request)
         return web.json_response(await _wallet(request, org))
 
-    @routes.post("/v1/agent")
-    async def agent_bridge(request: web.Request):
-        """Same-origin bridge to the cloud agent orchestrator. The session cookie
-        stays host-only (never widened to *.hanzo.ai); this forwards the caller's
-        bearer server-side — the wallet pattern. Direct-to-gateway remains
-        available to the SPA via VITE_AGENT_API."""
+    @routes.post("/v1/agents/chat")
+    async def agent_chat(request: web.Request):
+        """One conversation round, same-origin. The session cookie stays host-only;
+        this reads the caller's IAM token from it and forwards it server-side to the
+        cloud agents surface, so no token reaches the page and no cross-origin
+        request is credentialed. The wallet route above takes the same path."""
         from middleware.gpu_dispatch import CLOUD, _bearer
         tok = _bearer(request)
         if not tok:
@@ -2672,7 +2672,7 @@ def add_studio_home_routes(routes: web.RouteTableDef, server) -> None:
             return web.json_response({"error": "body too large"}, status=413)
         try:
             async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=180)) as s:
-                async with s.post(f"{CLOUD}/v1/agent", data=body,
+                async with s.post(f"{CLOUD}/v1/agents/chat", data=body,
                                   headers={"Authorization": tok,
                                            "Content-Type": "application/json"}) as r:
                     return web.Response(status=r.status, body=await r.read(),

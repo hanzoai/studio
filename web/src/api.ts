@@ -1,23 +1,18 @@
-// The studio-chat data layer. Two backends, no proxy layer between them:
-//   - the agent orchestrator: POST api.hanzo.ai/v1/agent  (github.com/hanzoai/agent,
-//     mounted in the cloud binary) — called DIRECTLY, no studio pass-through. The
-//     hanzo_token cookie is scoped to .hanzo.ai so credentials:'include' carries it
-//     cross-origin, and the round replays it into the per-org-billed completion.
-//     (Gateway CORS must allow the studio.hanzo.ai origin with credentials.)
+// The studio-chat data layer. Every call is same-origin on studio.hanzo.ai and
+// carries one credential: the host-only httpOnly session cookie.
+//   - the conversation round: POST /v1/agents/chat — studio's own route reads the
+//     caller's IAM token from that cookie and forwards it to the cloud agents
+//     surface server-side, so the token is never readable from the page.
 //   - the studio engine API: /v1/session, /v1/worklog, /v1/queue/*, /v1/favorites,
-//     /v1/stacks, … — same-origin on studio.hanzo.ai (same cookie).
-// No token handling in the browser: the cookie is the credential for both.
-// VITE_STUDIO_API / VITE_AGENT_API override the bases for local dev.
+//     /v1/stacks, …
+// `same-origin` rather than `include`: a credential cannot leave this origin even
+// if a base is ever pointed elsewhere.
+// VITE_STUDIO_API overrides the base for local dev.
 
 const BASE = (import.meta.env.VITE_STUDIO_API ?? '').replace(/\/$/, '')
-// Default: same-origin through the studio's /v1/agent bridge — the host-only
-// session cookie authorizes it and the middleware forwards the bearer, so no
-// parent-domain cookie and no gateway CORS dependency. VITE_AGENT_API points
-// straight at the gateway for direct mode.
-const AGENT_API = (import.meta.env.VITE_AGENT_API ?? '').replace(/\/$/, '')
 
 async function j<T>(url: string, init?: RequestInit): Promise<T> {
-  const r = await fetch(url, { credentials: 'include', ...init })
+  const r = await fetch(url, { credentials: 'same-origin', ...init })
   if (!r.ok) {
     // Surface the server's own message — a 402 says "add credits at
     // pay.hanzo.ai", which beats a bare status code.
@@ -42,7 +37,7 @@ export interface ChatReply { reply: string; actions: Action[]; ops: Op[]; conver
 // renders it dispatched (each result carries a prompt_id). Pass the prior reply's
 // conversationId to continue a thread — the orchestrator persists per-org history.
 export function chat(messages: ChatMessage[], conversationId?: string, preset = 'create'): Promise<ChatReply> {
-  return j<ChatReply>(`${AGENT_API}/v1/agent`, {
+  return j<ChatReply>(`${BASE}/v1/agents/chat`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ preset, messages, conversationId }),
