@@ -69,7 +69,7 @@ with the 3.12 `find_spec` API. Activated by `import studio_compat` at the top of
 `main.py`. `nodes.py` also honors the upstream `comfy_entrypoint` V3 name.
 
 Restart the local worker only when idle: `scripts/studio-service-swap.sh` polls
-`/queue` and restarts on the first empty window. Bad packs are isolated by the
+`/prompt` and restarts on the first window with nothing rendering. Bad packs are isolated by the
 loader (studio still boots); genuinely-incompatible ones go to
 `custom_nodes_quarantine/` (e.g. was-node-suite: hard `numba` dep vs NumPy 2.5).
 
@@ -92,29 +92,42 @@ shared Hanzo IAM (standard OIDC code flow). No embedding.
   outputs are `output/orgs/{org}/…`. `get_public_user_directory(user, org)` is
   org-rooted (fixed the bug where org userdata always resolved to `None`).
   Execution outputs are scoped via `folder_paths.set_execution_org()`, bound by
-  the prompt worker from the queue item's `org_id`.
-- **GPU federation** (`middleware/{worker_client,prompt_router,compute_config,
-  visor_client}.py`): `/v1/workers/register` (heartbeat), `/v1/workers` (list),
-  `/v1/worker/execute` (in-cluster push fast path). Worker↔coordinator trust via
-  `X-Worker-Token` (`STUDIO_WORKER_TOKEN`, KMS-sourced).
-- **Per-GPU gpu-jobs queue** (`middleware/{gpu_dispatch,studio_home}.py`, `server.py`) —
-  the ONE submit path onto a GPU. A model-less coordinator's `POST /prompt` enqueues to
-  the cloud tasks engine (`POST {STUDIO_CLOUD_API_URL}/v1/tasks/namespaces/gpu-jobs/activities`,
-  user bearer → org-scoped); a BYO worker (`hanzo gpu connect`) claims + runs it.
+  the renderer from the item's `org_id`.
+- **GPU federation** (`middleware/{worker_client,compute_config,visor_client}.py`):
+  `/v1/workers/register` (heartbeat), `/v1/workers` (list), `/v1/worker/execute`
+  (hand a claimed job to a worker). Worker↔coordinator trust via `X-Worker-Token`
+  (`STUDIO_WORKER_TOKEN`, KMS-sourced).
+- **No queue in Studio; the gpu-jobs lane is the only one** (`execution.py`
+  `Renderer`, `middleware/{gpu_dispatch,studio_home}.py`, `server.py`). A box renders
+  ONE prompt at a time and nothing waits behind it: `POST /prompt` starts the render or
+  answers `503 renderer_busy`, and `GET /prompt` reports `{"exec_info":{"rendering":0|1}}`.
+  There is no `/queue` route, no pending list, no snapshot to restore — so a crash can
+  lose at most the render in flight, and a box that cannot run a graph can never restore
+  it, die, and restore it again. `Renderer` owns the slot, the `PromptExecutor` behind it
+  (one thread, so the model cache and CUDA context stay put) and the finished-render
+  `History`; memory is collected after ten IDLE seconds, so a burst of renders pays for
+  one collect, not one each.
+  Work with nowhere to run lines up in the cloud tasks engine's **`gpu-jobs`** namespace,
+  the one queue in the system. A model-less coordinator's `POST /prompt` enqueues there
+  (`POST {STUDIO_CLOUD_API_URL}/v1/tasks/namespaces/gpu-jobs/activities`, user bearer →
+  org-scoped); a BYO worker (`hanzo gpu connect`) claims + runs it.
   **Targeting**: the Home "Run on <gpu>" chip sets `X-Target-GPU: <identity>`;
   `dispatch_if_worker` enqueues on that machine's own lane `taskQueue="gpu:<identity>"`
   (namespace stays `gpu-jobs`), else the shared `gpu-jobs` lane any worker drains —
-  `X-Target-GPU` rides through `_queue_prompt` so fix/compose/video/rerun all honor it.
-  **Authoritative visible queue**: `/v1/render-queue` + `/v1/nodes` read the tasks
-  engine's activity list — REAL claiming `identity`, status
+  `X-Target-GPU` rides through `_submit` so fix/compose/video/rerun all honor it.
+  **The dispatcher names where it went**: `dispatch_if_worker` returns the node identity
+  (None → rendered in-pod), `/prompt` returns it as `node`, and `_dispatch` records the
+  lane from that answer — not from a side file it wrote for itself to read back.
+  **The visible list is the engine's list**: `/v1/render-queue` + `/v1/nodes` read the
+  tasks engine's activity list — REAL claiming `identity`, status
   SCHEDULED/STARTED/COMPLETED/FAILED → queued/running/done/failed, `lastHeartbeatTime`
-  liveness, per-node depth — not a local shadow; `render_jobs.json` survives only as a
-  ~2s pre-claim placeholder. **No hidden runs**: in `--worker-mode` a direct `/prompt`
-  POST is refused 403 unless it carries `X-Worker-Token` — the only accepted execution is
-  a claimed job handed in over `POST /v1/worker/execute`
-  (`worker_client.reject_untrusted_worker_submit`, one policy gate). Legacy push
-  (`prompt_router`) is OFF unless `STUDIO_LEGACY_PUSH_ROUTER=1`. Tests:
-  `middleware_test/{gpu_dispatch_test,worker_seam_test}.py`.
+  liveness, per-node depth. No second copy to drift from it.
+  **A refusal is a refusal**: a dispatch the fabric will not take fails now, with its
+  reason and a `failed` work-log row. Nothing is spooled for a later sweep.
+  **No hidden runs**: in `--worker-mode` a direct `/prompt` POST is refused 403 unless it
+  carries `X-Worker-Token` — the only accepted execution is a claimed job handed in over
+  `POST /v1/worker/execute` (`worker_client.reject_untrusted_worker_submit`, one policy
+  gate). Tests: `middleware_test/{gpu_dispatch_test,worker_seam_test,flows_test}.py`.
 - **Edit strength follows the TRANSFORMATION DISTANCE, not the look** (`studio_home.py` `FLOWS`):
   a lane declares `denoise` ONLY when it is a conversion. `cad_ghost`/`cad_mockup`
   (drawing→photograph) run 0.92 because a large change is required; `product`/`lifestyle`
@@ -143,23 +156,9 @@ shared Hanzo IAM (standard OIDC code flow). No embedding.
   refuses a truncated file at the gallery's one ingest point. Sits beside the
   implausibly-fast honesty guard (`_IMPLAUSIBLE_SECS` — an engine that didn't sample
   never delivers). Tests: `middleware_test/flows_test.py`.
-- **Durable render queue** (`middleware/tasks_queue.py`, `docs/federation.md`):
-  `SqlitePromptQueue` — crash-durable render queue in a single SQLite file
-  (stdlib `sqlite3`, WAL, **zero external processes**). `STUDIO_QUEUE_DB=<path>`
-  → `server.py` swaps `PromptQueue` for it (precedence **STUDIO_QUEUE_DB >
-  STUDIO_PERSIST_QUEUE > memory**; default local behavior unchanged). The
-  `PromptQueue` seam maps to a durable job state machine: `put→INSERT (pending,
-  idempotent on prompt_id)`, `get→claim next pending under BEGIN IMMEDIATE
-  (exactly-once, leased)`, `task_done→done | retry/failed`. Crash-recovery: a
-  lease + reap returns an abandoned claim to `pending` (on every get(), a
-  heartbeat thread, and on boot) so another process re-runs it — idempotent
-  (SaveImage suffixes increment). Multiple Studio processes on the same DB file
-  compete safely. Tested: `middleware_test/tasks_queue_test.py` (incl.
-  crash-recovery across instances). Future (federation.md §6): a remote queue
-  backend served by Hanzo Tasks + a Go/unified-binary (HIP-0106) migration.
 - **Stacks** (`middleware/stacks_store.py`, `middleware/studio_home.py`): Procreate-
   style gallery folders — a per-org SQLite store (`orgs/<org>/stacks.db`, WAL, every
-  mutation under `BEGIN IMMEDIATE`, the same `tasks_queue.py` pattern) that is ONLY an
+  mutation under `BEGIN IMMEDIATE`) that is ONLY an
   organizational layer; assets stay the source of truth (library.json + files). Schema
   = the spec's `stacks` + `stack_assets` join; `UNIQUE(asset_id)` ⇒ one Stack per
   asset. Tenancy is structural (one DB file per org → cross-org 404s by construction).

@@ -2,7 +2,7 @@
 Prometheus-compatible metrics endpoint for Hanzo Studio.
 
 Exposes /metrics in Prometheus text format for VictoriaMetrics scraping.
-Tracks prompt execution, queue depth, WebSocket connections, and HTTP requests.
+Tracks prompt execution, WebSocket connections, and HTTP requests.
 """
 import time as _time
 import threading
@@ -17,7 +17,6 @@ _http_requests_total: dict[str, int] = {}  # method:status -> count
 
 # Gauges
 _prompts_active = 0
-_queue_depth = 0
 _websocket_connections = 0
 
 # Histogram buckets for prompt execution time (seconds)
@@ -54,11 +53,6 @@ def record_prompt_end(duration_seconds: float, success: bool = True):
                 _duration_bucket_counts[i] += 1
 
 
-def set_queue_depth(depth: int):
-    global _queue_depth
-    _queue_depth = depth
-
-
 def set_websocket_connections(count: int):
     global _websocket_connections
     _websocket_connections = count
@@ -92,10 +86,6 @@ def render_metrics() -> str:
         lines.append("# HELP studio_prompts_active Currently executing prompts")
         lines.append("# TYPE studio_prompts_active gauge")
         lines.append(f"studio_prompts_active {_prompts_active}")
-
-        lines.append("# HELP studio_queue_depth Number of prompts waiting in queue")
-        lines.append("# TYPE studio_queue_depth gauge")
-        lines.append(f"studio_queue_depth {_queue_depth}")
 
         lines.append("# HELP studio_websocket_connections Active WebSocket connections")
         lines.append("# TYPE studio_websocket_connections gauge")

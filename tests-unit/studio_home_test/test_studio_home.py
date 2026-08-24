@@ -167,8 +167,8 @@ async def test_compose_accepts_uploaded_references(tmp_path, monkeypatch):
     captured = {}
     async def fake_queue(request, server, graph):
         captured["graph"] = graph
-        return "pid-1"
-    monkeypatch.setattr(sh, "_queue_prompt", fake_queue)
+        return "pid-1", ""
+    monkeypatch.setattr(sh, "_submit", fake_queue)
 
     out = await sh.dispatch_compose(None, None, org, ["a.png"], "merge them", uploads=["up_0001_.png"])
     assert out["ok"] and out["refs"] == 2
@@ -178,26 +178,19 @@ async def test_compose_accepts_uploaded_references(tmp_path, monkeypatch):
     assert any(n.startswith("compose_src_") for n in load_names)  # library asset staged
 
 
-class _FakeQueue:
-    def __init__(self, running=None, pending=None):
+class _FakeRenderer:
+    def __init__(self, running=None):
         self.running = running or []
-        self.pending = pending or []
-        self.deleted = []
 
-    def get_current_queue_volatile(self):
-        return (self.running, self.pending)
-
-    def delete_queue_item(self, fn):
-        before = len(self.pending)
-        self.pending = [it for it in self.pending if not fn(it)]
-        self.deleted.append(before - len(self.pending))
+    def current(self):
+        return self.running
 
 
 class _FakeServer:
     port = 1
 
     def __init__(self, **kw):
-        self.prompt_queue = _FakeQueue(**kw)
+        self.renderer = _FakeRenderer(**kw)
 
 
 def _orgaware(tmp_path, monkeypatch):
@@ -215,29 +208,32 @@ def _orgaware(tmp_path, monkeypatch):
     return outd, ind
 
 
-def test_cancel_marks_cancelled_and_removes_gpu_row_org_scoped(tmp_path, monkeypatch):
+def test_cancel_marks_cancelled_org_scoped(tmp_path, monkeypatch):
     outd, _ = _orgaware(tmp_path, monkeypatch)
     (Path(outd("acme")) / "library.json").write_text('{"assets":[]}')
     sh.worklog.record("acme", kind="fix", prompt="x", refs=[], uploads=[], parents=[],
                       output_prefix="fixes/x", pid="p1", lane="gpu")
-    (Path(outd("acme")) / "render_jobs.json").write_text(json.dumps([{"id": "p1", "prefix": "x"}]))
     srv = _FakeServer()
     assert sh._owns_job(srv, "acme", "p1")
     assert not sh._owns_job(srv, "globex", "p1")            # cross-tenant: not owned
-    assert sh._cancel_job(srv, "acme", "p1") == "gpu"
+    assert sh._cancel_job(srv, "acme", "p1") == "gpu"       # the lane's to cancel
     assert sh.worklog.load("acme")[0]["status"] == "cancelled"
-    assert json.loads((Path(outd("acme")) / "render_jobs.json").read_text()) == []
 
 
-def test_cancel_deletes_local_pending_only_when_org_matches(tmp_path, monkeypatch):
+def test_cancel_stops_the_local_render_only_when_org_matches(tmp_path, monkeypatch):
+    """The render in flight on this box is stopped only for its own org — a rival
+    org's cancel must never reach it, and never learn it exists."""
     _orgaware(tmp_path, monkeypatch)
-    mine = (1, "p1", {}, {"org_id": "acme"}, [])
-    theirs = (2, "p2", {}, {"org_id": "globex"}, [])
-    srv = _FakeServer(pending=[mine, theirs])
+    import nodes
+    stopped = []
+    monkeypatch.setattr(nodes, "interrupt_processing", lambda: stopped.append(1))
+    mine = ("p1", {}, {"org_id": "acme"}, [], {})
+    srv = _FakeServer(running=[mine])
     sh.worklog.record("acme", kind="fix", prompt="x", refs=[], uploads=[], parents=[],
                       output_prefix="fixes/x", pid="p1")
+    assert not sh._owns_job(srv, "globex", "p1")
     assert sh._cancel_job(srv, "acme", "p1") == "local"
-    assert [it[1] for it in srv.prompt_queue.pending] == ["p2"]   # only mine deleted
+    assert stopped == [1]
 
 
 @pytest.mark.asyncio
@@ -251,8 +247,8 @@ async def test_amend_atomic_swap_keeps_original_refs_and_adds_new(tmp_path, monk
     captured = {}
     async def fake_queue(request, server, graph):
         captured["graph"] = graph
-        return "p2"
-    monkeypatch.setattr(sh, "_queue_prompt", fake_queue)
+        return "p2", ""
+    monkeypatch.setattr(sh, "_submit", fake_queue)
     out = await sh.dispatch_amend(None, _FakeServer(), "acme", "p1", "brighten a lot more",
                                   paths=[], uploads=["drop_9.png"])
     assert out["amended_from"] == "p1" and out["prompt_id"] == "p2" and out["refs"] == 2
@@ -308,8 +304,8 @@ async def test_text_only_fix_dispatches_single_image(tmp_path, monkeypatch):
     captured = {}
     async def fake_queue(request, server, graph):
         captured["graph"] = graph
-        return "pid-fix"
-    monkeypatch.setattr(sh, "_queue_prompt", fake_queue)
+        return "pid-fix", ""
+    monkeypatch.setattr(sh, "_submit", fake_queue)
     out = await sh.dispatch_fix(None, None, org, "a.png", "make the straps thicker")
     assert out["ok"] and out["prompt_id"] == "pid-fix"
     g = captured["graph"]
@@ -329,8 +325,8 @@ async def test_fix_accepts_uploaded_base_image(tmp_path, monkeypatch):
     captured = {}
     async def fake_queue(request, server, graph):
         captured["graph"] = graph
-        return "pid-up"
-    monkeypatch.setattr(sh, "_queue_prompt", fake_queue)
+        return "pid-up", ""
+    monkeypatch.setattr(sh, "_submit", fake_queue)
     out = await sh.dispatch_fix(None, None, org, "", "brighten it", upload="shot_1.png")
     assert out["ok"] and captured["graph"]["1"]["inputs"]["image"] == "shot_1.png"
     with pytest.raises(sh.DispatchError):
@@ -338,7 +334,7 @@ async def test_fix_accepts_uploaded_base_image(tmp_path, monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_queue_prompt_surfaces_downstream_error(tmp_path, monkeypatch):
+async def test_submit_surfaces_downstream_error(tmp_path, monkeypatch):
     """A non-200 from the self-POST /prompt (model-less pod) becomes a DispatchError
     carrying the REAL reason — never a raw 502 the dialog swallows into 'Failed:'."""
     from aiohttp import web
@@ -357,7 +353,7 @@ async def test_queue_prompt_surfaces_downstream_error(tmp_path, monkeypatch):
     async def edit(request):
         graph = (await request.json())["graph"]
         try:
-            pid = await sh._queue_prompt(request, srv, graph)
+            pid, _node = await sh._submit(request, srv, graph)
             return web.json_response({"prompt_id": pid})
         except sh.DispatchError as e:
             return web.json_response({"error": str(e)}, status=400)
@@ -498,8 +494,8 @@ async def test_templates_crud_and_tenant_isolation(tmp_path, monkeypatch):
 async def test_template_render_dispatches_and_rejects_ui_only(tmp_path, monkeypatch):
     _orgaware(tmp_path, monkeypatch)
     async def fake_queue(request, server, graph):
-        return "pid-tmpl"
-    monkeypatch.setattr(sh, "_queue_prompt", fake_queue)
+        return "pid-tmpl", ""
+    monkeypatch.setattr(sh, "_submit", fake_queue)
     client = await _client(_FakeServer())
     runnable = {"output": {"9": {"class_type": "KSampler", "inputs": {"seed": 1}},
                            "15": {"class_type": "SaveImage", "inputs": {"filename_prefix": "t/run"}}}}

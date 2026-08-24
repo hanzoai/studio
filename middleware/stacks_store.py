@@ -8,7 +8,7 @@ returns it to the gallery; it is never a delete. Deleting a Stack defaults to
 preserving every image.
 
 Backed by ONE per-org SQLite file (stdlib sqlite3, WAL) at ``orgs/<org>/stacks.db``
-— the proven ``tasks_queue.py`` pattern: WAL + NORMAL + busy_timeout, and every
+— WAL + NORMAL + busy_timeout, and every
 mutation runs under ``BEGIN IMMEDIATE`` so create / add / move / remove / reorder /
 delete are atomic. Tenancy is structural: a different org is a different FILE, so
 a stack from another org is unreachable by construction (every route 404s across

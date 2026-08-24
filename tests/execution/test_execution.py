@@ -988,10 +988,12 @@ class TestExecution:
         for job in completed_jobs["jobs"]:
             assert job["status"] == "completed", "Should only return completed jobs"
 
-        # Pending jobs are transient - just verify filter doesn't error
-        pending_jobs = client.get_jobs(status="pending")
-        for job in pending_jobs["jobs"]:
-            assert job["status"] == "pending", "Should only return pending jobs"
+        # Nothing waits on this box, so in_progress is at most the one render in
+        # flight — the filter still has to answer, and answer only with that.
+        running_jobs = client.get_jobs(status="in_progress")
+        for job in running_jobs["jobs"]:
+            assert job["status"] == "in_progress", "Should only return the running job"
+        assert len(running_jobs["jobs"]) <= 1, "one slot, so at most one running job"
 
     def test_get_job_by_id(
         self, client: StudioClient, builder: GraphBuilder

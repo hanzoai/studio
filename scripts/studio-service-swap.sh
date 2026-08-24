@@ -8,7 +8,7 @@
 # single-unit invariant and rolls out code/unit changes WITHOUT interrupting an
 # in-flight render batch:
 #
-#   1. wait until the render queue is empty
+#   1. wait until nothing is rendering
 #   2. remove any stray duplicate units (user/transient hanzo-studio.service)
 #   3. (re)install ops/systemd/studio.service -> /etc, enable it, daemon-reload
 #   4. restart studio.service so it picks up the latest code + unit env
@@ -25,22 +25,20 @@ REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 UNIT_SRC="$REPO/ops/systemd/studio.service"
 UNIT_DST="/etc/systemd/system/studio.service"
 PORT="${STUDIO_PORT:-8188}"
-QUEUE_URL="http://127.0.0.1:${PORT}/queue"
-WAIT_TIMEOUT="${STUDIO_SWAP_TIMEOUT:-7200}"   # seconds to wait for empty queue (0 = don't wait)
+STATUS_URL="http://127.0.0.1:${PORT}/prompt"
+WAIT_TIMEOUT="${STUDIO_SWAP_TIMEOUT:-7200}"   # seconds to wait for an idle box (0 = don't wait)
 POLL_INTERVAL="${STUDIO_SWAP_POLL:-15}"
 
 log() { printf '[swap] %s\n' "$*"; }
 
-queue_state() {
+render_state() {
   # -> busy | idle | down
   local body
-  body="$(curl -fsS -m 5 "$QUEUE_URL" 2>/dev/null)" || { echo down; return; }
+  body="$(curl -fsS -m 5 "$STATUS_URL" 2>/dev/null)" || { echo down; return; }
   python3 - "$body" <<'PY'
 import json, sys
 try:
-    q = json.loads(sys.argv[1])
-    n = len(q.get("queue_running", [])) + len(q.get("queue_pending", []))
-    print("busy" if n > 0 else "idle")
+    print("busy" if json.loads(sys.argv[1])["exec_info"]["rendering"] else "idle")
 except Exception:
     print("down")
 PY
@@ -50,14 +48,14 @@ wait_for_idle() {
   [ "$WAIT_TIMEOUT" -eq 0 ] && { log "STUDIO_SWAP_TIMEOUT=0 -> applying without waiting"; return; }
   local waited=0 st
   while :; do
-    st="$(queue_state)"
+    st="$(render_state)"
     case "$st" in
-      idle) log "queue empty -> proceeding"; return ;;
+      idle) log "nothing rendering -> proceeding"; return ;;
       down) log "server not reachable -> proceeding"; return ;;
-      busy) log "queue busy; ${waited}s/${WAIT_TIMEOUT}s elapsed, recheck in ${POLL_INTERVAL}s" ;;
+      busy) log "rendering; ${waited}s/${WAIT_TIMEOUT}s elapsed, recheck in ${POLL_INTERVAL}s" ;;
     esac
     if (( waited >= WAIT_TIMEOUT )); then
-      log "ERROR: still busy after ${WAIT_TIMEOUT}s; aborting to protect the batch"; exit 1
+      log "ERROR: still rendering after ${WAIT_TIMEOUT}s; aborting to protect the render"; exit 1
     fi
     sleep "$POLL_INTERVAL"; waited=$((waited + POLL_INTERVAL))
   done
@@ -82,7 +80,7 @@ fi
 sudo systemctl enable studio.service
 sudo systemctl daemon-reload
 
-# 4. Restart to pick up latest code + unit env (queue is empty at this point).
+# 4. Restart to pick up latest code + unit env (nothing is rendering at this point).
 log "restarting studio.service"
 sudo systemctl restart studio.service
 

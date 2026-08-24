@@ -17,7 +17,6 @@ launch() {
   done
   HF_HOME=/home/z/.cache/huggingface \
   PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True \
-  STUDIO_PERSIST_QUEUE=1 \
   nohup .venv/bin/python main.py --listen 0.0.0.0 --port 8188 --normalvram \
     --disable-auto-launch --output-directory "$STUDIO/output" >> "$LOG" 2>&1 &
   sleep 1

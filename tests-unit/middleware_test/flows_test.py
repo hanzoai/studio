@@ -119,132 +119,61 @@ def test_activity_phase_reads_long_form_engine_statuses():
     assert sh._activity_phase({"status": "SOMETHING_NEW"}) == "queued"  # unknown stays optimistic
 
 
-def test_hold_job_spools_and_cancels(tmp_path, monkeypatch):
-    import middleware.worklog as wl
-    monkeypatch.setattr(sh.folder_paths, "get_org_output_directory",
-                        lambda org: str(tmp_path / "orgs" / org / "output"))
-    monkeypatch.setattr(wl.folder_paths, "get_org_output_directory",
-                        lambda org: str(tmp_path / "orgs" / org / "output"))
-    common = dict(kind="fix", prompt="make it red", refs=["a.png"], uploads=[],
-                  parents=["p.png"], output_prefix="fixes/x", params={})
-    pid = sh._hold_job("acme", {"1": {"class_type": "SaveImage", "inputs": {}}}, common)
-    assert pid.startswith("held-")
-    held = sh._list_held("acme")
-    assert len(held) == 1 and held[0]["prompt"] == "make it red" and held[0]["graph"]
-    # The worklog row is QUEUED — never lost, never failed.
-    row = next(r for r in wl.load("acme") if r.get("id") == pid)
-    assert row["status"] == "queued" and row["node"] == "waiting"
-    # Tenancy: another org sees nothing.
-    assert sh._list_held("rival") == []
-    # Cancel deletes the spool so the job can never re-enqueue afterwards.
-    sh._cancel_job(type("S", (), {"prompt_queue": None})(), "acme", pid)
-    assert sh._list_held("acme") == []
-    assert next(r for r in wl.load("acme") if r.get("id") == pid)["status"] == "cancelled"
-
-
-def test_one_unqueueable_held_job_never_strands_the_rest(tmp_path, monkeypatch):
-    """A single poisoned spool entry must not hold the queue hostage.
-
-    _retry_held used to `return` on ANY DispatchError, so the first un-requeueable job
-    blocked every other held job forever — observed in prod as the same 5 ids across
-    every queue read, none ever moving. A TRANSPORT error still stops the sweep (the
-    rest would fail identically); anything else fails that ONE job, with its reason.
-    """
+def test_a_dispatch_the_fabric_refuses_fails_now(tmp_path, monkeypatch):
+    """Nothing is held anywhere. A render the fabric cannot take fails with its
+    reason and a `failed` work-log row, so the user sees it and re-runs. The spool
+    that used to catch these replayed jobs the engine would never accept, and the
+    alphabetically-first of them pinned every other one behind it."""
     import asyncio
     import middleware.worklog as wl
     monkeypatch.setattr(sh.folder_paths, "get_org_output_directory",
                         lambda org: str(tmp_path / "orgs" / org / "output"))
     monkeypatch.setattr(wl.folder_paths, "get_org_output_directory",
                         lambda org: str(tmp_path / "orgs" / org / "output"))
-    common = dict(prompt="p", refs=[], uploads=[], parents=[], params={})
-    bad = sh._hold_job("acme", {"1": {"class_type": "SaveImage", "inputs": {}}},
-                       dict(kind="fix", output_prefix="fixes/bad", **common))
-    good = sh._hold_job("acme", {"2": {"class_type": "SaveImage", "inputs": {}}},
-                        dict(kind="fix", output_prefix="fixes/good", **common))
-    assert len(sh._list_held("acme")) == 2
 
-    order = sorted([bad, good])            # _list_held order decides who is "first"
-    async def fake_queue(request, server, graph):
-        # The FIRST entry is permanently un-requeueable; the second is fine.
-        if graph.get(list(graph)[0]) and order[0] == (bad if "1" in graph else good):
-            raise sh.DispatchError("unknown asset: gone.png")
-        return "new-pid"
-    monkeypatch.setattr(sh, "_queue_prompt", fake_queue)
-    monkeypatch.setattr(sh, "_in_render_jobs", lambda org, pid: False)
-
-    asyncio.run(sh._retry_held(None, None, "acme"))
-    # BOTH left the spool: one re-queued, one failed with its reason — neither stranded.
-    assert sh._list_held("acme") == []
-    rows = {r["id"]: r for r in wl.load("acme")}
-    assert rows[order[0]]["status"] == "failed"
-    assert "could not re-queue" in str(rows[order[0]].get("events") or rows[order[0]])
-
-    # A TRANSPORT failure still stops the sweep and KEEPS the spool (work is not lost).
-    held = sh._hold_job("acme", {"3": {"class_type": "SaveImage", "inputs": {}}},
-                        dict(kind="fix", output_prefix="fixes/t", **common))
     async def down(request, server, graph):
         raise sh.DispatchError("GPU render worker is momentarily unavailable — please retry.")
-    monkeypatch.setattr(sh, "_queue_prompt", down)
-    asyncio.run(sh._retry_held(None, None, "acme"))
-    assert [r["id"] for r in sh._list_held("acme")] == [held]
+    monkeypatch.setattr(sh, "_submit", down)
+
+    try:
+        asyncio.run(sh._dispatch(None, None, "acme", {"1": {"class_type": "SaveImage"}},
+                                 kind="fix", prompt="make it red", refs=[], uploads=[],
+                                 parents=[], output_prefix="fixes/x"))
+    except sh.DispatchError as e:
+        assert "momentarily unavailable" in str(e)
+    else:
+        raise AssertionError("a refused dispatch must raise, never wait somewhere")
+    row = next(r for r in wl.load("acme") if r["output_prefix"] == "fixes/x")
+    assert row["status"] == "failed" and "momentarily unavailable" in row["error"]
 
 
-def test_a_job_wearing_transport_words_does_not_pin_the_others(tmp_path, monkeypatch):
-    """A holdable MESSAGE is not proof of a holdable CONDITION.
-
-    "momentarily unavailable" is what the dispatcher says for ANY enqueue failure —
-    it names the fleet without checking — so a job that simply cannot be enqueued
-    (a 4K source whose inlined body exceeds the API's request-size limit) wears
-    transport words and re-holds forever. The spool is walked in sorted order, so the
-    alphabetically-first of those pinned all ten of one org's renders across two days
-    while both GPUs sat idle and healthy.
-
-    Trying the rest costs nothing when the fabric really is down (they all fail and the
-    spool is intact either way) and is the whole difference when it is not.
-    """
+def test_dispatch_records_the_machine_the_render_went_to(tmp_path, monkeypatch):
+    """The lane comes from /prompt's own answer — the dispatcher names the machine —
+    not from a file the dispatcher wrote for the caller to read back."""
     import asyncio
     import middleware.worklog as wl
     monkeypatch.setattr(sh.folder_paths, "get_org_output_directory",
                         lambda org: str(tmp_path / "orgs" / org / "output"))
     monkeypatch.setattr(wl.folder_paths, "get_org_output_directory",
                         lambda org: str(tmp_path / "orgs" / org / "output"))
-    common = dict(prompt="p", refs=[], uploads=[], parents=[], params={})
-    big = sh._hold_job("acme", {"BIG": {"class_type": "SaveImage", "inputs": {}}},
-                       dict(kind="fix", output_prefix="fixes/big", **common))
-    ok = sh._hold_job("acme", {"OK": {"class_type": "SaveImage", "inputs": {}}},
-                      dict(kind="fix", output_prefix="fixes/ok", **common))
 
-    async def fake_queue(request, server, graph):
-        if "BIG" in graph:      # too large to enqueue, reported as if the fleet were down
-            raise sh.DispatchError("GPU render worker is momentarily unavailable — please retry.")
-        return "new-pid"
-    monkeypatch.setattr(sh, "_queue_prompt", fake_queue)
-    monkeypatch.setattr(sh, "_in_render_jobs", lambda org, pid: False)
+    async def to_spark(request, server, graph):
+        return "pid-1", "spark"
+    monkeypatch.setattr(sh, "_submit", to_spark)
+    pid = asyncio.run(sh._dispatch(None, None, "acme", {"1": {"class_type": "SaveImage"}},
+                                   kind="fix", prompt="a", refs=[], uploads=[],
+                                   parents=[], output_prefix="fixes/gpu"))
+    row = next(r for r in wl.load("acme") if r["id"] == pid)
+    assert (row["lane"], row["node"]) == ("gpu", "spark")
 
-    asyncio.run(sh._retry_held(None, None, "acme"))
-    left = [r["id"] for r in sh._list_held("acme")]
-    assert ok not in left, "a queueable job was stranded behind one that was not"
-    assert left == [big], "the un-enqueueable job is still HELD (its work is not lost)"
-
-
-def test_holdable_matches_transport_errors_only():
-    # "was not queued" was here and is NOT transport: the engine returns it for a graph
-    # it REFUSED (missing model, stale staged input), which repeats forever. Since
-    # _retry_held stops the sweep on a holdable error, one such job pinned the whole
-    # spool — ten jobs sat unmoved for hours while fresh dispatches succeeded beside
-    # them. A job the engine will never accept must FAIL with its reason.
-    assert not any(s in "render was not queued (no prompt_id returned)".lower()
-                   for s in sh._HOLDABLE), "a refusal must not be held as transport"
-    holdable = ["GPU render worker is momentarily unavailable — please retry.",
-                "render could not be queued — no GPU worker online for this org",
-                "could not reach the render engine (boom)",
-                "commerce: no available server",
-                "dial unix /var/lib/cloud/run/commerce.sock: connection refused"]
-    for msg in holdable:
-        assert any(s in msg.lower() for s in sh._HOLDABLE), msg
-    for msg in ["instruction required (3-500 chars)", "unknown asset: x.png",
-                "select 2-5 references to compose"]:
-        assert not any(s in msg.lower() for s in sh._HOLDABLE), msg
+    async def here(request, server, graph):
+        return "pid-2", ""
+    monkeypatch.setattr(sh, "_submit", here)
+    pid = asyncio.run(sh._dispatch(None, None, "acme", {"2": {"class_type": "SaveImage"}},
+                                   kind="fix", prompt="b", refs=[], uploads=[],
+                                   parents=[], output_prefix="fixes/local"))
+    row = next(r for r in wl.load("acme") if r["id"] == pid)
+    assert (row["lane"], row["node"]) == ("local", "studio pod")
 
 
 def test_positive_encoders_by_sampler_wiring():
@@ -528,38 +457,6 @@ def test_compose_with_a_base_edits_it_instead_of_synthesising_a_blend():
     assert onto["13"]["inputs"]["denoise"] == sh.FLOWS["cad_mockup"]["denoise"]
     exact = sh._compose_graph(refs, "swap the top", "composes/z", base="scene.png", denoise=0.4)
     assert exact["13"]["inputs"]["denoise"] == 0.4
-
-
-def test_the_held_sweep_is_bounded_so_it_cannot_stall_the_server(tmp_path, monkeypatch):
-    """One queue read may not make an unbounded number of enqueue attempts.
-
-    The enqueue is a SYNCHRONOUS urlopen on the event loop. Trying every held job took
-    studio down: ten entries, each shipping a ~25MB body that the far end reset, blocked
-    every request in the process — the readiness probe included — so the pod went unready
-    and the ingress served 503. Progress past a stuck entry is worth having; an
-    unbounded stall is not.
-    """
-    import asyncio
-    import middleware.worklog as wl
-    monkeypatch.setattr(sh.folder_paths, "get_org_output_directory",
-                        lambda org: str(tmp_path / "orgs" / org / "output"))
-    monkeypatch.setattr(wl.folder_paths, "get_org_output_directory",
-                        lambda org: str(tmp_path / "orgs" / org / "output"))
-    common = dict(prompt="p", refs=[], uploads=[], parents=[], params={})
-    for i in range(10):
-        sh._hold_job("acme", {f"N{i}": {"class_type": "SaveImage", "inputs": {}}},
-                     dict(kind="fix", output_prefix=f"fixes/h{i}", **common))
-
-    attempts = []
-    async def always_down(request, server, graph):
-        attempts.append(1)
-        raise sh.DispatchError("GPU render worker is momentarily unavailable — please retry.")
-    monkeypatch.setattr(sh, "_queue_prompt", always_down)
-
-    asyncio.run(sh._retry_held(None, None, "acme"))
-    assert len(attempts) <= sh._HOLD_TRIES, (
-        f"one read attempted {len(attempts)} enqueues; each is a blocking upload")
-    assert len(sh._list_held("acme")) == 10, "nothing was lost — they stay held"
 
 
 def test_an_edit_keeps_the_master_and_adds_only_what_changed():

@@ -177,9 +177,9 @@ async def test_dispatch_route(orgaware, monkeypatch):
 
     async def fake_queue(request, server, graph):
         captured["graph"] = graph
-        return "pid-v"
+        return "pid-v", ""
 
-    monkeypatch.setattr(sh, "_queue_prompt", fake_queue)
+    monkeypatch.setattr(sh, "_submit", fake_queue)
     video = _handler(_FakeServer(), "POST", "/v1/library/video", monkeypatch)
 
     # an 'org' field in the body is IGNORED — the row lands under the TOKEN org
@@ -446,9 +446,9 @@ async def test_embedded_and_rerun(orgaware, monkeypatch):
 
     async def fake_queue(request, server, g):
         captured["graph"] = g
-        return "pid-rerun"
+        return "pid-rerun", ""
 
-    monkeypatch.setattr(sh, "_queue_prompt", fake_queue)
+    monkeypatch.setattr(sh, "_submit", fake_queue)
     rerun = _handler(_FakeServer(), "POST", "/v1/library/rerun", monkeypatch)
     rr = await rerun(_Req(body={"path": "video/x_ab12cd_00001_.mp4"}, org="acme"))
     assert rr.status == 200
@@ -470,9 +470,9 @@ async def test_template_retag(orgaware, monkeypatch):
 
     async def fake_queue(request, server, g):
         captured["graph"] = g
-        return "pid-t"
+        return "pid-t", ""
 
-    monkeypatch.setattr(sh, "_queue_prompt", fake_queue)
+    monkeypatch.setattr(sh, "_submit", fake_queue)
     render = _handler(_FakeServer(), "POST", "/v1/templates/render", monkeypatch)
 
     # a template whose graph saves via SaveVideo

@@ -99,8 +99,8 @@ async def test_dispatch_model3d_route(orgaware, monkeypatch):
     captured = {}
     async def fake_queue(request, server, graph):
         captured["graph"] = graph
-        return "pid-3d"
-    monkeypatch.setattr(sh, "_queue_prompt", fake_queue)
+        return "pid-3d", ""
+    monkeypatch.setattr(sh, "_submit", fake_queue)
     model3d = _handler(_FakeServer(), "POST", "/v1/library/model3d", monkeypatch)
 
     # a library image → 3D; 'org' in the body is ignored (token org wins)

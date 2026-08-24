@@ -222,28 +222,24 @@ def add_worker_routes(routes: web.RouteTableDef, prompt_server):
             if sensitive_val in extra_data:
                 sensitive[sensitive_val] = extra_data.pop(sensitive_val)
 
-        try:
-            number = float(json_data.get("number", 0))
-        except (TypeError, ValueError):
-            return web.json_response({"error": "number must be numeric"}, status=400)
         extra_data["create_time"] = int(_time.time() * 1000)
         # `org` scopes outputs on THIS worker's LOCAL disk only — a worker-LOCAL label,
         # never a gallery destination. The durable upload path re-derives the gallery org
         # from the user's IAM token (not this body field), so a forged body `org` can at
         # most mislabel a local temp dir, never write into another tenant's gallery. The
-        # prompt worker binds folder_paths.set_execution_org from extra_data["org_id"].
+        # renderer binds folder_paths.set_execution_org from extra_data["org_id"].
         org = json_data.get("org") or extra_data.get("org_id")
         if org:
             extra_data["org_id"] = org
 
-        # Queue locally — the worker's prompt_worker thread will pick it up
-        prompt_server.prompt_queue.put(
-            (number, prompt_id, prompt, extra_data, outputs_to_execute, sensitive)
-        )
+        # Render it now. A worker claims one job at a time, so the slot is free;
+        # if it is not, the claim was premature and the job goes back to the lane.
+        if not prompt_server.renderer.start(
+                (prompt_id, prompt, extra_data, outputs_to_execute, sensitive)):
+            return web.json_response({"error": "already rendering"}, status=503)
 
         return web.json_response({
             "prompt_id": prompt_id,
-            "number": number,
             "node_errors": valid[3],
             "worker_id": os.environ.get("WORKER_ID", "local"),
         })

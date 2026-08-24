@@ -10,13 +10,12 @@ from studio_api.internal import prune_dict
 
 class JobStatus:
     """Job status constants."""
-    PENDING = 'pending'
     IN_PROGRESS = 'in_progress'
     COMPLETED = 'completed'
     FAILED = 'failed'
     CANCELLED = 'cancelled'
 
-    ALL = [PENDING, IN_PROGRESS, COMPLETED, FAILED, CANCELLED]
+    ALL = [IN_PROGRESS, COMPLETED, FAILED, CANCELLED]
 
 
 # Media types that can be previewed in the frontend
@@ -116,18 +115,17 @@ def is_previewable(media_type: str, item: dict) -> bool:
     return False
 
 
-def normalize_queue_item(item: tuple, status: str) -> dict:
-    """Convert queue item tuple to unified job dict.
+def normalize_item(item: tuple, status: str) -> dict:
+    """Convert a render-item tuple to unified job dict.
 
-    Expects item with sensitive data already removed (5 elements).
+    Expects item with sensitive data already removed (4 elements).
     """
-    priority, prompt_id, _, extra_data, _ = item
+    prompt_id, _, extra_data, _ = item
     create_time, workflow_id = _extract_job_metadata(extra_data)
 
     return prune_dict({
         'id': prompt_id,
         'status': status,
-        'priority': priority,
         'create_time': create_time,
         'outputs_count': 0,
         'workflow_id': workflow_id,
@@ -137,10 +135,9 @@ def normalize_queue_item(item: tuple, status: str) -> dict:
 def normalize_history_item(prompt_id: str, history_item: dict, include_outputs: bool = False) -> dict:
     """Convert history item dict to unified job dict.
 
-    History items have sensitive data already removed (prompt tuple has 5 elements).
+    History items have sensitive data already removed (prompt tuple has 4 elements).
     """
-    prompt_tuple = history_item['prompt']
-    priority, _, prompt, extra_data, _ = prompt_tuple
+    _, prompt, extra_data, _ = history_item['prompt']
     create_time, workflow_id = _extract_job_metadata(extra_data)
 
     status_info = history_item.get('status', {})
@@ -178,7 +175,6 @@ def normalize_history_item(prompt_id: str, history_item: dict, include_outputs: 
     job = prune_dict({
         'id': prompt_id,
         'status': status,
-        'priority': priority,
         'create_time': create_time,
         'execution_start_time': execution_start_time,
         'execution_end_time': execution_end_time,
@@ -261,14 +257,13 @@ def apply_sorting(jobs: list[dict], sort_by: str, sort_order: str) -> list[dict]
     return sorted(jobs, key=get_sort_key, reverse=reverse)
 
 
-def get_job(prompt_id: str, running: list, queued: list, history: dict) -> Optional[dict]:
+def get_job(prompt_id: str, running: list, history: dict) -> Optional[dict]:
     """
-    Get a single job by prompt_id from history or queue.
+    Get a single job by prompt_id, from history or from the render in flight.
 
     Args:
         prompt_id: The prompt ID to look up
-        running: List of currently running queue items
-        queued: List of pending queue items
+        running: The render in flight, as a one-or-empty list
         history: Dict of history items keyed by prompt_id
 
     Returns:
@@ -278,19 +273,14 @@ def get_job(prompt_id: str, running: list, queued: list, history: dict) -> Optio
         return normalize_history_item(prompt_id, history[prompt_id], include_outputs=True)
 
     for item in running:
-        if item[1] == prompt_id:
-            return normalize_queue_item(item, JobStatus.IN_PROGRESS)
-
-    for item in queued:
-        if item[1] == prompt_id:
-            return normalize_queue_item(item, JobStatus.PENDING)
+        if item[0] == prompt_id:
+            return normalize_item(item, JobStatus.IN_PROGRESS)
 
     return None
 
 
 def get_all_jobs(
     running: list,
-    queued: list,
     history: dict,
     status_filter: Optional[list[str]] = None,
     workflow_id: Optional[str] = None,
@@ -300,11 +290,10 @@ def get_all_jobs(
     offset: int = 0
 ) -> tuple[list[dict], int]:
     """
-    Get all jobs (running, pending, completed) with filtering and sorting.
+    Get all jobs (running, completed) with filtering and sorting.
 
     Args:
-        running: List of currently running queue items
-        queued: List of pending queue items
+        running: The render in flight, as a one-or-empty list
         history: Dict of history items keyed by prompt_id
         status_filter: List of statuses to include (from JobStatus.ALL)
         workflow_id: Filter by workflow ID
@@ -323,11 +312,7 @@ def get_all_jobs(
 
     if JobStatus.IN_PROGRESS in status_filter:
         for item in running:
-            jobs.append(normalize_queue_item(item, JobStatus.IN_PROGRESS))
-
-    if JobStatus.PENDING in status_filter:
-        for item in queued:
-            jobs.append(normalize_queue_item(item, JobStatus.PENDING))
+            jobs.append(normalize_item(item, JobStatus.IN_PROGRESS))
 
     history_statuses = {JobStatus.COMPLETED, JobStatus.FAILED, JobStatus.CANCELLED}
     requested_history_statuses = history_statuses & set(status_filter)

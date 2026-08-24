@@ -12,10 +12,6 @@ Group=z
 WorkingDirectory=/home/z/work/hanzo/studio
 Environment=HF_HOME=/home/z/.cache/huggingface
 Environment=PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
-# Crash-durable queue: snapshot pending/in-flight prompts to <user>/queue_snapshot.json
-# on every change and re-queue them on restart, so a kill/OOM mid-batch does not
-# lose queued work. See docs/ops-crash-and-service.md.
-Environment=STUDIO_PERSIST_QUEUE=1
 ExecStart=/home/z/work/hanzo/studio/.venv/bin/python main.py --listen 0.0.0.0 --port 8188 --normalvram --disable-auto-launch --output-directory /home/z/work/hanzo/studio/output
 Restart=on-failure
 RestartSec=8

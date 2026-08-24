@@ -5,7 +5,7 @@ Covers:
   a direct /prompt POST on a worker box refuse un-tokened submits (403), so no render
   reaches a GPU without appearing in the org's gpu-jobs queue.
 - POST /v1/worker/execute — validates X-Worker-Token and RUNS the claimed graph on the
-  local prompt_queue, returning {prompt_id}, scoped to the job's org.
+  box's one render slot, returning {prompt_id}, scoped to the job's org.
 """
 import sys
 from pathlib import Path
@@ -81,12 +81,17 @@ def test_gate_allows_worker_mode_with_token(monkeypatch):
 
 # ── The claim seam: POST /v1/worker/execute validates token + runs locally ────────
 
-class _Queue:
+class _Renderer:
+    """One slot: it takes the first item and refuses anything on top of it."""
+
     def __init__(self):
         self.items = []
 
-    def put(self, item):
+    def start(self, item):
+        if self.items:
+            return False
         self.items.append(item)
+        return True
 
 
 class _NRM:
@@ -96,7 +101,7 @@ class _NRM:
 
 class _Server:
     def __init__(self):
-        self.prompt_queue = _Queue()
+        self.renderer = _Renderer()
         self.node_replace_manager = _NRM()
 
 
@@ -124,7 +129,7 @@ async def test_worker_execute_rejects_without_token(worker_app, aiohttp_client):
     r = await client.post("/v1/worker/execute",
                           json={"prompt": {"9": {"class_type": "SaveImage", "inputs": {}}}})
     assert r.status == 401
-    assert worker_app["srv"].prompt_queue.items == []        # nothing ran
+    assert worker_app["srv"].renderer.items == []            # nothing ran
 
 
 @pytest.mark.asyncio
@@ -137,9 +142,9 @@ async def test_worker_execute_runs_claimed_job_with_token(worker_app, aiohttp_cl
     assert r.status == 200
     body = await r.json()
     assert body["prompt_id"] == "pid-1"
-    items = worker_app["srv"].prompt_queue.items
-    assert len(items) == 1                                    # queued for local render
-    _number, pid, _prompt, extra, _outputs, _sensitive = items[0]
+    items = worker_app["srv"].renderer.items
+    assert len(items) == 1                                    # rendering here, now
+    pid, _prompt, extra, _outputs, _sensitive = items[0]
     assert pid == "pid-1"
     assert extra["org_id"] == "acme"                          # worker-LOCAL scope label (gallery org re-derived from IAM)
 
@@ -151,14 +156,19 @@ async def test_worker_execute_rejects_non_dict_prompt(worker_app, aiohttp_client
     r = await client.post("/v1/worker/execute", headers={"X-Worker-Token": "s3cret"},
                           json={"prompt": "<img src=x onerror=alert(1)>"})
     assert r.status == 400
-    assert worker_app["srv"].prompt_queue.items == []         # nothing ran
+    assert worker_app["srv"].renderer.items == []             # nothing ran
 
 
 @pytest.mark.asyncio
-async def test_worker_execute_rejects_non_numeric_number(worker_app, aiohttp_client):
-    """A non-numeric `number` is a clean 400, not a float() 500."""
+async def test_a_second_claim_is_refused_while_the_slot_is_full(worker_app, aiohttp_client):
+    """A worker holds one render and no line behind it. A second hand-in is refused so
+    the job stays in the gpu-jobs lane for a worker that can actually take it."""
     client = await aiohttp_client(worker_app)
-    r = await client.post("/v1/worker/execute", headers={"X-Worker-Token": "s3cret"},
-                          json={"prompt": {"9": {"class_type": "SaveImage", "inputs": {}}},
-                                "number": "not-a-number"})
-    assert r.status == 400
+    graph = {"9": {"class_type": "SaveImage", "inputs": {}}}
+    first = await client.post("/v1/worker/execute", headers={"X-Worker-Token": "s3cret"},
+                              json={"prompt": graph, "prompt_id": "pid-1"})
+    assert first.status == 200
+    second = await client.post("/v1/worker/execute", headers={"X-Worker-Token": "s3cret"},
+                               json={"prompt": graph, "prompt_id": "pid-2"})
+    assert second.status == 503
+    assert [it[0] for it in worker_app["srv"].renderer.items] == ["pid-1"]

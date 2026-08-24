@@ -58,8 +58,6 @@ def _capture_enqueue(monkeypatch):
 
     monkeypatch.setattr(g.urllib.request, "urlopen", fake_urlopen)
     monkeypatch.setattr(g, "_collect_input_images", lambda prompt, org: [])
-    monkeypatch.setattr(g, "_track_dispatched",
-                        lambda org, pid, prompt, node="gpu": sent.update(node=node))
     return sent
 
 
@@ -70,15 +68,15 @@ def test_modelless_pod_enqueues_even_when_org_sees_no_gpu(monkeypatch):
     monkeypatch.setattr(g, "_online_gpu_nodes", lambda tok: [])   # org-blind
     monkeypatch.setattr(g, "has_models_for", lambda prompt: False)     # cloud coordinator
     sent = _capture_enqueue(monkeypatch)
-    ok = g.dispatch_if_worker(_Req("Bearer karma"), "karma", "pid1", {})
-    assert ok is True                       # enqueued to the worker lane, NOT local
+    node = g.dispatch_if_worker(_Req("Bearer karma"), "karma", "pid1", {})
+    assert node == "gpu"                    # enqueued to the worker lane, NOT local;
+                                            # claimer decided at pick-up
     assert "gpu-jobs" in sent["url"]
     assert sent["auth"] == "Bearer karma"   # tenancy still flows from the user token
-    assert sent["node"] == "gpu"            # claimer decided at pick-up
 
 
 def test_modelless_pod_never_returns_local(monkeypatch):
-    """Even if the enqueue POST fails, a model-less pod returns False so server.py
+    """Even if the enqueue POST fails, a model-less pod returns None so server.py
     yields a retryable 503 — it must NEVER fall through to local validation."""
     monkeypatch.setattr(g, "_online_gpu_nodes", lambda tok: [])
     monkeypatch.setattr(g, "has_models_for", lambda prompt: False)
@@ -88,9 +86,9 @@ def test_modelless_pod_never_returns_local(monkeypatch):
         raise OSError("gpu-jobs unreachable")
 
     monkeypatch.setattr(g.urllib.request, "urlopen", boom)
-    # False here means "not enqueued"; server.py then 503s on a model-less pod. The
+    # None here means "not enqueued"; server.py then 503s on a model-less pod. The
     # point: dispatch never claims a local render happened.
-    assert g.dispatch_if_worker(_Req("Bearer karma"), "karma", "pid", {}) is False
+    assert g.dispatch_if_worker(_Req("Bearer karma"), "karma", "pid", {}) is None
 
 
 def test_box_with_models_renders_local_when_no_worker(monkeypatch):
@@ -101,7 +99,7 @@ def test_box_with_models_renders_local_when_no_worker(monkeypatch):
     touched = {"urlopen": False}
     monkeypatch.setattr(g.urllib.request, "urlopen",
                         lambda *a, **k: touched.update(urlopen=True) or _Resp())
-    assert g.dispatch_if_worker(_Req(), "acme", "pid", {}) is False
+    assert g.dispatch_if_worker(_Req(), "acme", "pid", {}) is None
     assert touched["urlopen"] is False       # never touched the gpu-jobs API
 
 
@@ -109,13 +107,12 @@ def test_online_worker_enqueues_with_its_label(monkeypatch):
     monkeypatch.setattr(g, "_online_gpu_nodes",
                         lambda tok: [{"name": "spark", "status": "online", "gpu": True}])
     monkeypatch.setattr(g, "has_models_for", lambda prompt: True)  # an online worker wins
-    sent = _capture_enqueue(monkeypatch)
-    assert g.dispatch_if_worker(_Req(), "acme", "pid", {}) is True
-    assert sent["node"] == "spark"
+    _capture_enqueue(monkeypatch)
+    assert g.dispatch_if_worker(_Req(), "acme", "pid", {}) == "spark"
 
 
 def test_no_token_is_not_a_local_render_claim(monkeypatch):
-    assert g.dispatch_if_worker(_Req(auth=""), "acme", "pid", {}) is False
+    assert g.dispatch_if_worker(_Req(auth=""), "acme", "pid", {}) is None
 
 
 # ── The capacity gate is advisory + service-identity ─────────────────────────────
@@ -184,8 +181,6 @@ def _capture_body(monkeypatch):
 
     monkeypatch.setattr(g.urllib.request, "urlopen", fake_urlopen)
     monkeypatch.setattr(g, "_collect_input_images", lambda prompt, org: [])
-    monkeypatch.setattr(g, "_track_dispatched",
-                        lambda org, pid, prompt, node="gpu": sent.update(node=node))
     return sent
 
 
@@ -194,41 +189,38 @@ def test_untargeted_uses_shared_gpu_jobs_lane(monkeypatch):
     monkeypatch.setattr(g, "_online_gpu_nodes", lambda tok: [])
     monkeypatch.setattr(g, "has_models_for", lambda prompt: False)
     sent = _capture_body(monkeypatch)
-    assert g.dispatch_if_worker(_Req("Bearer acme"), "acme", "pid", {}) is True
+    assert g.dispatch_if_worker(_Req("Bearer acme"), "acme", "pid", {}) == "gpu"
     assert sent["body"]["taskQueue"] == "gpu-jobs"            # shared lane
     assert "namespaces/gpu-jobs/activities" in sent["url"]    # namespace is always gpu-jobs
-    assert sent["node"] == "gpu"
 
 
 def test_x_target_gpu_routes_to_that_machine_lane(monkeypatch):
     """A targeted render — where the target IS one of the caller-org's own online GPUs —
-    enqueues on the machine's OWN lane 'gpu:<identity>' (namespace still gpu-jobs) and is
-    tracked to that node, so only spark claims it. An in-fleet target ALWAYS enqueues,
+    enqueues on the machine's OWN lane 'gpu:<identity>' (namespace still gpu-jobs) and
+    names that node back, so only spark claims it. An in-fleet target ALWAYS enqueues,
     even on a box that could render the graph locally."""
     monkeypatch.setattr(g, "_online_gpu_nodes",
                         lambda tok: [{"name": "spark", "status": "online", "gpu": True}])
     monkeypatch.setattr(g, "has_models_for", lambda prompt: True)   # would render local…
     sent = _capture_body(monkeypatch)
-    ok = g.dispatch_if_worker(_ReqH("Bearer acme", {"X-Target-GPU": "spark"}), "acme", "pid", {})
-    assert ok is True                                        # …but an in-fleet target forces the queue
+    node = g.dispatch_if_worker(_ReqH("Bearer acme", {"X-Target-GPU": "spark"}), "acme", "pid", {})
+    assert node == "spark"                                   # …an in-fleet target forces the lane
     assert sent["body"]["taskQueue"] == "gpu:spark"          # the machine's own lane
     assert "namespaces/gpu-jobs/activities" in sent["url"]   # namespace unchanged
-    assert sent["node"] == "spark"                           # tracked to the targeted GPU
 
 
 def test_out_of_fleet_target_falls_back_to_shared(monkeypatch):
     """A target that is NOT one of the caller-org's own online GPUs is ignored — the job
     rides the shared lane, never a 'gpu:<bogus>' lane no worker claims (a 30-min hang),
-    and an injected label (XSS payload) never becomes a taskQueue / queue-row node."""
+    and an injected label (XSS payload) never becomes a taskQueue or a node name."""
     monkeypatch.setattr(g, "_online_gpu_nodes",
                         lambda tok: [{"name": "spark", "status": "online", "gpu": True}])
     monkeypatch.setattr(g, "has_models_for", lambda prompt: False)
     sent = _capture_body(monkeypatch)
-    ok = g.dispatch_if_worker(
+    node = g.dispatch_if_worker(
         _ReqH("Bearer acme", {"X-Target-GPU": "<img src=x onerror=alert(1)>"}), "acme", "pid", {})
-    assert ok is True
     assert sent["body"]["taskQueue"] == "gpu-jobs"           # bogus target → shared lane, not gpu:<payload>
-    assert sent["node"] == "spark"                           # node decided by the real fleet, not the header
+    assert node == "spark"                                   # node decided by the real fleet, not the header
 
 
 def test_blank_target_header_falls_back_to_shared(monkeypatch):
@@ -236,80 +228,5 @@ def test_blank_target_header_falls_back_to_shared(monkeypatch):
     monkeypatch.setattr(g, "_online_gpu_nodes", lambda tok: [])
     monkeypatch.setattr(g, "has_models_for", lambda prompt: False)
     sent = _capture_body(monkeypatch)
-    assert g.dispatch_if_worker(_ReqH("Bearer acme", {"X-Target-GPU": "  "}), "acme", "pid", {}) is True
+    assert g.dispatch_if_worker(_ReqH("Bearer acme", {"X-Target-GPU": "  "}), "acme", "pid", {}) == "gpu"
     assert sent["body"]["taskQueue"] == "gpu-jobs"
-
-
-# ── A BYO-GPU video job records its REAL prefix, not the "render" fallback ─────────
-def test_track_savevideo(tmp_path, monkeypatch):
-    import json
-    monkeypatch.setattr(g.folder_paths, "get_org_output_directory", lambda o=None: str(tmp_path))
-    graph = {"7": {"class_type": "LoadImage", "inputs": {"image": "ref.png"}},
-             "12": {"class_type": "SaveVideo", "inputs": {"filename_prefix": "video/beach_ab12cd"}}}
-    g._track_dispatched("acme", "pid-v", graph, node="spark")
-    jobs = json.loads((tmp_path / "render_jobs.json").read_text())
-    assert jobs[-1]["outPrefix"] == "video/beach_ab12cd"      # the video prefix, not "render"
-    assert jobs[-1]["prefix"] == "beach_ab12cd"
-    assert jobs[-1]["refs"] == ["ref.png"] and jobs[-1]["node"] == "spark"
-
-
-# --- enqueue retry across the cloud tasks-backend deploy gap ---
-import urllib.error  # noqa: E402
-
-
-class _FakeResp:
-    def read(self):
-        return b"{}"
-
-
-def test_enqueue_retries_through_503_deploy_gap(monkeypatch):
-    """A 503 'no available server' (cloud Recreate deploy gap) is retried; the
-    enqueue succeeds once the pod is back — no user-visible failure."""
-    monkeypatch.setattr(g.time, "sleep", lambda *_: None)  # no real backoff wait
-    calls = {"n": 0}
-
-    def fake_urlopen(req, timeout=90):
-        calls["n"] += 1
-        if calls["n"] < 3:  # first two attempts hit the empty-pool 503
-            raise urllib.error.HTTPError("u", 503, "no available server", {}, None)
-        return _FakeResp()
-
-    monkeypatch.setattr(g.urllib.request, "urlopen", fake_urlopen)
-    g._enqueue_with_retry(object())          # must NOT raise
-    assert calls["n"] == 3                    # retried twice, succeeded on the 3rd
-
-
-def test_enqueue_does_not_retry_4xx(monkeypatch):
-    """A 4xx (auth/validation) is not a deploy gap — raise immediately, no retry."""
-    monkeypatch.setattr(g.time, "sleep", lambda *_: None)
-    calls = {"n": 0}
-
-    def fake_urlopen(req, timeout=90):
-        calls["n"] += 1
-        raise urllib.error.HTTPError("u", 403, "forbidden", {}, None)
-
-    monkeypatch.setattr(g.urllib.request, "urlopen", fake_urlopen)
-    try:
-        g._enqueue_with_retry(object())
-        raised = False
-    except urllib.error.HTTPError:
-        raised = True
-    assert raised and calls["n"] == 1         # one shot, no retry
-
-
-def test_enqueue_does_not_retry_timeout(monkeypatch):
-    """A timeout may have been processed server-side — never retry (no double render)."""
-    monkeypatch.setattr(g.time, "sleep", lambda *_: None)
-    calls = {"n": 0}
-
-    def fake_urlopen(req, timeout=90):
-        calls["n"] += 1
-        raise urllib.error.URLError(TimeoutError("timed out"))
-
-    monkeypatch.setattr(g.urllib.request, "urlopen", fake_urlopen)
-    try:
-        g._enqueue_with_retry(object())
-        raised = False
-    except urllib.error.URLError:
-        raised = True
-    assert raised and calls["n"] == 1

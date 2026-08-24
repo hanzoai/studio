@@ -1,5 +1,5 @@
 import copy
-import heapq
+import gc
 import inspect
 import json
 import logging
@@ -8,6 +8,7 @@ import sys
 import threading
 import time
 import traceback
+from concurrent.futures import ThreadPoolExecutor
 from enum import Enum
 from typing import List, Literal, NamedTuple, Optional, Union
 import asyncio
@@ -19,6 +20,8 @@ import studio.memory_management
 import studio.model_management
 import comfy_aimdo.model_vbar
 
+import folder_paths
+import hook_breaker_ac10a0
 from latent_preview import set_preview_method
 import nodes
 from studio_execution.caching import (
@@ -1140,245 +1143,214 @@ async def validate_prompt(prompt_id, prompt, partial_execution_list: Union[list[
 
 MAXIMUM_HISTORY_SIZE = 10000
 
-class PromptQueue:
+
+class ExecutionStatus(NamedTuple):
+    status_str: Literal['success', 'error']
+    completed: bool
+    messages: List[str]
+
+
+class History:
+    """What this box has already rendered.
+
+    A record, never a plan: an entry here names work that is over. Bounded at
+    MAXIMUM_HISTORY_SIZE, oldest dropped first.
+    """
+
+    def __init__(self):
+        self.mutex = threading.RLock()
+        self.entries = {}
+
+    def put(self, item, result, status: Optional[ExecutionStatus]):
+        with self.mutex:
+            if len(self.entries) > MAXIMUM_HISTORY_SIZE:
+                self.entries.pop(next(iter(self.entries)))
+            entry = {
+                "prompt": item,
+                "outputs": {},
+                "status": copy.deepcopy(status._asdict()) if status is not None else None,
+            }
+            entry.update(result)
+            self.entries[item[0]] = entry
+
+    def get(self, prompt_id=None, max_items=None, offset=-1, map_function=None):
+        with self.mutex:
+            if prompt_id is not None:
+                if prompt_id not in self.entries:
+                    return {}
+                p = self.entries[prompt_id]
+                return {prompt_id: map_function(p) if map_function else copy.deepcopy(p)}
+            out = {}
+            if offset < 0 and max_items is not None:
+                offset = len(self.entries) - max_items
+            for i, (k, p) in enumerate(self.entries.items()):
+                if i < offset:
+                    continue
+                out[k] = map_function(p) if map_function else p
+                if max_items is not None and len(out) >= max_items:
+                    break
+            return out
+
+    def clear(self):
+        with self.mutex:
+            self.entries = {}
+
+    def delete(self, prompt_id):
+        with self.mutex:
+            self.entries.pop(prompt_id, None)
+
+
+class Renderer:
+    """The one render slot on this box: a prompt runs now, or it is refused.
+
+    Nothing waits here. A render begins the instant it is accepted and the slot
+    is closed until it finishes, so this process holds no backlog to lose, to
+    replay, or to persist. Work with nowhere to run belongs to the cloud
+    gpu-jobs lane, which is the only place renders line up.
+
+    Every render runs on the same thread, so the executor's model cache and the
+    CUDA context stay where they were built.
+    """
+
+    # A render leaves memory to give back, but a burst of renders should pay for that
+    # once, not once each: a collect costs tens of milliseconds, which is most of a
+    # cached run. So the collect follows the box going IDLE this long, and each new
+    # render pushes it back.
+    IDLE_COLLECT_S = 10.0
+
     def __init__(self, server):
+        cache_type = CacheType.CLASSIC
+        if args.cache_lru > 0:
+            cache_type = CacheType.LRU
+        elif args.cache_ram > 0:
+            cache_type = CacheType.RAM_PRESSURE
+        elif args.cache_none:
+            cache_type = CacheType.NONE
+
         self.server = server
         self.mutex = threading.RLock()
-        self.not_empty = threading.Condition(self.mutex)
-        self.task_counter = 0
-        self.queue = []
-        self.currently_running = {}
-        self.history = {}
-        self.flags = {}
-        # Optional crash-durable queue: snapshot pending + in-flight prompts to
-        # disk on every change, re-queue them on boot. Off by default; enable
-        # with STUDIO_PERSIST_QUEUE=1. Persistence is strictly best-effort and
-        # never affects the render path (all failures are caught and logged).
-        self._persist_path = None
-        # How many times one prompt may be restored before it is treated as the
-        # reason this process keeps dying rather than a victim of it.
-        self._restore_attempts = {}
-        if os.environ.get("STUDIO_PERSIST_QUEUE") == "1":
-            import folder_paths
-            self._persist_path = os.path.join(folder_paths.get_user_directory(), "queue_snapshot.json")
-            self._restore_locked()
+        self.running = None
+        self.history = History()
+        self.executor = PromptExecutor(
+            server, cache_type=cache_type,
+            cache_args={"lru": args.cache_lru, "ram": args.cache_ram})
+        self.thread = ThreadPoolExecutor(max_workers=1, thread_name_prefix="render")
+        self.idle = None
 
-    _MAX_RESTORE_ATTEMPTS = 2
+    def current(self):
+        """The render in flight as a one-or-empty list — the shape readers want."""
+        with self.mutex:
+            return [self.running] if self.running is not None else []
 
-    def _snapshot_items(self):
-        # Pending queue plus any in-flight items, so a crash mid-render re-queues
-        # the interrupted prompt. Tuples serialize to JSON lists.
-        return [list(it) for it in (list(self.queue) + list(self.currently_running.values()))]
+    def start(self, item) -> bool:
+        """Take the slot and begin rendering. False when a render already holds it."""
+        with self.mutex:
+            if self.running is not None:
+                return False
+            self.running = item
+            if self.idle is not None:
+                self.idle.cancel()      # not idle any more
+                self.idle = None
+        self.server.status_changed()
+        self.thread.submit(self._render, item)
+        return True
 
-    def _persist_locked(self):
-        if self._persist_path is None:
-            return
+    def _render(self, item):
+        from middleware import billing_middleware, content_publish, metrics_middleware
+        prompt_id, prompt, extra_data, outputs, sensitive = item
+        started = time.perf_counter()
+        self.server.last_prompt_id = prompt_id
+        if getattr(args, "enable_metrics", False):
+            metrics_middleware.record_prompt_start()
+
+        extra_data = dict(extra_data, **sensitive)
+        # Tenancy: scope this render's output/temp/input dirs to the org.
+        folder_paths.set_execution_org(extra_data.get("org_id"))
         try:
-            items = self._snapshot_items()
-            live = {it[1] for it in items if len(it) >= 2 and isinstance(it[1], str)}
-            data = json.dumps({
-                "items": items,
-                # Only for prompts still present — a finished prompt's count is not
-                # history worth keeping, and left behind it would grow without bound.
-                "attempts": {k: v for k, v in self._restore_attempts.items() if k in live},
-            })
-            tmp = self._persist_path + ".tmp"
-            with open(tmp, "w") as f:
-                f.write(data)
-            os.replace(tmp, self._persist_path)  # atomic
-        except Exception as e:
-            logging.warning("[persist-queue] snapshot failed: %s", e)
+            self.executor.execute(prompt, prompt_id, extra_data, outputs)
+        except Exception:
+            logging.exception("render %s died", prompt_id)
+        finally:
+            folder_paths.set_execution_org(None)
+            e = self.executor
+            self.history.put(
+                item[:4], e.history_result,
+                ExecutionStatus(status_str='success' if e.success else 'error',
+                                completed=e.success, messages=e.status_messages))
+            with self.mutex:
+                self.running = None
+            self.server.status_changed()
 
-    def _restore_locked(self):
-        """Re-queue what was pending, EXCEPT a prompt that keeps killing this process.
+        if self.server.client_id is not None:
+            self.server.send_sync("executing", {"node": None, "prompt_id": prompt_id},
+                                  self.server.client_id)
 
-        Restoring the in-flight prompt is the point: a crash mid-render must not lose
-        the user's work. But a prompt the box CANNOT run makes that a loop — it is
-        restored, it kills the process, it is restored again. Observed on a worker
-        whose ROCm stack dies loading the Qwen VAE: seven restarts in thirty minutes,
-        the node useless the whole time, and nothing in the queue to explain it.
+        took = time.perf_counter() - started
+        if getattr(args, "enable_metrics", False):
+            metrics_middleware.record_prompt_end(took, self.executor.success)
 
-        So each restore is counted, and after _MAX_RESTORE_ATTEMPTS the prompt is
-        DROPPED with a loud line naming it. Two attempts because the first covers the
-        honest case this exists for (a power cut, an OOM, a deploy) and the second
-        covers one unlucky repeat; a third is evidence, not misfortune.
-        """
-        try:
-            if not os.path.exists(self._persist_path):
-                return
-            with open(self._persist_path) as f:
-                blob = json.load(f)
-            # The file was a bare list before attempts were tracked; a snapshot
-            # already on disk is still readable rather than silently discarded.
-            if isinstance(blob, list):
-                items, attempts = blob, {}
-            else:
-                items = blob.get("items") or []
-                attempts = blob.get("attempts") or {}
-            restored = dropped = 0
-            for it in items:
-                # Minimal validation: (number, prompt_id:str, prompt:dict, ...)
-                if not (isinstance(it, list) and len(it) >= 3
-                        and isinstance(it[1], str) and isinstance(it[2], dict)):
-                    continue
-                pid = it[1]
-                n = int(attempts.get(pid, 0)) + 1
-                if n > self._MAX_RESTORE_ATTEMPTS:
-                    logging.warning(
-                        "[persist-queue] DROPPING prompt %s — it has been restored %d times "
-                        "and this process did not survive it. It will not be retried; "
-                        "re-run it deliberately if it is still wanted.", pid, n - 1)
-                    dropped += 1
-                    continue
-                self._restore_attempts[pid] = n
-                heapq.heappush(self.queue, tuple(it))
-                restored += 1
-            if restored or dropped:
-                logging.info("[persist-queue] restored %d pending prompt(s) from previous run"
-                             "%s", restored, f", dropped {dropped} that keep crashing" if dropped else "")
-            # Record the incremented counts NOW: the crash we are guarding against
-            # can happen before any later snapshot would have written them.
-            self._persist_locked()
-        except Exception as e:
-            logging.warning("[persist-queue] restore failed: %s", e)
+        # Billing: ONE metered usage event per completed render (fire-and-forget).
+        # org_id is the IAM tenant; prompt_id is the idempotency key; quantity is
+        # the number of artifacts produced. Never blocks or fails a render; no-op
+        # unless STUDIO_BILLING_* is set.
+        if getattr(args, "enable_billing", False) and self.executor.success:
+            asyncio.run_coroutine_threadsafe(
+                billing_middleware.record_render(
+                    org_id=extra_data.get("org_id") or "default",
+                    prompt_id=prompt_id,
+                    n_outputs=billing_middleware.count_outputs(self.executor.history_result),
+                ),
+                self.server.loop,
+            )
 
-    def persist_now(self):
+        # Content: record each output artifact as a draft Asset in the content lane
+        # (clients/content, module "marketing") — the SAME DocType that lane writes
+        # when it drives a render, so a studio-initiated render lands in the same
+        # place. Written as the requesting user via their IAM token from `sensitive`,
+        # so it lands in their org. Assets land draft; a human moves them through the
+        # lifecycle, and published is what a storefront shows. Fire-and-forget: the
+        # publisher logs every refusal itself, and a render is NEVER failed if the
+        # lane is down.
+        if content_publish.enabled() and self.executor.success:
+            asyncio.run_coroutine_threadsafe(
+                content_publish.publish_render(
+                    org_id=extra_data.get("org_id") or "default",
+                    prompt_id=prompt_id,
+                    workflow=prompt,
+                    history_result=self.executor.history_result,
+                    iam_token=extra_data.get("iam_token"),
+                    extra_data=extra_data,
+                ),
+                self.server.loop,
+            )
+
+        if took > 600:
+            logging.info("Prompt executed in %s", time.strftime("%H:%M:%S", time.gmtime(took)))
+        else:
+            logging.info("Prompt executed in {:.2f} seconds".format(took))
         with self.mutex:
-            self._persist_locked()
+            if self.running is None and self.idle is None:
+                self.idle = threading.Timer(self.IDLE_COLLECT_S, self._collect)
+                self.idle.daemon = True
+                self.idle.start()
 
-    def put(self, item):
+    def free(self, unload_models: bool, free_memory: bool):
+        """Give memory back. Refused while a render holds the slot — there is
+        nowhere to defer it to, and pulling models out from under a live render
+        is how a box loses one."""
         with self.mutex:
-            heapq.heappush(self.queue, item)
-            self.server.queue_updated()
-            self.not_empty.notify()
-            self._persist_locked()
+            if self.running is not None:
+                return False
+        if unload_models or free_memory:
+            studio.model_management.unload_all_models()
+        if free_memory:
+            self.executor.reset()
+        self._collect()
+        return True
 
-    def get(self, timeout=None):
-        with self.not_empty:
-            while len(self.queue) == 0:
-                self.not_empty.wait(timeout=timeout)
-                if timeout is not None and len(self.queue) == 0:
-                    return None
-            item = heapq.heappop(self.queue)
-            i = self.task_counter
-            self.currently_running[i] = copy.deepcopy(item)
-            self.task_counter += 1
-            self.server.queue_updated()
-            self._persist_locked()
-            return (item, i)
-
-    class ExecutionStatus(NamedTuple):
-        status_str: Literal['success', 'error']
-        completed: bool
-        messages: List[str]
-
-    def task_done(self, item_id, history_result,
-                  status: Optional['PromptQueue.ExecutionStatus'], process_item=None):
+    def _collect(self):
         with self.mutex:
-            prompt = self.currently_running.pop(item_id)
-            if len(self.history) > MAXIMUM_HISTORY_SIZE:
-                self.history.pop(next(iter(self.history)))
-
-            status_dict: Optional[dict] = None
-            if status is not None:
-                status_dict = copy.deepcopy(status._asdict())
-
-            if process_item is not None:
-                prompt = process_item(prompt)
-
-            self.history[prompt[1]] = {
-                "prompt": prompt,
-                "outputs": {},
-                'status': status_dict,
-            }
-            self.history[prompt[1]].update(history_result)
-            self.server.queue_updated()
-            self._persist_locked()
-
-    # Note: slow
-    def get_current_queue(self):
-        with self.mutex:
-            out = []
-            for x in self.currently_running.values():
-                out += [x]
-            return (out, copy.deepcopy(self.queue))
-
-    # read-safe as long as queue items are immutable
-    def get_current_queue_volatile(self):
-        with self.mutex:
-            running = [x for x in self.currently_running.values()]
-            queued = copy.copy(self.queue)
-            return (running, queued)
-
-    def get_tasks_remaining(self):
-        with self.mutex:
-            return len(self.queue) + len(self.currently_running)
-
-    def wipe_queue(self):
-        with self.mutex:
-            self.queue = []
-            self.server.queue_updated()
-            self._persist_locked()
-
-    def delete_queue_item(self, function):
-        with self.mutex:
-            for x in range(len(self.queue)):
-                if function(self.queue[x]):
-                    if len(self.queue) == 1:
-                        self.wipe_queue()
-                    else:
-                        self.queue.pop(x)
-                        heapq.heapify(self.queue)
-                    self.server.queue_updated()
-                    self._persist_locked()
-                    return True
-        return False
-
-    def get_history(self, prompt_id=None, max_items=None, offset=-1, map_function=None):
-        with self.mutex:
-            if prompt_id is None:
-                out = {}
-                i = 0
-                if offset < 0 and max_items is not None:
-                    offset = len(self.history) - max_items
-                for k in self.history:
-                    if i >= offset:
-                        p = self.history[k]
-                        if map_function is not None:
-                            p = map_function(p)
-                        out[k] = p
-                        if max_items is not None and len(out) >= max_items:
-                            break
-                    i += 1
-                return out
-            elif prompt_id in self.history:
-                p = self.history[prompt_id]
-                if map_function is None:
-                    p = copy.deepcopy(p)
-                else:
-                    p = map_function(p)
-                return {prompt_id: p}
-            else:
-                return {}
-
-    def wipe_history(self):
-        with self.mutex:
-            self.history = {}
-
-    def delete_history_item(self, id_to_delete):
-        with self.mutex:
-            self.history.pop(id_to_delete, None)
-
-    def set_flag(self, name, data):
-        with self.mutex:
-            self.flags[name] = data
-            self.not_empty.notify()
-
-    def get_flags(self, reset=True):
-        with self.mutex:
-            if reset:
-                ret = self.flags
-                self.flags = {}
-                return ret
-            else:
-                return self.flags.copy()
+            self.idle = None
+        gc.collect()
+        studio.model_management.soft_empty_cache()
+        hook_breaker_ac10a0.restore_functions()

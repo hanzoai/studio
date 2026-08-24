@@ -52,34 +52,32 @@ from middleware.rate_limit_middleware import create_rate_limit_middleware
 from middleware import metrics_middleware
 from middleware import billing_middleware
 from middleware import compute_config
-from middleware import prompt_router
 from middleware import visor_client
 
 if args.enable_manager:
     import comfyui_manager
 
 
-def _remove_sensitive_from_queue(queue: list) -> list:
-    """Remove sensitive data (index 5) from queue item tuples."""
-    return [item[:5] for item in queue]
+def _public(items: list) -> list:
+    """Render items without their sensitive tail (index 4 = bearer tokens)."""
+    return [item[:4] for item in items]
 
 
 # ── Multi-tenant scoping for the inherited core endpoints (HIP-0506 security) ──
-# /history and /queue are process-global in upstream ComfyUI. In a multi-tenant
-# deployment that is cross-tenant disclosure (one org reads another's prompts,
-# graphs, seeds) and a cross-tenant DoS (one org's "clear queue" wipes another's).
-# Every item carries its owner in extra_data["org_id"] (bound at enqueue). These
-# filter each list/dict to the caller's org. `org is None` means auth is OFF
-# (single-tenant/local dev) → return everything unchanged (no behavior change).
+# /history is process-global in upstream ComfyUI. In a multi-tenant deployment
+# that is cross-tenant disclosure (one org reads another's prompts, graphs,
+# seeds). Every item carries its owner in extra_data["org_id"], bound when the
+# render is accepted. These filter each list/dict to the caller's org. `org is
+# None` means auth is OFF (single-tenant/local dev) → everything, unchanged.
 def _item_org(item) -> str | None:
-    """org_id from a queue-item tuple (index 3 = extra_data)."""
+    """org_id from a render-item tuple (index 2 = extra_data)."""
     try:
-        return item[3].get("org_id") if len(item) > 3 and isinstance(item[3], dict) else None
+        return item[2].get("org_id") if len(item) > 2 and isinstance(item[2], dict) else None
     except Exception:
         return None
 
 
-def _scope_queue_to_org(items: list, org: str | None) -> list:
+def _scope_to_org(items: list, org: str | None) -> list:
     if not org:
         return items
     return [it for it in items if _item_org(it) == org]
@@ -91,7 +89,7 @@ def _scope_history_to_org(hist: dict, org: str | None) -> dict:
     out = {}
     for k, entry in (hist or {}).items():
         try:
-            ed = entry.get("prompt", [None, None, None, {}])[3]
+            ed = entry.get("prompt", [None, None, {}])[2]
             if isinstance(ed, dict) and ed.get("org_id") == org:
                 out[k] = entry
         except Exception:
@@ -186,7 +184,7 @@ def is_loopback(host):
 def create_origin_only_middleware():
     @web.middleware
     async def origin_only_middleware(request: web.Request, handler):
-        #this code is used to prevent the case where a random website can queue studio workflows by making a POST to 127.0.0.1 which browsers don't prevent for some dumb reason.
+        #this code is used to prevent the case where a random website can run studio workflows by making a POST to 127.0.0.1 which browsers don't prevent for some dumb reason.
         #in that case the Host and Origin hostnames won't match
         #I know the proper fix would be to add a cookie but this should take care of the problem in the meantime
         if 'Host' in request.headers and 'Origin' in request.headers:
@@ -250,19 +248,10 @@ class PromptServer():
         self.node_replace_manager = NodeReplaceManager()
         self.internal_routes = InternalRoutes(self)
         self.supports = ["custom_nodes_from_web"]
-        # Queue backend precedence: SQLite (durable, zero external process) >
-        # PERSIST (JSON snapshot) > memory. STUDIO_QUEUE_DB opts into the
-        # crash-durable SQLite queue; without it Studio behaves exactly as
-        # before (in-memory + optional JSON snapshot).
-        if os.environ.get("STUDIO_QUEUE_DB"):
-            from middleware.tasks_queue import SqlitePromptQueue
-            self.prompt_queue = SqlitePromptQueue(self)
-        else:
-            self.prompt_queue = execution.PromptQueue(self)
+        self.renderer = execution.Renderer(self)
         self.loop = loop
         self.messages = asyncio.Queue()
         self.client_session:Optional[aiohttp.ClientSession] = None
-        self.number = 0
 
         from middleware.studio_home import home_redirect
         middlewares = [cache_control, deprecation_warning, home_redirect]
@@ -334,7 +323,7 @@ class PromptServer():
 
             try:
                 # Send initial state to the new client
-                await self.send("status", {"status": self.get_queue_info(), "sid": sid}, sid)
+                await self.send("status", {"status": self.get_status(), "sid": sid}, sid)
                 # On reconnect if we are the currently executing client send the current node
                 if self.client_id == sid and self.last_node_id is not None:
                     await self.send("executing", { "node": self.last_node_id }, sid)
@@ -382,14 +371,7 @@ class PromptServer():
 
         @routes.get("/ready")
         async def readiness_check(request):
-            # The render worker must actually be ALIVE — not merely that the queue
-            # object exists (prompt_queue is set once at boot and never cleared, so
-            # it is constant-true and says nothing about the executor). A dead worker
-            # daemon thread accepts /prompt but runs nothing; readiness must fail so
-            # the pod leaves the Service and a roll never promotes a wedged pod.
-            wt = getattr(self, "prompt_worker_thread", None)
-            worker_alive = wt.is_alive() if wt is not None else (self.prompt_queue is not None)
-            ready = os.path.isdir(folder_paths.get_input_directory()) and worker_alive
+            ready = os.path.isdir(folder_paths.get_input_directory()) and self.renderer is not None
             if ready:
                 return web.json_response({"status": "ready"})
             return web.json_response({"status": "not_ready"}, status=503)
@@ -399,10 +381,6 @@ class PromptServer():
             if not args.enable_metrics:
                 return web.Response(status=404)
             # Update live gauges before rendering
-            metrics_middleware.set_queue_depth(
-                self.prompt_queue.get_tasks_remaining()
-                if self.prompt_queue else 0
-            )
             metrics_middleware.set_websocket_connections(len(self.sockets))
             body = metrics_middleware.render_metrics()
             return web.Response(
@@ -814,7 +792,7 @@ class PromptServer():
 
         @routes.get("/prompt")
         async def get_prompt(request):
-            return web.json_response(self.get_queue_info())
+            return web.json_response(self.get_status())
 
         def node_info(node_class):
             obj_class = nodes.NODE_CLASS_MAPPINGS[node_class]
@@ -954,14 +932,11 @@ class PromptServer():
                         status=400
                     )
 
-            running, queued = self.prompt_queue.get_current_queue_volatile()
-            history = self.prompt_queue.get_history()
-
-            running = _remove_sensitive_from_queue(running)
-            queued = _remove_sensitive_from_queue(queued)
+            running = _public(self.renderer.current())
+            history = self.renderer.history.get()
 
             jobs, total = get_all_jobs(
-                running, queued, history,
+                running, history,
                 status_filter=status_filter,
                 workflow_id=workflow_id,
                 sort_by=sort_by,
@@ -992,13 +967,10 @@ class PromptServer():
                     status=400
                 )
 
-            running, queued = self.prompt_queue.get_current_queue_volatile()
-            history = self.prompt_queue.get_history(prompt_id=job_id)
+            running = _public(self.renderer.current())
+            history = self.renderer.history.get(prompt_id=job_id)
 
-            running = _remove_sensitive_from_queue(running)
-            queued = _remove_sensitive_from_queue(queued)
-
-            job = get_job(job_id, running, queued, history)
+            job = get_job(job_id, running, history)
             if job is None:
                 return web.json_response(
                     {"error": "Job not found"},
@@ -1019,25 +991,16 @@ class PromptServer():
             else:
                 offset = -1
 
-            hist = self.prompt_queue.get_history(max_items=max_items, offset=offset)
+            hist = self.renderer.history.get(max_items=max_items, offset=offset)
             hist = _scope_history_to_org(hist, self._caller_org(request))
             return web.json_response(hist)
 
         @routes.get("/history/{prompt_id}")
         async def get_history_prompt_id(request):
             prompt_id = request.match_info.get("prompt_id", None)
-            hist = self.prompt_queue.get_history(prompt_id=prompt_id)
+            hist = self.renderer.history.get(prompt_id=prompt_id)
             hist = _scope_history_to_org(hist, self._caller_org(request))
             return web.json_response(hist)
-
-        @routes.get("/queue")
-        async def get_queue(request):
-            org = self._caller_org(request)
-            queue_info = {}
-            current_queue = self.prompt_queue.get_current_queue_volatile()
-            queue_info['queue_running'] = _scope_queue_to_org(_remove_sensitive_from_queue(current_queue[0]), org)
-            queue_info['queue_pending'] = _scope_queue_to_org(_remove_sensitive_from_queue(current_queue[1]), org)
-            return web.json_response(queue_info)
 
         @routes.post("/prompt")
         async def post_prompt(request):
@@ -1045,8 +1008,8 @@ class PromptServer():
 
             # Execution-engine (worker) mode: this process IS a BYO-GPU render backend,
             # not a front. A direct /prompt POST without the coordinator token is refused
-            # so no render reaches a GPU without appearing in the org's visible queue.
-            # One way onto a GPU: enqueue -> claim -> execute. (Policy: worker_client.)
+            # so no render reaches a GPU without appearing in the org's gpu-jobs lane.
+            # One way onto a GPU: dispatch -> claim -> render. (Policy: worker_client.)
             from middleware.worker_client import reject_untrusted_worker_submit
             _gate = reject_untrusted_worker_submit(request, args.worker_mode)
             if _gate is not None:
@@ -1070,45 +1033,6 @@ class PromptServer():
             json_data =  await request.json()
             json_data = self.trigger_on_prompt(json_data)
 
-            # --- Prompt routing: check if this should go to a GPU worker ---
-            # Legacy in-cluster PUSH federation (prompt_router -> compute_config
-            # workers) is OFF by default: the gpu-jobs enqueue below (dispatch_if_worker)
-            # is the ONE submit path. Set STUDIO_LEGACY_PUSH_ROUTER=1 only to resurrect
-            # the old push seam. Keeps exactly one way onto a GPU in prod.
-            if not args.worker_mode and os.environ.get("STUDIO_LEGACY_PUSH_ROUTER") == "1":
-                org_id = self._get_org_id(request)
-                try:
-                    route_result = await prompt_router.route_prompt(org_id, json_data)
-                except Exception as e:
-                    logging.warning("Prompt routing error: %s", e)
-                    route_result = None
-
-                if route_result is not None:
-                    action = route_result.get("action")
-                    if action == "forward":
-                        # Successfully forwarded to a GPU worker
-                        return web.json_response(route_result["response"])
-                    elif action == "provisioning":
-                        return web.json_response(
-                            {"status": "provisioning", "message": "GPU worker is being provisioned. Retry in 30-60 seconds."},
-                            status=202,
-                        )
-                    elif action == "unavailable":
-                        return web.json_response(
-                            {"error": "GPU requested but no GPU worker available. Use POST /api/compute/provision to launch one."},
-                            status=503,
-                        )
-
-            if "number" in json_data:
-                number = float(json_data['number'])
-            else:
-                number = self.number
-                if "front" in json_data:
-                    if json_data['front']:
-                        number = -number
-
-                self.number += 1
-
             if "prompt" in json_data:
                 prompt = json_data["prompt"]
                 prompt_id = str(json_data.get("prompt_id", uuid.uuid4()))
@@ -1121,7 +1045,7 @@ class PromptServer():
 
                 org_id = self._get_org_id(request)  # IAM org — scopes outputs + billing
                 # BYO-GPU dispatch: cloud pods only. A worker-mode node IS the
-                # render backend — it must queue locally, never re-dispatch.
+                # render backend — it renders what it was handed, never re-dispatches.
                 # Runs BEFORE local validation: the job executes on the org's GPU
                 # box, which validates against ITS node classes and model files. A
                 # GPU-less pod has an empty model list and would wrongly reject
@@ -1131,8 +1055,12 @@ class PromptServer():
                         from middleware.gpu_dispatch import dispatch_if_worker, has_models_for
                     except ImportError:  # package-style checkout
                         from .middleware.gpu_dispatch import dispatch_if_worker, has_models_for
-                    if dispatch_if_worker(request, org_id, prompt_id, prompt):
-                        return web.json_response({"prompt_id": prompt_id, "number": number, "node_errors": {}})
+                    node = dispatch_if_worker(request, org_id, prompt_id, prompt)
+                    if node:
+                        # The dispatcher names the machine it landed on, so the caller
+                        # learns the lane from the answer instead of a side file.
+                        return web.json_response(
+                            {"prompt_id": prompt_id, "node": node, "node_errors": {}})
                     # Dispatch didn't happen. If THIS box lacks the models THIS graph
                     # needs (a coordinator pod, even one with a stray SD1.5), local
                     # validation is GUARANTEED to fail with a cryptic "not in []" — the
@@ -1167,9 +1095,15 @@ class PromptServer():
                     iam_token = request.get("iam_token")
                     if iam_token:
                         sensitive["iam_token"] = iam_token
-                    self.prompt_queue.put((number, prompt_id, prompt, extra_data, outputs_to_execute, sensitive))
-                    response = {"prompt_id": prompt_id, "number": number, "node_errors": valid[3]}
-                    return web.json_response(response)
+                    if not self.renderer.start((prompt_id, prompt, extra_data,
+                                                outputs_to_execute, sensitive)):
+                        # One slot, no line: this box is already rendering. Nothing is
+                        # held here — the caller retries, or the gpu-jobs lane carries it.
+                        return web.json_response({"error": {
+                            "type": "renderer_busy",
+                            "message": "This box is already rendering — please retry.",
+                            "details": "", "extra_info": {}}, "node_errors": {}}, status=503)
+                    return web.json_response({"prompt_id": prompt_id, "node_errors": valid[3]})
                 else:
                     logging.warning("invalid prompt: {}".format(valid[1]))
                     return web.json_response({"error": valid[1], "node_errors": valid[3]}, status=400)
@@ -1182,27 +1116,6 @@ class PromptServer():
                 }
                 return web.json_response({"error": error, "node_errors": {}}, status=400)
 
-        @routes.post("/queue")
-        async def post_queue(request):
-            json_data =  await request.json()
-            org = self._caller_org(request)  # None = auth off → upstream behavior
-            if "clear" in json_data:
-                if json_data["clear"]:
-                    if org is None:
-                        self.prompt_queue.wipe_queue()
-                    else:
-                        # SCOPED clear: only THIS org's pending items, never others'.
-                        self.prompt_queue.delete_queue_item(lambda a: _item_org(a) == org)
-            if "delete" in json_data:
-                to_delete = json_data['delete']
-                for id_to_delete in to_delete:
-                    # Only delete an item the caller owns (org must match when auth on).
-                    delete_func = (lambda a, i=id_to_delete: a[1] == i) if org is None \
-                        else (lambda a, i=id_to_delete: a[1] == i and _item_org(a) == org)
-                    self.prompt_queue.delete_queue_item(delete_func)
-
-            return web.Response(status=200)
-
         @routes.post("/interrupt")
         async def post_interrupt(request):
             try:
@@ -1213,59 +1126,42 @@ class PromptServer():
             org = self._caller_org(request)  # None = auth off → upstream behavior
             # Check if a specific prompt_id was provided for targeted interruption
             prompt_id = json_data.get('prompt_id')
+            running = self.renderer.current()
             if prompt_id:
-                currently_running, _ = self.prompt_queue.get_current_queue()
-
-                # Check if the prompt_id matches any currently running prompt — and
-                # (multi-tenant) that it belongs to the caller's org, so one tenant
-                # cannot interrupt another tenant's render.
-                should_interrupt = False
-                for item in currently_running:
-                    # item structure: (number, prompt_id, prompt, extra_data, outputs_to_execute)
-                    if item[1] == prompt_id and (org is None or _item_org(item) == org):
-                        logging.info(f"Interrupting prompt {prompt_id}")
-                        should_interrupt = True
-                        break
-
-                if should_interrupt:
+                # Stop it only if it IS the render in flight and (multi-tenant) it
+                # belongs to the caller's org — one tenant cannot stop another's.
+                if any(it[0] == prompt_id and (org is None or _item_org(it) == org)
+                       for it in running):
+                    logging.info(f"Interrupting prompt {prompt_id}")
                     nodes.interrupt_processing()
                 else:
-                    logging.info(f"Prompt {prompt_id} is not currently running / not owned by caller, skipping interrupt")
+                    logging.info(f"Prompt {prompt_id} is not rendering / not owned by caller, skipping interrupt")
             elif org is None:
                 # No prompt_id + auth off → upstream global interrupt.
                 logging.info("Global interrupt (no prompt_id specified)")
                 nodes.interrupt_processing()
-            else:
+            elif any(_item_org(it) == org for it in running):
                 # Multi-tenant: a global interrupt would kill another tenant's render.
-                # Only interrupt if the running job belongs to the caller's org.
-                currently_running, _ = self.prompt_queue.get_current_queue()
-                if any(_item_org(item) == org for item in currently_running):
-                    logging.info(f"Interrupting current render for org {org}")
-                    nodes.interrupt_processing()
+                logging.info(f"Interrupting current render for org {org}")
+                nodes.interrupt_processing()
 
             return web.Response(status=200)
 
         @routes.post("/free")
         async def post_free(request):
             json_data = await request.json()
-            unload_models = json_data.get("unload_models", False)
-            free_memory = json_data.get("free_memory", False)
-            if unload_models:
-                self.prompt_queue.set_flag("unload_models", unload_models)
-            if free_memory:
-                self.prompt_queue.set_flag("free_memory", free_memory)
-            return web.Response(status=200)
+            freed = self.renderer.free(json_data.get("unload_models", False),
+                                       json_data.get("free_memory", False))
+            # A render holds the models it is using; there is no later to defer to.
+            return web.Response(status=200 if freed else 409)
 
         @routes.post("/history")
         async def post_history(request):
             json_data =  await request.json()
-            if "clear" in json_data:
-                if json_data["clear"]:
-                    self.prompt_queue.wipe_history()
-            if "delete" in json_data:
-                to_delete = json_data['delete']
-                for id_to_delete in to_delete:
-                    self.prompt_queue.delete_history_item(id_to_delete)
+            if json_data.get("clear"):
+                self.renderer.history.clear()
+            for id_to_delete in json_data.get("delete", []):
+                self.renderer.history.delete(id_to_delete)
 
             return web.Response(status=200)
 
@@ -1420,8 +1316,8 @@ class PromptServer():
 
     def _caller_org(self, request) -> str | None:
         """The verified caller org to SCOPE cross-tenant reads by — or None when
-        multi-tenant auth is OFF (single-tenant/local dev) so /history + /queue
-        behave exactly as upstream. Only returns a value when there is a real IAM
+        multi-tenant auth is OFF (single-tenant/local dev) so /history behaves
+        exactly as upstream. Only returns a value when there is a real IAM
         user, so scoping never hides another tenant's data by accident."""
         iam_user = request.get("iam_user")
         if iam_user and iam_user.get("org_id"):
@@ -1434,7 +1330,6 @@ class PromptServer():
 
         # Register shutdown hooks for compute subsystem sessions
         async def _on_shutdown(app):
-            await prompt_router.close_session()
             await visor_client.close_session()
             from middleware import copilot
             await copilot.close_session()
@@ -1529,12 +1424,8 @@ class PromptServer():
             web.static('/', self.web_root),
         ])
 
-    def get_queue_info(self):
-        prompt_info = {}
-        exec_info = {}
-        exec_info['queue_remaining'] = self.prompt_queue.get_tasks_remaining()
-        prompt_info['exec_info'] = exec_info
-        return prompt_info
+    def get_status(self):
+        return {"exec_info": {"rendering": len(self.renderer.current())}}
 
     async def send(self, event, data, sid=None):
         if event == BinaryEventTypes.UNENCODED_PREVIEW_IMAGE:
@@ -1642,8 +1533,8 @@ class PromptServer():
         self.loop.call_soon_threadsafe(
             self.messages.put_nowait, (event, data, sid))
 
-    def queue_updated(self):
-        self.send_sync("status", { "status": self.get_queue_info() })
+    def status_changed(self):
+        self.send_sync("status", {"status": self.get_status()})
 
     async def publish_loop(self):
         while True:

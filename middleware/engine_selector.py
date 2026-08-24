@@ -8,9 +8,8 @@ org's default. Thin wrapper over the existing per-org compute registry
   - `local`   — this Studio instance, always present, and
   - a registered org GPU worker (from compute.json's worker registry).
 
-Selecting an engine routes prompts to it; prompt_router.py is the existing
-routing seam and already forwards to a worker by URL, so the default engine
-just names which target a prompt without an explicit device_preference lands on.
+Selecting an engine names which target a prompt without an explicit
+device_preference lands on; gpu_dispatch carries it there.
 
 Leased cloud machines (via the platform's Visor compute surface,
 `GET {cloud}/v1/machines`) are a future engine class — the client interface is

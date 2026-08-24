@@ -3,7 +3,7 @@
 from studio_execution.jobs import (
     JobStatus,
     is_previewable,
-    normalize_queue_item,
+    normalize_item,
     normalize_history_item,
     normalize_output_item,
     normalize_outputs,
@@ -18,7 +18,6 @@ class TestJobStatus:
 
     def test_status_values(self):
         """Status constants should have expected string values."""
-        assert JobStatus.PENDING == 'pending'
         assert JobStatus.IN_PROGRESS == 'in_progress'
         assert JobStatus.COMPLETED == 'completed'
         assert JobStatus.FAILED == 'failed'
@@ -26,12 +25,11 @@ class TestJobStatus:
 
     def test_all_contains_all_statuses(self):
         """ALL should contain all status values."""
-        assert JobStatus.PENDING in JobStatus.ALL
         assert JobStatus.IN_PROGRESS in JobStatus.ALL
         assert JobStatus.COMPLETED in JobStatus.ALL
         assert JobStatus.FAILED in JobStatus.ALL
         assert JobStatus.CANCELLED in JobStatus.ALL
-        assert len(JobStatus.ALL) == 5
+        assert len(JobStatus.ALL) == 4
 
 
 class TestIsPreviewable:
@@ -298,13 +296,12 @@ class TestApplySorting:
         assert result[0]['id'] == 'b'  # None treated as 0, comes first
 
 
-class TestNormalizeQueueItem:
-    """Unit tests for normalize_queue_item()"""
+class TestNormalizeItem:
+    """Unit tests for normalize_item()"""
 
     def test_basic_normalization(self):
-        """Queue item should be normalized to job dict."""
+        """A render item should be normalized to job dict."""
         item = (
-            10,  # priority/number
             'prompt-123',  # prompt_id
             {'nodes': {}},  # prompt
             {
@@ -313,11 +310,10 @@ class TestNormalizeQueueItem:
             },  # extra_data
             ['node1'],  # outputs_to_execute
         )
-        job = normalize_queue_item(item, JobStatus.PENDING)
+        job = normalize_item(item, JobStatus.IN_PROGRESS)
 
         assert job['id'] == 'prompt-123'
-        assert job['status'] == 'pending'
-        assert job['priority'] == 10
+        assert job['status'] == 'in_progress'
         assert job['create_time'] == 1234567890
         assert 'execution_start_time' not in job
         assert 'execution_end_time' not in job
@@ -334,7 +330,6 @@ class TestNormalizeHistoryItem:
         """Completed history item should have correct status and times from messages."""
         history_item = {
             'prompt': (
-                5,  # priority
                 'prompt-456',
                 {'nodes': {}},
                 {
@@ -357,7 +352,6 @@ class TestNormalizeHistoryItem:
 
         assert job['id'] == 'prompt-456'
         assert job['status'] == 'completed'
-        assert job['priority'] == 5
         assert job['execution_start_time'] == 1234567890500
         assert job['execution_end_time'] == 1234567893000
         assert job['workflow_id'] == 'workflow-xyz'
@@ -366,7 +360,6 @@ class TestNormalizeHistoryItem:
         """Failed history item should have failed status and error from messages."""
         history_item = {
             'prompt': (
-                5,
                 'prompt-789',
                 {'nodes': {}},
                 {'create_time': 1234567890000},
@@ -403,7 +396,6 @@ class TestNormalizeHistoryItem:
         """Cancelled/interrupted history item should have cancelled status."""
         history_item = {
             'prompt': (
-                5,
                 'prompt-cancelled',
                 {'nodes': {}},
                 {'create_time': 1234567890000},
@@ -437,7 +429,6 @@ class TestNormalizeHistoryItem:
         """When include_outputs=True, should include full output data."""
         history_item = {
             'prompt': (
-                5,
                 'prompt-123',
                 {'nodes': {'1': {}}},
                 {'create_time': 1234567890, 'client_id': 'abc'},
@@ -461,7 +452,6 @@ class TestNormalizeHistoryItem:
         """Detail view should transform string 3D filenames into file output dicts."""
         history_item = {
             'prompt': (
-                5,
                 'prompt-3d',
                 {'nodes': {}},
                 {'create_time': 1234567890},
@@ -490,7 +480,6 @@ class TestNormalizeHistoryItem:
         """Detail view normalization should pass dict items through unchanged."""
         history_item = {
             'prompt': (
-                5,
                 'prompt-img',
                 {'nodes': {}},
                 {'create_time': 1234567890},

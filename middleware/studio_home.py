@@ -544,7 +544,7 @@ def _stage_source(in_dir: Path, p: Path, kind: str, *, max_px: int | None = None
 
 def _trace(stage: str, **fields) -> None:
     """One structured render-lifecycle line, correlated by job id, at each hop
-    (build -> queue -> worker-publish) so a wrong asset/prompt is pinpointed to the
+    (build -> dispatch -> worker-publish) so a wrong asset/prompt is pinpointed to the
     FIRST stage it appears. NEVER logs signed URLs, tokens, cookies or image bytes —
     only ids, content-address checksums, counts and lane/node labels."""
     kv = " ".join(f"{k}={v}" for k, v in fields.items() if v is not None)
@@ -1162,20 +1162,21 @@ def _prompt_error_message(body) -> str:
     silent nothing."""
     err = body.get("error") if isinstance(body, dict) else None
     if isinstance(err, dict):
-        msg = err.get("message") or err.get("type") or "render could not be queued"
+        msg = err.get("message") or err.get("type") or "render could not be started"
         det = err.get("details")
         return f"{msg} — {det}" if det and det != msg else msg
     if isinstance(err, str) and err.strip():
         return err.strip()
     if isinstance(body, dict) and body.get("message"):
         return str(body["message"])
-    return "render could not be queued — no GPU worker online for this org"
+    return "render could not be started — no GPU worker online for this org"
 
 
-async def _queue_prompt(request: web.Request, server, graph: dict) -> str:
+async def _submit(request: web.Request, server, graph: dict) -> tuple[str, str]:
     """Self-POST to the ONE /prompt path with the caller's own credentials, so
-    dispatch/billing/tenancy/content-publish behave exactly as a UI run. A non-200
-    from /prompt (model-less pod fails validation; router has no GPU worker) is
+    dispatch/billing/tenancy/content-publish behave exactly as a UI run. Returns
+    the prompt_id and the machine it landed on ("" when this box rendered it). A
+    non-200 from /prompt (model-less pod fails validation; no GPU worker online) is
     raised as a ``DispatchError`` carrying the real reason — NOT a raw 502 whose
     truncated body the dialog can't parse (that was the deployed 'nothing happened /
     nothing queued' — the error was swallowed)."""
@@ -1200,8 +1201,8 @@ async def _queue_prompt(request: web.Request, server, graph: dict) -> str:
                                         else f"render engine returned HTTP {r.status}")
                 pid = body.get("prompt_id", "") if isinstance(body, dict) else ""
                 if not pid:
-                    raise DispatchError("render was not queued (no prompt_id returned)")
-                return pid
+                    raise DispatchError("render did not start (no prompt_id returned)")
+                return pid, body.get("node", "")
     except aiohttp.ClientError as e:
         raise DispatchError(f"could not reach the render engine ({e})")
 
@@ -1226,36 +1227,12 @@ def _graph_params(graph: dict) -> dict:
     return {k: v for k, v in p.items() if v is not None}
 
 
-def _in_render_jobs(org: str, pid: str) -> bool:
-    """True if a prompt_id was dispatched to this org's BYO-GPU lane (gpu-jobs) —
-    gpu_dispatch._track_dispatched writes it to render_jobs.json during the self-POST."""
-    return _render_job(org, pid) is not None
-
-
-def _render_job(org: str, pid: str) -> dict | None:
-    try:
-        jf = Path(folder_paths.get_org_output_directory(org)) / "render_jobs.json"
-        for j in json.loads(jf.read_text()):
-            if j.get("id") == pid:
-                return j
-    except Exception:
-        pass
-    return None
-
-
-def _render_job_node(org: str, pid: str) -> str:
-    """The node label the gpu-jobs lane recorded for this dispatch (spark/dbc/…)."""
-    j = _render_job(org, pid)
-    return (j.get("node") if j else None) or "gpu"
-
-
-# ── Authoritative gpu-jobs queue (the tasks engine is the source of truth) ───────────
-# The visible queue reads the org's activities STRAIGHT from the cloud tasks engine
+# ── The gpu-jobs lane (the tasks engine is the only source of truth) ────────────────
+# The visible list reads the org's activities STRAIGHT from the cloud tasks engine
 # (GET /v1/tasks/namespaces/gpu-jobs/activities, org-scoped by the caller's bearer via
-# the tasks gate) — not a local shadow. So every row shows the REAL worker that claimed
-# it (activity.identity) and its REAL status, and nothing renders on a GPU without
-# appearing here (a claimed job IS an activity). render_jobs.json survives ONLY as an
-# optimistic placeholder for the ~2s between enqueue and first claim.
+# the tasks gate). Every row shows the REAL worker that claimed it (activity.identity)
+# and its REAL status, and nothing renders on a GPU without appearing here — a claimed
+# job IS an activity. There is no second copy anywhere to drift from it.
 _JOBS_NS = os.environ.get("STUDIO_GPU_JOBS_NS", "gpu-jobs")
 _PHASE = {"SCHEDULED": "queued", "PENDING": "queued", "STARTED": "running",
           "RUNNING": "running", "COMPLETED": "done", "SUCCEEDED": "done",
@@ -1389,28 +1366,6 @@ async def _list_gpu_jobs(request) -> list | None:
     return acts if isinstance(acts, list) else []
 
 
-def _render_queue_placeholder(root, now: int, exclude: set) -> list:
-    """Optimistic pre-claim rows from render_jobs.json: ONLY jobs the authoritative list
-    hasn't surfaced yet and that are seconds-young — the bridge across the ~2s between
-    enqueue and first claim. Anything older is the engine's to report."""
-    try:
-        jobs = json.loads((root / "render_jobs.json").read_text())
-    except Exception:
-        return []
-    out = []
-    for j in jobs:
-        pid = j.get("id")
-        if not pid or pid in exclude:
-            continue
-        age = now - int(j.get("ts", 0))
-        if age < 0 or age > 30:
-            continue
-        out.append({"id": pid, "node": j.get("node") or "queued", "status": "queued",
-                    "prefix": j.get("prefix") or "render", "refs": (j.get("refs") or [])[:1],
-                    "age": age, "beat_age": None})
-    return out
-
-
 def _output_mtime(root: Path | None, rel: str) -> int | None:
     try:
         return int((root / rel).stat().st_mtime) if root and rel else None
@@ -1418,70 +1373,37 @@ def _output_mtime(root: Path | None, rel: str) -> int | None:
         return None
 
 
-def _remove_render_job(org: str, pid: str) -> bool:
-    """Drop a BYO-GPU tracking row from this org's render_jobs.json. The file is
-    per-org so a match is inherently owned. Returns True if one was removed."""
+def _local_render(server, org: str, pid: str) -> bool:
+    """Is this prompt_id the render in flight on THIS box, for THIS org?"""
     try:
-        jf = Path(folder_paths.get_org_output_directory(org)) / "render_jobs.json"
-        jobs = json.loads(jf.read_text())
+        return any(it[0] == pid and (it[2] or {}).get("org_id") == org
+                   for it in server.renderer.current())
     except Exception:
         return False
-    keep = [j for j in jobs if j.get("id") != pid]
-    if len(keep) == len(jobs):
-        return False
-    tmp = jf.with_name(jf.name + ".tmp")
-    tmp.write_text(json.dumps(keep))
-    tmp.replace(jf)
-    return True
 
 
 def _owns_job(server, org: str, pid: str) -> bool:
     """Does this prompt_id belong to the caller's org? True if it's in the org's
-    work log, or a local-queue item stamped with this org, or the org's BYO-GPU
-    tracking file. A cross-tenant id matches none of these → the route 404s and
-    never reveals that it exists for someone else."""
-    if any(r.get("id") == pid for r in worklog.load(org)):
-        return True
-    try:
-        running, pending = server.prompt_queue.get_current_queue_volatile()
-        if any(it[1] == pid and (it[3] or {}).get("org_id") == org
-               for it in list(running) + list(pending)):
-            return True
-    except Exception:
-        pass
-    return _in_render_jobs(org, pid)
+    work log or is the render this box is running for them. A cross-tenant id
+    matches neither → the route 404s and never reveals that it exists for someone
+    else."""
+    return (any(r.get("id") == pid for r in worklog.load(org))
+            or _local_render(server, org, pid))
 
 
 def _cancel_job(server, org: str, pid: str) -> str:
-    """Cancel an OWNED job across both realms (caller must have checked ownership).
-    Local pod queue: delete a pending item, or interrupt a running one — both
-    org-scoped so one tenant can't touch another's render. BYO-GPU: drop the
-    tracking row (a queued gpu-job stops showing; one already rendering on the
-    worker may still finish — the pod can't stop a remote process). Marks the work
-    log cancelled. Returns the realm acted on."""
-    realm = "gone"
-    try:
-        running, pending = server.prompt_queue.get_current_queue_volatile()
-    except Exception:
-        running, pending = [], []
-    if any(it[1] == pid and (it[3] or {}).get("org_id") == org for it in pending):
-        server.prompt_queue.delete_queue_item(
-            lambda it: it[1] == pid and (it[3] or {}).get("org_id") == org)
-        realm = "local"
-    elif any(it[1] == pid and (it[3] or {}).get("org_id") == org for it in running):
+    """Cancel an OWNED job (caller must have checked ownership). If it is the render
+    in flight on this box, stop it; otherwise it belongs to the gpu-jobs lane and
+    the activity is cancelled there. Marks the work log cancelled. Returns the realm
+    acted on."""
+    realm = "gpu"
+    if _local_render(server, org, pid):
         try:
             import nodes
             nodes.interrupt_processing()
             realm = "local"
         except Exception:
-            pass
-    if _remove_render_job(org, pid) and realm == "gone":
-        realm = "gpu"
-    if pid.startswith("held-"):
-        # A held job cancels by deleting its spool file — else the next queue
-        # read would faithfully re-enqueue the very job the user just cancelled.
-        (_held_dir(org) / f"{pid}.json").unlink(missing_ok=True)
-        realm = "held"
+            realm = "gone"
     worklog.set_status(org, pid, "cancelled")
     return realm
 
@@ -1530,18 +1452,14 @@ def _landed_output(root: Path | None, prefix: str) -> str | None:
     return None
 
 
-def _fix_source_ref(out_dir: Path, subfolder: str, name: str) -> str | None:
+def _fix_source_ref(org: str, subfolder: str, name: str) -> str | None:
     """The source ref staged for the fix output <subfolder>/<name>, read from the
-    render-jobs record (outPrefix → refs[0]) gpu_dispatch writes on dispatch. None
-    if the output is not a tracked fix or the record is gone."""
-    try:
-        jobs = json.loads((out_dir / "render_jobs.json").read_text())
-    except Exception:
-        return None
+    org's work log (output_prefix → refs[0]) — the one record every dispatch
+    writes. None if the output is not a recorded fix."""
     rel = f"{subfolder}/{name}" if subfolder else name
-    for j in jobs:
-        op, refs = j.get("outPrefix") or "", j.get("refs") or []
-        if op and refs and rel.startswith(op):
+    for r in reversed(worklog.load(org)):
+        pre, refs = r.get("output_prefix") or "", r.get("refs") or []
+        if pre and refs and rel.startswith(pre):
             return refs[0]
     return None
 
@@ -1559,7 +1477,7 @@ def colormatch_fix_ingest(request, subfolder: str, name: str) -> None:
             return
         org = _org_of(request)
         out_dir = Path(folder_paths.get_org_output_directory(org))
-        src_ref = _fix_source_ref(out_dir, sub, nm)
+        src_ref = _fix_source_ref(org, sub, nm)
         if not src_ref:
             return
         src_path = Path(folder_paths.get_org_input_directory(org)) / src_ref
@@ -1598,129 +1516,14 @@ def _recent_dispatch(key: str) -> str | None:
     return hit[1] if hit and hit[1] and now - hit[0] < _DEDUP_WINDOW_S else None
 
 
-# TRANSPORT failures only — the fabric was unreachable, so the SAME job will succeed
-# unchanged once it is reachable. That is the whole premise of holding: retry the
-# identical graph later.
-#
-# "was not queued" was in this list and is NOT a transport failure. The engine returns
-# it for a graph it REFUSED (a missing model, a stale staged input) — a refusal that
-# will repeat forever. Because _retry_held stops the sweep on a holdable error, one such
-# job pinned the entire spool: observed in prod as ten jobs that never moved across
-# hours of healthy fabric, while fresh dispatches went through beside them. A job the
-# engine will never accept must FAIL with its reason, not wait for a condition that has
-# already been met.
-_HOLDABLE = ("momentarily unavailable", "no gpu worker online",
-             "could not reach the render engine", "no available server",
-             "connection refused", "timed out")
-
-# How many held jobs one sweep may FAIL to enqueue before it gives up until the next
-# read. The enqueue is a synchronous urlopen on the event loop, so an unbounded sweep
-# is an unbounded stall: ten entries each shipping a ~25MB body that the far end reset
-# blocked every request in the process, the readiness probe included, and the pod went
-# unready behind a 503. Small enough that a read stays quick, more than one so a stuck
-# entry cannot pin the queue.
-_HOLD_TRIES = 2
-
-
-def _held_dir(org: str) -> Path:
-    """orgs/<org>/held — the spool of jobs the render fabric could not be reached
-    for. Same per-org tree as templates/worklog, so tenancy is structural."""
-    return Path(folder_paths.get_org_directory(org, "held"))
-
-
-def _hold_job(org: str, graph: dict, common: dict) -> str:
-    """Persist a job the fabric was unreachable for, as a QUEUED row + a spool file
-    carrying the full graph — the user's prompt/edit is never lost to a transient
-    'GPU worker unavailable'. Returns the held prompt_id (held-…)."""
-    pid = "held-" + uuid.uuid4().hex[:12]
-    rec = {"id": pid, "ts": int(time.time()), "graph": graph, **common}
-    p = _held_dir(org) / f"{pid}.json"
-    tmp = p.with_suffix(".tmp")
-    tmp.write_text(json.dumps(rec), encoding="utf-8")
-    tmp.replace(p)
-    worklog.record(org, pid=pid, status="queued", lane="gpu", node="waiting", **common)
-    _trace("dispatch.held", org=org, pid=pid, kind=common.get("kind"),
-           prefix=common.get("output_prefix"))
-    return pid
-
-
-def _list_held(org: str) -> list[dict]:
-    out = []
-    try:
-        for p in sorted(_held_dir(org).glob("held-*.json")):
-            try:
-                out.append(json.loads(p.read_text(encoding="utf-8")))
-            except Exception:
-                continue
-    except Exception:
-        pass
-    return out
-
-
-async def _retry_held(request, server, org: str) -> None:
-    """Re-enqueue spooled jobs with the CURRENT caller's credentials (same org —
-    the routes resolve org server-side). Runs on every queue read, so the act of
-    watching the queue heals it; no credential is ever stored at rest. Success
-    replaces the held row with a real queued row under the fabric's prompt_id."""
-    tries = 0
-    for rec in _list_held(org):
-        graph, held_pid = rec.get("graph") or {}, rec.get("id", "")
-        common = {k: rec.get(k) for k in
-                  ("kind", "prompt", "refs", "uploads", "parents", "output_prefix", "params")}
-        try:
-            pid = await _queue_prompt(request, server, graph)
-        except DispatchError as e:
-            # Distinguish "the fabric is down" from "THIS job cannot be re-queued".
-            # Returning on any error let ONE un-requeueable entry strand every other
-            # held job forever (observed: the same 5 ids across every queue read, none
-            # ever moving). A transport failure still stops the sweep — the rest would
-            # fail identically and re-holding them churns. Anything else is this job's
-            # own problem: fail it with the reason (never silently) and keep going, so
-            # a single poisoned entry can't hold the queue hostage.
-            #
-            # A holdable MESSAGE is not proof of a holdable CONDITION. "momentarily
-            # unavailable" is what the dispatcher says for ANY enqueue failure — it
-            # names the fleet as the cause without checking — so a job that simply
-            # cannot be enqueued (a 4K source whose inlined body exceeds the API's
-            # request limit) wore transport words and re-held forever. The spool is
-            # walked in sorted order, so the alphabetically-first of those pinned all
-            # ten across two days while both GPUs sat idle and healthy.
-            #
-            # So the sweep TRIES THE REST before believing it — but only _HOLD_TRIES of
-            # them per read. Trying all of them took studio DOWN: the enqueue is a
-            # SYNCHRONOUS urlopen on the event loop, and ten of those, each shipping a
-            # ~25MB body that the far end resets, blocks every other request in the
-            # process — including the readiness probe, so the pod went unready and the
-            # ingress served 503. The bound is what makes this safe to do at all: each
-            # read makes progress past a stuck entry without any single read being able
-            # to stall the server.
-            if any(s in str(e).lower() for s in _HOLDABLE):
-                _trace("dispatch.held_again", org=org, held=held_pid, err=str(e)[:120])
-                tries += 1
-                if tries >= _HOLD_TRIES:
-                    return
-                continue
-            (_held_dir(org) / f"{held_pid}.json").unlink(missing_ok=True)
-            worklog.set_status(org, held_pid, "failed", note=f"could not re-queue: {e}")
-            _trace("dispatch.held_unqueueable", org=org, held=held_pid, err=str(e)[:120])
-            continue
-        (_held_dir(org) / f"{held_pid}.json").unlink(missing_ok=True)
-        worklog.remove(org, held_pid)
-        lane = "gpu" if _in_render_jobs(org, pid) else "local"
-        node = _render_job_node(org, pid) if lane == "gpu" else "studio pod"
-        worklog.record(org, pid=pid, status="queued", lane=lane, node=node, **common)
-        _trace("dispatch.held_requeued", org=org, held=held_pid, pid=pid)
-
-
 async def _dispatch(request, server, org: str, graph: dict, *, kind: str, prompt: str,
                     refs: list, uploads: list, parents: list, output_prefix: str,
                     lessons: list | None = None) -> str:
-    """The ONE place a render is queued AND recorded. On success writes a `queued`
-    work-log row (lane detected). A TRANSPORT failure (fabric/tasks engine
-    unreachable — the messages in _HOLDABLE) HOLDS the job instead of failing it:
-    the prompt/edit lands in the visible queue and re-enqueues when the fabric is
-    back. A validation failure still writes a `failed` row and raises — so a
-    dispatch is NEVER invisible, whatever lane it took or however it failed.
+    """The ONE place a render is started AND recorded. On success writes a `queued`
+    work-log row naming the machine /prompt reported. A failure writes a `failed` row
+    with the reason and raises — so a dispatch is NEVER invisible, whatever lane it
+    took or however it failed. Nothing is held anywhere: a render the fabric cannot
+    take fails now, with its reason, and the user re-runs it.
     Idempotent: an identical dispatch within the dedup window returns the in-flight
     prompt_id instead of billing a second render."""
     params = _graph_params(graph)
@@ -1733,20 +1536,15 @@ async def _dispatch(request, server, org: str, graph: dict, *, kind: str, prompt
     if dup:
         return dup                    # identical render already in flight — reuse it
     try:
-        pid = await _queue_prompt(request, server, graph)
+        pid, node = await _submit(request, server, graph)
     except DispatchError as e:
-        msg = str(e).lower()
-        if any(s in msg for s in _HOLDABLE):
-            pid = _hold_job(org, graph, common)
-            _RECENT_DISPATCH[key] = (time.time(), pid)
-            return pid
         worklog.record(org, status="failed", error=str(e), **common)
         raise
     _RECENT_DISPATCH[key] = (time.time(), pid)
-    lane = "gpu" if _in_render_jobs(org, pid) else "local"
-    node = _render_job_node(org, pid) if lane == "gpu" else "studio pod"
-    worklog.record(org, pid=pid, status="queued", lane=lane, node=node, **common)
-    _trace("dispatch.queued", org=org, pid=pid, kind=kind, lane=lane, node=node,
+    lane = "gpu" if node else "local"
+    worklog.record(org, pid=pid, status="queued", lane=lane,
+                   node=node or "studio pod", **common)
+    _trace("dispatch.started", org=org, pid=pid, kind=kind, lane=lane, node=node,
            refs=len(refs), parents=",".join(parents) or None, prefix=output_prefix)
     return pid
 
@@ -3085,40 +2883,23 @@ def add_studio_home_routes(routes: web.RouteTableDef, server) -> None:
 
     @routes.get("/v1/render-queue")
     async def render_queue(request: web.Request):
-        """The org's IN-FLIGHT BYO-GPU renders — read AUTHORITATIVELY from the cloud
-        gpu-jobs tasks engine: each row carries the REAL claiming GPU (activity.identity)
-        and REAL status, so a dispatched fix/compose/rerun is visible AND attributed to
-        the machine actually running it — and nothing can render on a GPU without
-        appearing here. render_jobs.json is used ONLY as a ~2s pre-claim placeholder for
-        a job the engine hasn't listed yet. Terminal (done/failed/cancelled) and stale
-        rows drop off. Tenant-scoped by the caller's bearer via the tasks gate."""
-        org = _org_of(request)
-        root = _library_root(org)
+        """The org's IN-FLIGHT BYO-GPU renders — read from the cloud gpu-jobs tasks
+        engine, the only place they exist: each row carries the REAL claiming GPU
+        (activity.identity) and REAL status, so a dispatched fix/compose/rerun is
+        visible AND attributed to the machine actually running it, and nothing can
+        render on a GPU without appearing here. Terminal (done/failed/cancelled) rows
+        drop off. Tenant-scoped by the caller's bearer via the tasks gate."""
         now = int(time.time())
-        # Watching the queue HEALS it: held jobs (fabric was unreachable at their
-        # dispatch) re-enqueue with this caller's own credentials, then list below.
-        await _retry_held(request, server, org)
-        held = [{"id": r.get("id", ""), "status": "queued", "node": "waiting",
-                 "age": now - int(r.get("ts", now)), "prefix": r.get("output_prefix", ""),
-                 "refs": r.get("refs") or []} for r in _list_held(org)]
-        acts = await _list_gpu_jobs(request)
-        live, seen = [], set()
-        if acts is not None:
-            for a in acts:
-                if _act_type_name(a) not in ("studio.render", ""):
-                    continue
-                job = _job_from_activity(a, now)
-                if not job["id"]:
-                    continue
-                seen.add(job["id"])
-                # Terminal rows leave the visible queue; a WAITING job stays visible
-                # no matter how old — hiding queued work by age is how "queued —
-                # starts when a GPU connects" silently became "vanished".
-                if job["status"] in ("done", "failed", "cancelled"):
-                    continue
-                live.append(job)
-        placeholder = _render_queue_placeholder(root, now, seen) if root is not None else []
-        return web.json_response({"jobs": held + placeholder + live})
+        jobs = []
+        for a in (await _list_gpu_jobs(request)) or []:
+            if _act_type_name(a) not in ("studio.render", ""):
+                continue
+            job = _job_from_activity(a, now)
+            # A WAITING job stays visible no matter how old — hiding waiting work by
+            # age is how "starts when a GPU connects" silently became "vanished".
+            if job["id"] and job["status"] not in ("done", "failed", "cancelled"):
+                jobs.append(job)
+        return web.json_response({"jobs": jobs})
 
     @routes.post("/v1/library/status")
     async def set_status(request: web.Request):
@@ -3314,9 +3095,10 @@ def add_studio_home_routes(routes: web.RouteTableDef, server) -> None:
 
     @routes.post("/v1/queue/cancel")
     async def cancel_job(request: web.Request):
-        """Cancel one of the caller's OWN queued/running jobs (local pod queue or
-        BYO-GPU lane). Ownership is resolved server-side; a prompt_id that isn't the
-        caller's 404s — never confirming another tenant's job exists."""
+        """Cancel one of the caller's OWN waiting/running jobs — the render this box
+        is on, or one in the BYO-GPU lane. Ownership is resolved server-side; a
+        prompt_id that isn't the caller's 404s — never confirming another tenant's
+        job exists."""
         org = _org_of(request)
         pid = (await request.json()).get("prompt_id", "")
         if not pid:

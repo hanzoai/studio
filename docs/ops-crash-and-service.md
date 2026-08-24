@@ -1,7 +1,7 @@
 # Hanzo Studio — service & crash operations
 
 How Hanzo Studio runs on the GB10 box, how to read crash history, and the fix
-for the "queue vanished after a restart" class of outage.
+for the restart-storm class of outage.
 
 ## Service topology — ONE canonical unit
 
@@ -21,14 +21,14 @@ canonical unit and never re-create a second one.
 
 ```bash
 systemctl status studio.service              # health
-sudo systemctl restart studio.service         # graceful restart (drains queue)
+sudo systemctl restart studio.service         # graceful restart
 journalctl -u studio.service -f               # live logs
-curl -s http://127.0.0.1:8188/queue           # {"queue_running":[...],"queue_pending":[...]}
+curl -s http://127.0.0.1:8188/prompt          # {"exec_info":{"rendering":0}}
 ```
 
-Roll out code or unit changes **without interrupting a running batch** (waits
-for an empty queue, removes any stray duplicate, reinstalls the canonical unit,
-restarts, health-checks):
+Roll out code or unit changes **without interrupting a running render** (waits
+until nothing is rendering, removes any stray duplicate, reinstalls the canonical
+unit, restarts, health-checks):
 
 ```bash
 scripts/studio-service-swap.sh
@@ -53,7 +53,7 @@ systemctl show studio.service -p ExecMainStatus -p NRestarts -p Result
 sudo dmesg -T | grep -iE 'out of memory|killed process|oom-kill|NV_ERR_NO_MEMORY'
 ```
 
-## The crash that ate the queue (root cause + fix)
+## The crash that ate the history (root cause + fix)
 
 **Symptom** (seen 3×): on any SIGTERM/SIGINT the process died with
 
@@ -63,21 +63,21 @@ File "main.py", line 507, in <module>
 RuntimeError: Event loop stopped before Future completed.
 ```
 
-and the in-memory queue + history were lost.
+and the in-memory history was lost.
 
 **Root cause.** The fork's signal handler (`_graceful_shutdown` in `main.py`,
 added in `a45a441`) called `event_loop.stop()`. The server coroutine passed to
 `run_until_complete()` never finishes on its own, so stopping the loop makes
 `run_until_complete()` raise `RuntimeError('Event loop stopped before Future
 completed.')`. The surrounding `try` only caught `KeyboardInterrupt`, so the
-process exited **non-zero with a traceback** instead of shutting down cleanly —
-and the dirty exit discarded the queue. Because the exit was dirty, the socket
+process exited **non-zero with a traceback** instead of shutting down cleanly.
+Because the exit was dirty, the socket
 was sometimes not released before restart, producing secondary
 `OSError: [Errno 98] address already in use` crashes; the duplicate unit turned
 that into a storm.
 
-**Fix (`main.py`).** The handler now runs once (idempotent), flags the queue
-closed, snapshots it, then stops the loop; the outer `try` treats the resulting
+**Fix (`main.py`).** The handler now runs once (idempotent), then stops the
+loop; the outer `try` treats the resulting
 `RuntimeError('Event loop stopped before Future completed.')` as the expected
 graceful-exit path and logs `Server stopped by shutdown signal`. Verified live:
 
@@ -89,27 +89,18 @@ Server stopped by shutdown signal
 **Fix (topology).** The duplicate transient/user `hanzo-studio.service` was
 removed; `studio.service` is the single canonical unit.
 
-## Crash-durable queue (STUDIO_PERSIST_QUEUE)
+## A hard kill loses at most the render in flight
 
-A graceful signal is now handled, but a hard kill can still happen — e.g. a
-SIGKILL/OOM while a batch is queued (observed: a mid-batch SIGKILL dropped 20
-pending prompts). ComfyUI's `PromptQueue` is in-memory, so Studio adds an
-**opt-in durable queue** (`execution.py`), enabled in the unit:
+A graceful signal is handled, but a SIGKILL/OOM can still land mid-render. Only
+that one render is lost, because that is all the box was holding: work waiting
+for a GPU lives in the cloud `gpu-jobs` lane (see `docs/federation.md`), which
+survives any single box and hands the job to whichever worker claims next.
 
-- `Environment=STUDIO_PERSIST_QUEUE=1` in `ops/systemd/studio.service`.
-- On every queue change (submit / start / finish / delete / wipe) the pending
-  **and in-flight** prompts are snapshotted atomically to
-  `user/queue_snapshot.json`.
-- On boot the snapshot is re-queued (an interrupted render restarts from
-  scratch — correct, since it never finished). Look for
-  `[persist-queue] restored N pending prompt(s)` in the log.
-- Persistence is **best-effort**: every read/write is wrapped so a serialization
-  or disk error only logs a warning and never affects rendering. With the flag
-  unset the code path is inert (zero behavior change vs. upstream).
-
-Tests: `tests-unit/execution_test/prompt_queue_persist_test.py` (round-trip,
-inert-when-disabled, corrupt-row skipping). Run standalone:
-`.venv/bin/python tests-unit/execution_test/prompt_queue_persist_test.py`.
+There is nothing local to snapshot or restore, and nothing to re-run on boot.
+The earlier design snapshotted pending prompts to `user/queue_snapshot.json`
+and replayed them at start; it also replayed the prompt that had just killed the
+process, so a box that could not run a graph would restore it, die, and restore
+it again.
 
 ## Known-benign shutdown noise
 
@@ -123,4 +114,4 @@ TypeError: 'NoneType' object is not callable
 
 This is an atexit/weakref finalizer racing module teardown (upstream ComfyUI).
 It is cosmetic — it prints after the server has already stopped and does not
-affect the queue or the exit path.
+affect the render or the exit path.

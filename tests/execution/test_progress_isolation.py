@@ -99,6 +99,22 @@ class TestProgressIsolation:
         yield
         p.kill()
 
+    def run_when_free(self, client, prompt) -> str:
+        """Submit and wait out the one render slot.
+
+        The box renders one prompt and refuses anything on top of it (503) — there is
+        no line to join — so a caller with a second render waits for the first.
+        """
+        import urllib.error
+        for _ in range(60):
+            try:
+                return client.queue_prompt(prompt)['prompt_id']
+            except urllib.error.HTTPError as e:
+                if e.code != 503:
+                    raise
+                time.sleep(0.5)
+        raise AssertionError("the render slot never came free")
+
     def start_client_with_retry(self, listen: str, port: int, client_id: str = None):
         """Start client with connection retries."""
         client = IsolatedClient()
@@ -141,13 +157,8 @@ class TestProgressIsolation:
             prompt_a = graph_a.finalize()
             prompt_b = graph_b.finalize()
 
-            response_a = client_a.queue_prompt(prompt_a)
-            prompt_id_a = response_a['prompt_id']
-
-            response_b = client_b.queue_prompt(prompt_b)
-            prompt_id_b = response_b['prompt_id']
-
-            # Start threads to listen for messages on both clients
+            # Both clients listen the whole time; the renders themselves go one at a
+            # time, because one render slot is all there is.
             def listen_client_a():
                 client_a.listen_for_messages(duration=10.0)
 
@@ -156,11 +167,12 @@ class TestProgressIsolation:
 
             thread_a = threading.Thread(target=listen_client_a)
             thread_b = threading.Thread(target=listen_client_b)
-
             thread_a.start()
             thread_b.start()
 
-            # Wait for threads to complete
+            prompt_id_a = self.run_when_free(client_a, prompt_a)
+            prompt_id_b = self.run_when_free(client_b, prompt_b)
+
             thread_a.join()
             thread_b.join()
 

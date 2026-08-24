@@ -249,9 +249,9 @@ def _enqueue_with_retry(req) -> None:
         raise last
 
 
-def dispatch_if_worker(request, org_id: str, prompt_id: str, prompt: dict) -> bool:
-    """Enqueue this render to the shared GPU lane (gpu-jobs) and return True; return
-    False only to run it in-pod.
+def dispatch_if_worker(request, org_id: str, prompt_id: str, prompt: dict) -> str | None:
+    """Enqueue this render to the shared GPU lane (gpu-jobs) and name the machine it
+    went to; return None only to run it in-pod.
 
     A model-less cloud coordinator NEVER renders locally — it ALWAYS enqueues and
     lets the job WAIT for a worker, even when the org-scoped fleet read shows none.
@@ -267,7 +267,7 @@ def dispatch_if_worker(request, org_id: str, prompt_id: str, prompt: dict) -> bo
     try:
         tok = _bearer(request)
         if not tok:
-            return False
+            return None
         # Per-GPU targeting: the UI's "Run on <gpu>" affordance sets X-Target-GPU to a
         # machine identity. A targeted render is enqueued on THAT machine's own lane
         # ("gpu:<identity>") which only that worker claims; an untargeted render rides
@@ -297,7 +297,7 @@ def dispatch_if_worker(request, org_id: str, prompt_id: str, prompt: dict) -> bo
         # wait (never a doomed local validation), even with a stray unrelated model.
         # A validated target ALWAYS enqueues (the user asked for that online GPU).
         if not target and not online and has_models_for(prompt):
-            return False
+            return None
         # Which node runs it: the explicit target; else a single visible GPU is
         # definitive; with several — or an org-blind read that saw none — the claimer
         # is decided at pick-up: "gpu".
@@ -358,14 +358,13 @@ def dispatch_if_worker(request, org_id: str, prompt_id: str, prompt: dict) -> bo
         # perfectly good render. The enqueue itself is quick; this only covers upload.
         # Retry across the cloud tasks backend's deploy gap (see _enqueue_with_retry).
         _enqueue_with_retry(req)
-        _track_dispatched(org_id, prompt_id, prompt, node=node)
-        # Correlated by pid (the job id) with studio.home's build/queue lines; names are
+        # Correlated by pid (the job id) with studio.home's build lines; names are
         # content-addressed checksums, so this pins the exact source bytes shipped — no
         # signed URLs, tokens or image data are logged.
         log.info("studio.trace gpu.publish org=%s pid=%s node=%s inputs=%s refs=%s",
                  org_id, prompt_id, node, len(staged),
                  ",".join(sorted(s["name"] for s in staged)) or None)
-        return True
+        return node
     except Exception as e:                                  # noqa: BLE001 — see below
         # SAY WHY. Falling back is correct; falling back in silence is not. The caller
         # turns a False into "GPU render worker is momentarily unavailable", and that
@@ -375,52 +374,8 @@ def dispatch_if_worker(request, org_id: str, prompt_id: str, prompt: dict) -> bo
         #
         # It cost one org ten renders over two days. Their sources were 4K, so the
         # inlined enqueue body ran past the API's request-size limit and came back
-        # 400 "Error when parsing request" — nothing to do with any GPU. The held spool
-        # then re-held them on a message that reads as transient, and the
-        # alphabetically-first of them pinned the whole sweep behind it, every sweep,
-        # while both GPUs sat idle reporting themselves healthy.
+        # 400 "Error when parsing request" — nothing to do with any GPU, and nothing
+        # anywhere said so.
         log.warning("studio.trace gpu.dispatch_failed org=%s pid=%s err=%s: %s",
                     org_id, prompt_id, type(e).__name__, e)
-        return False
-
-
-def _track_dispatched(org_id: str, prompt_id: str, prompt: dict, node: str = "gpu") -> None:
-    """Record a BYO-GPU render dispatched to gpu-jobs so the studio UI can SHOW it
-    in the queue. BYO-GPU jobs render on the worker (gpu-jobs), not the pod's local
-    /queue — so without this the user's fix/compose 'never appears in the queue'.
-    A tiny per-org JSON the /v1/render-queue endpoint reads; entries drop off when
-    their output lands in the library or they age out. Never raises."""
-    try:
-        import time
-        import folder_paths
-        # human title from the SaveImage prefix; refs from LoadImage for a thumbnail
-        full_prefix, refs = "render", []
-        for n in prompt.values():
-            if not isinstance(n, dict):
-                continue
-            ct = n.get("class_type", "")
-            if ct in SAVE_NODES:
-                full_prefix = n.get("inputs", {}).get("filename_prefix") or "render"
-            elif "LoadImage" in ct:
-                im = n.get("inputs", {}).get("image")
-                if im:
-                    refs.append(im)
-        out_dir = folder_paths.get_org_output_directory(org_id)
-        os.makedirs(out_dir, exist_ok=True)
-        jf = os.path.join(out_dir, "render_jobs.json")
-        try:
-            jobs = json.loads(open(jf).read())
-        except Exception:
-            jobs = []
-        jobs = [j for j in jobs if j.get("id") != prompt_id][-40:]  # dedupe + cap
-        # store the FULL output prefix (e.g. "fixes/model01_..._00001_") so the queue
-        # endpoint can check for the ACTUAL output file, not a fuzzy base match that
-        # collides with the source image and makes the job vanish after 30s.
-        jobs.append({"id": prompt_id, "prefix": full_prefix.split("/")[-1],
-                     "outPrefix": full_prefix, "refs": refs[:1], "node": node,
-                     "ts": int(time.time()), "status": "rendering"})
-        tmp = jf + ".tmp"
-        open(tmp, "w").write(json.dumps(jobs))
-        os.replace(tmp, jf)
-    except Exception:
-        pass
+        return None
