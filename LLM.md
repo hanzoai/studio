@@ -417,7 +417,7 @@ authoring model: the composition IS the source, stored verbatim.
   (RS/ES/PS/EdDSA). A symmetric **HS256 hanzo.id session token is NEVER forwarded** (the
   gateway rejects it: "unsupported signing method: HS256"), nor any secret `sk-`/`hk-` key.
   Model = `STUDIO_DOC_MODEL`→`STUDIO_CHAT_MODEL`→`enso` (matches window.HZ.model).
-- **UI** (`middleware/studio_home.html`, vanilla JS, monochrome/Geist): a **📄 Documents**
+- **UI** (`middleware/studio_home.html`, vanilla JS, monochrome/Zen): a **📄 Documents**
   Home tab — searchable server-driven catalog + "Your documents" grid with Download
   PDF/Word/Excel/PowerPoint. The `docdlg` dialog: describe in one line → Generate with AI
   (sends window.HZ.pk), or fill the short typed form → Generate; edit fields before/after;
@@ -456,7 +456,7 @@ the two things either side of that store.
   timeout — measured **51.5s against 5.8s** for the same 4s composition. That attribute is
   the renderer's own opt-out for a CSS-driven composition
   (`packages/engine/src/services/frameCapture.ts`), and taking it means one self-contained
-  file, no vendored third-party script and no licence question. Geist comes from the
+  file, no vendored third-party script and no licence question. Zen comes from the
   sibling `design` checkout via `design.faces()`; absent, the composition falls through its
   own font stack and still renders.
 - **The render command, and why each flag is there.** `npx --yes @hanzo/frames@0.7.83
