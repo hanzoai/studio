@@ -2651,7 +2651,7 @@ function openTemplatePicker(anchor){
 const DS_SEED=[
  {k:'modernist',name:'Modernist',blurb:'Swiss grid, generous whitespace, a single decisive accent.',sw:['#0a0a0a','#f4f4f4','#e8442a','#9a9a9a'],type:'Neue Grotesk',seed:true},
  {k:'classical',name:'Classical',blurb:'Serif headlines, warm neutrals, editorial hairlines.',sw:['#1c1a17','#f2ead9','#8a6d3b','#3f5a4a'],type:'Canela / Georgia',seed:true},
- {k:'nocturne',name:'Nocturne',blurb:'Near-black canvas, luminous accents, high contrast.',sw:['#0a0a0b','#ededed','#6aa5ff','#b48cff'],type:'Inter',seed:true},
+ {k:'nocturne',name:'Nocturne',blurb:'Near-black canvas, luminous accents, high contrast.',sw:['#0a0a0b','#ededed','#6aa5ff','#b48cff'],type:'Zen',seed:true},
  {k:'organic',name:'Organic',blurb:'Earthy palette, soft radii, humanist type.',sw:['#2b2a24','#efe7d6','#8fae74','#d99a6c'],type:'Fraunces',seed:true},
  {k:'broadsheet',name:'Broadsheet',blurb:'Newsprint columns, tight leading, ink black.',sw:['#141414','#f7f5f0','#c0392b','#6b6b6b'],type:'Chronicle',seed:true},
  {k:'industry',name:'Industry',blurb:'Utilitarian mono, safety accents, hard edges.',sw:['#101215','#e6e8ea','#ffcf4a','#ff6b3d'],type:'IBM Plex',seed:true},
@@ -2666,7 +2666,7 @@ function dsDefault(){ try{return localStorage['hz_ds_def_'+dsOrg()]||'';}catch(_
 function dsSetDefault(k){ try{localStorage['hz_ds_def_'+dsOrg()]=k;}catch(_){} renderDesignSystems(); dsSyncComposer(); toast('Org default: '+(dsGet(k)?dsGet(k).name:k)); }
 function dsActive(){ try{return localStorage['hz_ds_act_'+dsOrg()]||'';}catch(_){return '';} }
 function dsSetActive(k){ try{ if(k)localStorage['hz_ds_act_'+dsOrg()]=k; else localStorage.removeItem('hz_ds_act_'+dsOrg()); }catch(_){} dsSyncComposer(); if(!$('designsys').hidden)renderDesignSystems(); }
-function dsCreate(o){ const l=dsUser(); const base=(o.name||'system').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'')||'system'; let k=base,i=2; while(dsGet(k))k=base+'-'+(i++); const rec=Object.assign({k,sw:['#0a0a0a','#ededed','#6aa5ff','#888888'],type:'Inter',ts:Date.now()},o,{k,seed:false}); l.push(rec); dsSaveUser(l); return rec; }
+function dsCreate(o){ const l=dsUser(); const base=(o.name||'system').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'')||'system'; let k=base,i=2; while(dsGet(k))k=base+'-'+(i++); const rec=Object.assign({k,sw:['#0a0a0a','#ededed','#6aa5ff','#888888'],type:'Zen',ts:Date.now()},o,{k,seed:false}); l.push(rec); dsSaveUser(l); return rec; }
 function dsSyncComposer(){ const el=$('ds'); if(!el)return; const a=dsActive(),d=a&&dsGet(a); el.textContent=d?d.name:'None'; }
 const dsSwatch=(sw,extra)=>`<div class="ds-sw"${extra||''}>`+(sw||[]).slice(0,4).map(c=>`<i style="background:${_validHex(c)?c:'#888'}"></i>`).join('')+`</div>`;
 function openDesignSystemPicker(anchor){
@@ -2802,11 +2802,11 @@ async function bldReadme(rec){ const src=rec.sources||{}; const ctx=[rec.name,sr
     const r=await fetch(ep,{method:'POST',headers:genHeaders(),body:JSON.stringify({question:prompt,stream:false,messages:[{role:'system',content:'You are a brand and design-system architect. Reply in Markdown only, under 200 words.'},{role:'user',content:prompt}]})});
     if(r.ok){ const j=await r.json(); const t=((j&&(j.reply||j.answer||j.content||j.text))||'').trim(); if(t)return t+'\n\n<!-- synthesized by Hanzo AI · '+ep+' -->\n'; } }catch(_){} }
   return `# ${rec.name}\n\n${src.notes||'A cohesive design system for your brand.'}\n\n## Sources\n`+((src.github||[]).map(u=>'- GitHub: '+u).concat((src.figs||[]).map(f=>'- Figma: '+f+' (parsed locally)'),(src.assets||[]).map(f=>'- Asset: '+f)).join('\n')||'- Seeded from the Hanzo brand basis (hanzoai/brand · @hanzo/ui)')+`\n\n## Applying it\nEvery Studio generation (image · video · 3D · mockup) uses these tokens, type and treatments as its style basis when this design system is selected in the composer.\n\n_Draft synthesized locally from your inputs. Full AI synthesis (crawl · repos · .fig) runs on Hanzo AI — see the roadmap._\n`; }
-function bldTokens(rec){ const s=rec.sw||['#0a0a0a','#ededed','#6aa5ff','#888888']; return `:root{\n  --bg:${s[0]};\n  --fg:${s[1]};\n  --accent:${s[2]};\n  --muted:${s[3]||'#888'};\n  --radius:12px;\n  --space:8px;\n  --font:'${rec.type||'Inter'}',system-ui,sans-serif;\n}`; }
+function bldTokens(rec){ const s=rec.sw||['#0a0a0a','#ededed','#6aa5ff','#888888']; return `:root{\n  --bg:${s[0]};\n  --fg:${s[1]};\n  --accent:${s[2]};\n  --muted:${s[3]||'#888'};\n  --radius:12px;\n  --space:8px;\n  --font:'${rec.type||'Zen'}',system-ui,sans-serif;\n}`; }
 function bldStyles(rec){ return `/* ${rec.name} — base styles */\nbody{background:var(--bg);color:var(--fg);font-family:var(--font);line-height:1.5}\na{color:var(--accent)}\n.btn{border-radius:var(--radius);padding:calc(var(--space)*1.25) calc(var(--space)*2)}`; }
-function bldFonts(rec){ return `/* ${rec.name} — type\n * Display / UI: ${rec.type||'Inter'}\n * Weights: 400 · 500 · 600 · 700\n */`; }
-function bldSpecimens(rec){ return `# Foundation specimens — ${rec.name}\n\n## Color\n`+(rec.sw||[]).map((c,i)=>'- token '+(i+1)+': `'+c+'`').join('\n')+`\n\n## Type\n${rec.type||'Inter'} — display, heading, body, caption.\n\n## Space & radius\n8px base grid · 12px radius.\n`; }
-function bldSkill(rec){ return `# SKILL: ${rec.name}\n\nWhen generating for this brand, apply:\n- Palette: ${(rec.sw||[]).join(', ')}\n- Type: ${rec.type||'Inter'}\n- Voice & treatment per readme.md\n\nStudio's composer selects this as the DESIGN SYSTEM basis for every generation.\n`; }
+function bldFonts(rec){ return `/* ${rec.name} — type\n * Display / UI: ${rec.type||'Zen'}\n * Weights: 400 · 500 · 600 · 700\n */`; }
+function bldSpecimens(rec){ return `# Foundation specimens — ${rec.name}\n\n## Color\n`+(rec.sw||[]).map((c,i)=>'- token '+(i+1)+': `'+c+'`').join('\n')+`\n\n## Type\n${rec.type||'Zen'} — display, heading, body, caption.\n\n## Space & radius\n8px base grid · 12px radius.\n`; }
+function bldSkill(rec){ return `# SKILL: ${rec.name}\n\nWhen generating for this brand, apply:\n- Palette: ${(rec.sw||[]).join(', ')}\n- Type: ${rec.type||'Zen'}\n- Voice & treatment per readme.md\n\nStudio's composer selects this as the DESIGN SYSTEM basis for every generation.\n`; }
 
 // ── 5) Assets: grid ⇄ table view + a Projects rail (reuses Studio's own data) ──
 let ASSET_VIEW='grid';
