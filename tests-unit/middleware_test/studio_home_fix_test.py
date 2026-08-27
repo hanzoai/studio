@@ -24,7 +24,7 @@ from middleware import studio_home as sh
 # What the render worker actually has on disk (spark: models/{diffusion_models,
 # text_encoders,vae}). The graph must never name anything outside this.
 AVAILABLE = {
-    "diffusion_models": {"qwen-image-edit-2511.safetensors", "flux1-fill-dev.safetensors",
+    "diffusion_models": {"qwen-image-edit-2511.safetensors", "z_image_turbo_bf16.safetensors",
                          "flux-2-klein-4b.safetensors", "wan2.2_ti2v_5B_fp16.safetensors"},
     "text_encoders": {"qwen2.5-vl-7b.safetensors", "clip_l.safetensors",
                       "t5xxl_fp16.safetensors", "flux2-text-encoder.safetensors"},

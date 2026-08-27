@@ -26,15 +26,16 @@ ComfyUI-KJNodes              https://github.com/kijai/ComfyUI-KJNodes.git       
 cg-use-everywhere            https://github.com/chrisgoringe/cg-use-everywhere.git         632ed7bb51bb18ceb03ccaefe1f34be8bd416500  Apache-2.0  # HEAD 2026-06-22
 ComfyUI-segment-anything-2   https://github.com/kijai/ComfyUI-segment-anything-2.git       0c35fff5f382803e2310103357b5e985f5437f32  Apache-2.0  # HEAD 2025-09-28  SAM2
 comfyui_segment_anything     https://github.com/storyicon/comfyui_segment_anything.git     ab6395596399d5048639cdab7e44ec9fae857a93  Apache-2.0  # HEAD  GroundingDINO+SAM
-ComfyUI-Inpaint-CropAndStitch https://github.com/lquesada/ComfyUI-Inpaint-CropAndStitch.git 3617559bcb9d15ff60b24c6800701402eb2cd478  GPL-3.0     # 2026-05-25  seam-invisible masked inpaint (couture_best dep)
+ComfyUI-Inpaint-CropAndStitch https://github.com/lquesada/ComfyUI-Inpaint-CropAndStitch.git 3617559bcb9d15ff60b24c6800701402eb2cd478  GPL-3.0     # 2026-05-25  seam-invisible masked inpaint (no workflow uses it since couture_best was retired)
 
 # --- BAKEOFF-ONLY (cloned for the garment-swap bake-off; NOT auto-installed) ----
 # ComfyUI-CatvtonFluxWrapper  https://github.com/lujiazho/ComfyUI-CatvtonFluxWrapper.git  06558c42c539397af8e4d221ddccea870de72d1f  (no LICENSE file)
-#   CatVTON-Flux diffusers wrapper. Hardcodes the GATED black-forest-labs/FLUX.1-Fill-dev
-#   diffusers repo + CC-BY-NC CatVTON LoRA, so it won't load without HF auth. The winning
-#   workflow (couture_best.json) reproduces CatVTON's in-context transfer with CORE nodes
-#   + the catvton_flux_lora_alpha weights via LoraLoaderModelOnly, so this pack is NOT a
-#   runtime dependency. Kept as a record of what was evaluated.
+#   CatVTON-Flux diffusers wrapper. Hardcodes black-forest-labs/FLUX.1-Fill-dev + the
+#   CC-BY-NC CatVTON LoRA. Both are non-commercial, so this path cannot serve commercial
+#   work; the flux1-fill-dev and catvton_flux_lora_alpha weights are held outside the
+#   model tree and the workflow that drove them (couture_best.json) is retired.
+#   Try-on runs on Qwen-Image-Edit-2511 (Apache-2.0) — see fashion/tryon_*.json.
+#   Kept as a record of what was evaluated.
 
 # --- QUARANTINED (not installed; kept here as a record) -------------------------
 # was-node-suite-comfyui  https://github.com/WASasquatch/was-node-suite-comfyui.git  ea935d1044ae5a26efa54ebeb18fe9020af49a45  MIT
