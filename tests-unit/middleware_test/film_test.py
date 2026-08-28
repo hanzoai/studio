@@ -280,3 +280,36 @@ def test_the_renderer_pin_names_a_version():
     """`@hanzo/frames` unpinned would install whatever npm serves that day, and a
     film is supposed to render the same twice."""
     assert "@" in film.RENDERER.removeprefix("@"), f"{film.RENDERER} names no version"
+
+
+def test_the_face_a_film_names_is_the_face_it_ships():
+    """A film embeds its own fonts, so the family in @font-face, the file the
+    renderer copies beside it, and the name the design system files it under are
+    three spellings of one thing. When they drift the renderer still succeeds and
+    the film comes back drawn in the system default, which is why this is asserted
+    rather than trusted: the faces were renamed Zen and this agreement was the
+    thing that silently broke."""
+    css = film.compose(FILM, "wide")
+    for family, stem in (("Zen", "zen"), ("Zen Mono", "zen-mono")):
+        assert f'font-family: "{family}"' in css
+        assert f'url("./assets/{stem}.woff2")' in css
+        # the filename render() copies faces()[family] to, by the same rule
+        assert ("zen-mono.woff2" if "Mono" in family else "zen.woff2") == f"{stem}.woff2"
+    # every face the document declares is one of the two, so a stale @font-face
+    # left beside them is a failure rather than a silent second family
+    assert set(re.findall(r'@font-face \{ font-family: "([^"]+)"', css)) == {"Zen", "Zen Mono"}
+
+
+def test_the_design_system_is_asked_for_the_files_it_actually_ships(tmp_path, monkeypatch):
+    """faces() names files in another checkout, so a rename over there turns this
+    into an empty dict and every film loses its fonts without failing. Pinning the
+    filenames here makes that rename break a test instead of a render."""
+    from middleware import design
+
+    fonts = tmp_path / "fonts"
+    fonts.mkdir()
+    for f in ("Zen-Variable.woff2", "ZenMono-Variable.woff2"):
+        (fonts / f).write_bytes(b"wOF2")
+    monkeypatch.setattr(design, "_FONTS", fonts)
+    assert {n: p.name for n, p in design.faces().items()} == {
+        "Zen": "Zen-Variable.woff2", "Zen Mono": "ZenMono-Variable.woff2"}

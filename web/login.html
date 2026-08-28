@@ -28,13 +28,12 @@
      * the page stays legible if /marketing/shell.css ever fails to load. That is
      * the same pattern @hanzo/iam ships and it is why this page cannot go blank.
      *
-     * Basel is console's UI face; it is a licensed font we do not redistribute
-     * in this GPL-3 repo, so we keep console's system-grotesk fallback stack and
-     * do NOT import @hanzo/design's self-hosted Geist. */
+     * Zen is the UI face. The stack keeps a system-grotesk fallback so the page
+     * stays legible before the face arrives, or if it never does. */
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
     body {
-      font-family: 'Basel', system-ui, -apple-system, BlinkMacSystemFont,
+      font-family: 'Zen', system-ui, -apple-system, BlinkMacSystemFont,
         'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
       background: var(--background, #000000);
       color: var(--foreground, #ededed);
@@ -112,7 +111,7 @@
     /* The keyboard focus indicator. This page had none and fell through to the
        UA default; @hanzo/design ships this exact rule in tokens/base.css, which
        we cannot import here without its element defaults overriding the reset
-       and Basel stack above, so the one rule is restated. --ring is #737373 as
+       and Zen stack above, so the one rule is restated. --ring is #737373 as
        of @hanzo/design 0.3.0 — 4.43:1 on the page and 4.18:1 on the card, where
        WCAG 2.4.11 needs 3:1. It was #333333 (1.66:1) and could not have carried
        an indicator at all. */

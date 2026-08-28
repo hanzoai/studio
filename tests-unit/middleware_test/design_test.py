@@ -26,7 +26,7 @@ _COLORS = """\
 }
 """
 
-_FONTS = ':root{ --font-sans:"Geist","Geist Sans",sans-serif; }\n'
+_FONTS = ':root{ --font-sans:"Zen","Zen Mono",sans-serif; }\n'
 
 _BRAND = {
     "brand": {
@@ -94,7 +94,7 @@ def test_a_declaration_in_a_comment_is_not_a_token(checkout):
 def test_reads_every_token_file(checkout):
     tokens = d.read()["tokens"]
     assert tokens["--neutral-50"] == "#FAFAFA"
-    assert tokens["--font-sans"] == '"Geist","Geist Sans",sans-serif'
+    assert tokens["--font-sans"] == '"Zen","Zen Mono",sans-serif'
 
 
 def test_absent_checkout_reads_empty(tmp_path, monkeypatch):
@@ -146,8 +146,8 @@ def test_edit_spans_both_kinds_at_once(checkout):
 
 
 def test_a_value_survives_a_round_trip(checkout):
-    d.write({"--font-sans": '"Basel Grotesk",sans-serif'})
-    assert d.read()["tokens"]["--font-sans"] == '"Basel Grotesk",sans-serif'
+    d.write({"--font-sans": '"Zen Pixel Square",sans-serif'})
+    assert d.read()["tokens"]["--font-sans"] == '"Zen Pixel Square",sans-serif'
 
 
 # --- the routes ----------------------------------------------------------

@@ -13,7 +13,7 @@ that notice.
 Reachability, not mere presence, is what is asserted. ``@hanzo/design`` 0.3.0's
 ``typography.css`` references ``var(--font-display)`` with no fallback while
 defining it in ``fonts.css`` — a file this bundle cannot import, because it
-self-hosts Geist via ``url()`` and esbuild has no ``.woff2`` loader here. That
+self-hosts Zen via ``url()`` and esbuild has no ``.woff2`` loader here. That
 reference is only reachable through ``--type-hero/-h2/-h3``, which nothing on
 this surface uses, so it cannot affect a painted pixel. Walking the graph from
 real declarations records that distinction instead of hiding it behind an

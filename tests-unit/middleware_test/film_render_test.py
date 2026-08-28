@@ -98,12 +98,12 @@ def test_a_second_render_is_the_same_film(tmp_path):
 
 
 def test_a_film_renders_without_the_design_checkout(tmp_path, monkeypatch):
-    """Geist is the only face a Hanzo surface draws, and an image that shipped only
+    """Zen is the only face a Hanzo surface draws, and an image that shipped only
     Studio has no copy of it. The composition falls through its own font stack
     rather than rendering nothing."""
     monkeypatch.setattr(film.design, "faces", dict)
     out = film.render(film.compose(FILM, "wide"), tmp_path / "bare", "custody-wide")
-    assert not (tmp_path / "bare" / "assets" / "geist.woff2").exists()
+    assert not (tmp_path / "bare" / "assets" / "zen.woff2").exists()
     assert out["measured"]["width"] == 1920
     assert out["files"]["custody-wide-first.jpg"].stat().st_size > 6_000
 

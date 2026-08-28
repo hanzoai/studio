@@ -21,9 +21,9 @@
  * them those 11 fall back to a Tailwind scale (12/14/16/18/20/24px) that renders
  * studio's chrome 1-3px LARGER than every surface loading brand 1.4.4 or design
  * (both 11/13/14/15/17/21px) — this converges it. `base.css` is NOT imported (its
- * element rules would override login.html's own reset, Basel stack and link
- * colours) and neither is `fonts.css` (it self-hosts Geist via url(), and this
- * GPL-3 repo deliberately ships no font).
+ * element rules would override login.html's own reset, Zen stack and link
+ * colours) and neither is `fonts.css` (it self-hosts Zen via url(), and this
+ * bundle ships no font of its own).
  */
 import { createRoot } from 'react-dom/client'
 import { HanzoHeader, HanzoPreFooterCTA, HanzoFooter } from '@hanzogui/shell'
