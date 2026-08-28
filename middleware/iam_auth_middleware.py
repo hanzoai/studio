@@ -157,11 +157,11 @@ def _embed_connect_card(request: web.Request) -> web.Response:
     html = (
         "<!doctype html><html><head><meta charset='utf-8'><title>Hanzo Studio</title>"
         "<style>body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;"
-        "background:#0e0e12;color:#ececf1;font:15px/1.5 Inter,system-ui,sans-serif}"
+        "background:#0e0e12;color:#ececf1;font:15px/1.5 Zen,system-ui,sans-serif}"
         ".c{max-width:380px;text-align:center;padding:32px}"
         "h1{font-size:18px;margin:0 0 8px}p{color:#8a8a95;font-size:13px;margin:0 0 20px}"
         "button{background:#f4f4f6;color:#111;border:none;border-radius:10px;padding:10px 18px;"
-        "font:600 14px Inter,system-ui,sans-serif;cursor:pointer}</style></head><body>"
+        "font:600 14px Zen,system-ui,sans-serif;cursor:pointer}</style></head><body>"
         "<div class='c'><h1>Connect Hanzo Studio</h1>"
         "<p>Sign in once to use Studio here — with a live Hanzo ID session it completes instantly, "
         "then this panel loads by itself.</p>"

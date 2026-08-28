@@ -116,11 +116,11 @@ def _marks() -> dict:
 
 def faces() -> dict[str, Path]:
     """The two typefaces the design system ships, by the family name that names
-    them in CSS. Geist and Geist Mono are the only faces a Hanzo surface draws,
+    them in CSS. Zen and Zen Mono are the only faces a Hanzo surface draws,
     so anything that composes one — the film generator does — asks here rather
     than carrying its own copy. Absent design checkout: an empty answer, and the
     caller falls through its own font stack, exactly like every other kind."""
-    want = {"Geist": "Geist-Variable.woff2", "Geist Mono": "GeistMono-Variable.woff2"}
+    want = {"Zen": "Zen-Variable.woff2", "Zen Mono": "ZenMono-Variable.woff2"}
     return {name: _FONTS / f for name, f in want.items() if (_FONTS / f).is_file()}
 
 

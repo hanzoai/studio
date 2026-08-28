@@ -164,7 +164,7 @@
         id: "hanzo-exit-advanced", href: "/studio", title: "Exit Advanced — back to Studio Home",
         style: "position:fixed;top:10px;left:12px;z-index:100000;display:flex;align-items:center;gap:6px;" +
                "background:rgba(20,20,24,.92);color:#ececf1;border:1px solid #33333c;border-radius:8px;" +
-               "padding:6px 11px;font:600 12px/1 Inter,system-ui,sans-serif;text-decoration:none;cursor:pointer;backdrop-filter:blur(8px)"
+               "padding:6px 11px;font:600 12px/1 Zen,system-ui,sans-serif;text-decoration:none;cursor:pointer;backdrop-filter:blur(8px)"
       }, [el("span", { text: "←" }), el("span", { text: "Studio" })]);
       document.body.appendChild(exit);
     }

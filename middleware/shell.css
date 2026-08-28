@@ -4,7 +4,7 @@
  * prefix so it never collides with the editor's own theme. */
 #hzbar{position:fixed;bottom:18px;right:18px;z-index:2147483000;display:flex;align-items:center;gap:8px;
   flex-wrap:wrap;justify-content:flex-end;max-width:calc(100vw - 36px);
-  font:400 14px/1.4 Inter,system-ui,-apple-system,sans-serif}
+  font:400 14px/1.4 Zen,system-ui,-apple-system,sans-serif}
 #hzbar button,#hzbar a{font:inherit}
 .hz-pill{display:inline-flex;align-items:center;gap:7px;background:#1a1a1a;color:#ededed;border:1px solid #1f1f1f;
   border-radius:999px;padding:7px 13px;cursor:pointer;text-decoration:none;white-space:nowrap}
@@ -77,7 +77,7 @@
    Sits UNDER the pill bar's z so the pills stay clickable above it. */
 #hzwb{position:fixed;left:0;right:0;bottom:0;height:44vh;min-height:260px;background:#0a0a0a;color:#ededed;
   border-top:1px solid #1f1f1f;z-index:2147482999;display:none;flex-direction:column;
-  box-shadow:0 -14px 44px #0007;font:400 13px/1.45 Inter,system-ui,-apple-system,sans-serif}
+  box-shadow:0 -14px 44px #0007;font:400 13px/1.45 Zen,system-ui,-apple-system,sans-serif}
 #hzwb.on{display:flex}
 .hzwb-h{display:flex;align-items:center;gap:4px;padding:7px 10px;border-bottom:1px solid #1f1f1f;flex:0 0 auto}
 .hzwb-tab{background:none;border:none;color:#888888;font:inherit;font-weight:600;padding:6px 11px;border-radius:8px;cursor:pointer}

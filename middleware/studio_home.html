@@ -11,7 +11,7 @@
 :root{--bg:#000000;--panel:#0a0a0a;--panel2:#1a1a1a;--line:#1f1f1f;--txt:#ededed;--dim:#888888;
 --brand:#ffffff;--ring:#333333;--ok:#3ddc84;--warn:#ffb648;--pub:#6aa5ff;font-size:15px}
 *{box-sizing:border-box;margin:0}
-body{background:var(--bg);color:var(--txt);font:400 1rem/1.5 Inter,system-ui,-apple-system,sans-serif}
+body{background:var(--bg);color:var(--txt);font:400 1rem/1.5 Zen,system-ui,-apple-system,sans-serif}
 /* clip, not hidden: kills the dead horizontal scroll from off-screen-parked fixed
    elements (the chat aside at translateX) without creating a scroll container that
    would break position:sticky descendants. */
@@ -432,7 +432,7 @@ body.immersive #stage{display:block}
 .wiz-foot{display:flex;align-items:center;gap:9px;margin-top:22px}
 .wiz-foot .sp{flex:1}
 /* Agentic design-system builder — full-viewport working surface */
-#dsbuild{position:fixed;inset:0;z-index:55;background:var(--bg);color:var(--txt);display:none;flex-direction:column;font:400 1rem/1.5 Inter,system-ui,sans-serif}
+#dsbuild{position:fixed;inset:0;z-index:55;background:var(--bg);color:var(--txt);display:none;flex-direction:column;font:400 1rem/1.5 Zen,system-ui,sans-serif}
 #dsbuild.on{display:flex}
 .bld-top{display:flex;align-items:center;gap:11px;padding:11px 16px;border-bottom:1px solid var(--line);flex:0 0 auto}
 .bld-top .bk{border:1px solid var(--line);background:var(--panel);color:var(--txt);border-radius:8px;padding:6px 11px;font:inherit;font-size:.82rem;cursor:pointer;display:inline-flex;align-items:center;gap:6px}

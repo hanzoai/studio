@@ -146,11 +146,11 @@ def compose(film: dict, shape: str) -> str:
 <meta name="viewport" content="width={f['w']}, height={f['h']}" />
 <title>{_esc(film.get('title') or 'Film')}</title>
 <style>
-@font-face {{ font-family: "Geist"; src: url("./assets/geist.woff2") format("woff2"); font-weight: 100 900; font-display: swap; }}
-@font-face {{ font-family: "Geist Mono"; src: url("./assets/geist-mono.woff2") format("woff2"); font-weight: 100 900; font-display: swap; }}
+@font-face {{ font-family: "Zen"; src: url("./assets/zen.woff2") format("woff2"); font-weight: 100 900; font-display: swap; }}
+@font-face {{ font-family: "Zen Mono"; src: url("./assets/zen-mono.woff2") format("woff2"); font-weight: 100 900; font-display: swap; }}
 * {{ margin: 0; padding: 0; box-sizing: border-box; }}
 html, body {{ width: {f['w']}px; height: {f['h']}px; overflow: hidden; background: #000; }}
-body {{ font-family: "Geist", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
+body {{ font-family: "Zen", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
        color: #ededed; -webkit-font-smoothing: antialiased; }}
 #root {{ position: relative; width: {f['w']}px; height: {f['h']}px; overflow: hidden; background: #000; }}
 .clip {{ position: absolute; inset: 0; }}
@@ -170,7 +170,7 @@ body {{ font-family: "Geist", system-ui, -apple-system, "Helvetica Neue", Arial,
 .dot {{ width: {round(b * 0.42)}px; height: {round(b * 0.42)}px; border-radius: 999px; background: #fff; flex: none; }}
 .head {{ font-size: {round(b * 1.05)}px; font-weight: 500; color: #fff; width: {round(col * 0.30)}px; flex: none; }}
 .note {{ font-size: {round(b * 0.95)}px; color: #8e8e8e; }}
-.foot {{ margin-top: {round(b * 1.6)}px; font-family: "Geist Mono", ui-monospace, monospace;
+.foot {{ margin-top: {round(b * 1.6)}px; font-family: "Zen Mono", ui-monospace, monospace;
         font-size: {round(b * 0.86)}px; color: #777; opacity: 0;
         animation: rise {_RISE}s cubic-bezier(.16,1,.3,1) both; }}
 /* opacity and translateY, and nothing else, ever. A layout or text-reflow
@@ -247,7 +247,7 @@ def render(html: str, work: Path, stem: str) -> dict:
     (work / "index.html").write_text(html)
     for family, path in design.faces().items():
         shutil.copyfile(path, work / "assets" /
-                        ("geist-mono.woff2" if "Mono" in family else "geist.woff2"))
+                        ("zen-mono.woff2" if "Mono" in family else "zen.woff2"))
 
     mp4, first, last = f"{stem}.mp4", f"{stem}-first.jpg", f"{stem}-last.jpg"
     # cwd is the project: the CLI resolves --output against the process directory,
