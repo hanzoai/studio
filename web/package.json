@@ -3,21 +3,21 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "description": "Studio as a specialized chat app — @hanzo/ai + @hanzo/gui talking to the cloud /v1/chat orchestrator, served at studio.hanzo.ai/studio.",
+  "description": "Studio as a specialized chat app \u2014 @hanzo/ai + @hanzo/gui talking to the cloud /v1/chat orchestrator, served at studio.hanzo.ai/studio.",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
     "preview": "vite preview"
   },
   "dependencies": {
-    "react": "^18.3.1",
-    "react-dom": "^18.3.1"
+    "react": "19.2.8",
+    "react-dom": "19.2.8"
   },
   "devDependencies": {
-    "@types/react": "^18.3.12",
-    "@types/react-dom": "^18.3.1",
-    "@vitejs/plugin-react": "^4.3.4",
-    "typescript": "^5.6.3",
-    "vite": "^6.0.7"
+    "@types/react": "19.2.18",
+    "@types/react-dom": "19.2.5",
+    "@vitejs/plugin-react": "^6.0.2",
+    "typescript": "7.0.2",
+    "vite": "^8.2.2"
   }
 }
