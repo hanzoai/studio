@@ -16,7 +16,7 @@ body{background:var(--bg);color:var(--txt);font:400 1rem/1.5 Zen,system-ui,-appl
    elements (the chat aside at translateX) without creating a scroll container that
    would break position:sticky descendants. */
 html,body{overflow-x:clip}
-.serif{font-family:"Iowan Old Style","Palatino Linotype",Georgia,serif}
+.serif{font-family:Zen, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif}
 a{color:inherit}
 header{display:flex;align-items:center;gap:12px;padding:14px 26px;border-bottom:1px solid var(--line);
 position:fixed;top:0;left:0;right:0;background:var(--bg);z-index:30;
@@ -197,7 +197,7 @@ body.immersive #stage{display:block}
 #stage .slide.on{opacity:1}
 #stage .cap{position:absolute;left:48px;bottom:56px;z-index:6;max-width:60vw;text-shadow:0 2px 20px rgba(0,0,0,.6)}
 #stage .cap .k{font-size:.72rem;letter-spacing:.18em;text-transform:uppercase;color:rgba(255,255,255,.75)}
-#stage .cap .t{font-size:2.2rem;font-weight:500;color:#fff;margin-top:6px;font-family:"Iowan Old Style",Georgia,serif}
+#stage .cap .t{font-size:2.2rem;font-weight:500;color:#fff;margin-top:6px;font-family:Zen, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif}
 #stage .cap .tools{display:flex;gap:8px;margin-top:14px;opacity:0;transition:.2s} #stage:hover .cap .tools{opacity:1}
 #stage .nav{position:absolute;top:0;bottom:0;width:16vw;z-index:5;cursor:pointer;display:flex;align-items:center;color:rgba(255,255,255,.0);font-size:2rem;transition:.2s}
 #stage .nav:hover{color:rgba(255,255,255,.9)} #stage .nav.prev{left:0;justify-content:flex-start;padding-left:28px} #stage .nav.next{right:0;justify-content:flex-end;padding-right:28px}
@@ -300,15 +300,15 @@ body.immersive #stage{display:block}
 .pmenu .pm-ck{position:absolute;right:11px;top:50%;transform:translateY(-50%);color:var(--txt);font-size:.82rem}
 .pmenu .pm-empty{padding:10px 11px;color:var(--dim);font-size:.8rem}
 .pmenu .pm-foot{padding:9px 11px 5px;margin-top:4px;border-top:1px solid var(--line);color:var(--dim);font-size:.68rem}
-.pmenu .pm-code-h{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.74rem;color:var(--txt);padding:7px 11px 4px}
-.pmenu .pm-code pre{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.72rem;color:var(--dim);background:#08080b;border:1px solid var(--line);border-radius:8px;padding:9px 11px;margin:2px 8px 4px;white-space:pre-wrap;word-break:break-word}
+.pmenu .pm-code-h{font-family:Zen Mono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;font-size:.74rem;color:var(--txt);padding:7px 11px 4px}
+.pmenu .pm-code pre{font-family:Zen Mono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;font-size:.72rem;color:var(--dim);background:#08080b;border:1px solid var(--line);border-radius:8px;padding:9px 11px;margin:2px 8px 4px;white-space:pre-wrap;word-break:break-word}
 .pmenu .pm-warn{padding:10px 11px;color:var(--warn);font-size:.8rem}
 /* ── Stack detail view ───────────────────────────────────────────────────────── */
 #stackview[hidden]{display:none}
 #svbulk[hidden]{display:none}   /* .row's display:flex would otherwise beat [hidden] */
 .sv-head{display:flex;align-items:center;gap:12px;margin:8px 0 6px;flex-wrap:wrap}
 .sv-back{border:1px solid var(--line);background:var(--panel);color:var(--txt);border-radius:8px;padding:7px 12px;font-size:.85rem;cursor:pointer}
-.sv-name{font-size:1.5rem;font-weight:600;background:none;border:none;border-bottom:1px solid transparent;color:var(--txt);font-family:inherit;padding:2px 2px;min-width:120px;max-width:60vw;flex:1 1 auto}
+.sv-name{font-size:1.5rem;font-weight:600;background:none;border:none;border-bottom:1px solid transparent;color:var(--txt);font-family:Zen, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;padding:2px 2px;min-width:120px;max-width:60vw;flex:1 1 auto}
 .sv-name:hover,.sv-name:focus{border-bottom-color:var(--line);outline:none}
 .sv-count{color:var(--dim);font-size:.82rem}
 .sv-desc{width:100%;max-width:820px;background:none;border:none;color:var(--dim);font:inherit;font-size:.85rem;resize:none;margin:2px 0 10px;outline:none}
@@ -470,8 +470,8 @@ body.immersive #stage{display:block}
 .bld-fi.dir{color:var(--txt)} .bld-fi .ic-svg{font-size:1em;flex:0 0 auto}
 .bld-fi.ind{padding-left:22px}
 .bld-edit{flex:1;min-width:0;display:flex;flex-direction:column;overflow:hidden}
-.bld-eh{padding:8px 14px;border-bottom:1px solid var(--line);color:var(--dim);font-size:.78rem;font-family:ui-monospace,Menlo,monospace;flex:0 0 auto}
-.bld-ecode{flex:1;overflow:auto;margin:0;padding:14px 16px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.8rem;line-height:1.6;color:var(--txt);white-space:pre;background:#050505}
+.bld-eh{padding:8px 14px;border-bottom:1px solid var(--line);color:var(--dim);font-size:.78rem;font-family:Zen Mono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;flex:0 0 auto}
+.bld-ecode{flex:1;overflow:auto;margin:0;padding:14px 16px;font-family:Zen Mono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;font-size:.8rem;line-height:1.6;color:var(--txt);white-space:pre;background:#050505}
 .bld-empty{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;color:var(--dim);padding:24px;text-align:center}
 .bld-empty .ic-svg{font-size:2.2rem}
 .bld-empty .big{font-size:.98rem;color:var(--txt)}
@@ -2802,8 +2802,8 @@ async function bldReadme(rec){ const src=rec.sources||{}; const ctx=[rec.name,sr
     const r=await fetch(ep,{method:'POST',headers:genHeaders(),body:JSON.stringify({question:prompt,stream:false,messages:[{role:'system',content:'You are a brand and design-system architect. Reply in Markdown only, under 200 words.'},{role:'user',content:prompt}]})});
     if(r.ok){ const j=await r.json(); const t=((j&&(j.reply||j.answer||j.content||j.text))||'').trim(); if(t)return t+'\n\n<!-- synthesized by Hanzo AI · '+ep+' -->\n'; } }catch(_){} }
   return `# ${rec.name}\n\n${src.notes||'A cohesive design system for your brand.'}\n\n## Sources\n`+((src.github||[]).map(u=>'- GitHub: '+u).concat((src.figs||[]).map(f=>'- Figma: '+f+' (parsed locally)'),(src.assets||[]).map(f=>'- Asset: '+f)).join('\n')||'- Seeded from the Hanzo brand basis (hanzoai/brand · @hanzo/ui)')+`\n\n## Applying it\nEvery Studio generation (image · video · 3D · mockup) uses these tokens, type and treatments as its style basis when this design system is selected in the composer.\n\n_Draft synthesized locally from your inputs. Full AI synthesis (crawl · repos · .fig) runs on Hanzo AI — see the roadmap._\n`; }
-function bldTokens(rec){ const s=rec.sw||['#0a0a0a','#ededed','#6aa5ff','#888888']; return `:root{\n  --bg:${s[0]};\n  --fg:${s[1]};\n  --accent:${s[2]};\n  --muted:${s[3]||'#888'};\n  --radius:12px;\n  --space:8px;\n  --font:'${rec.type||'Zen'}',system-ui,sans-serif;\n}`; }
-function bldStyles(rec){ return `/* ${rec.name} — base styles */\nbody{background:var(--bg);color:var(--fg);font-family:var(--font);line-height:1.5}\na{color:var(--accent)}\n.btn{border-radius:var(--radius);padding:calc(var(--space)*1.25) calc(var(--space)*2)}`; }
+function bldTokens(rec){ const s=rec.sw||['#0a0a0a','#ededed','#6aa5ff','#888888']; return `:root{\n  --bg:${s[0]};\n  --fg:${s[1]};\n  --accent:${s[2]};\n  --muted:${s[3]||'#888'};\n  --radius:12px;\n  --space:8px;\n  --font:Zen, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif{rec.type||'Zen'}',system-ui,sans-serif;\n}`; }
+function bldStyles(rec){ return `/* ${rec.name} — base styles */\nbody{background:var(--bg);color:var(--fg);font-family:Zen, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;line-height:1.5}\na{color:var(--accent)}\n.btn{border-radius:var(--radius);padding:calc(var(--space)*1.25) calc(var(--space)*2)}`; }
 function bldFonts(rec){ return `/* ${rec.name} — type\n * Display / UI: ${rec.type||'Zen'}\n * Weights: 400 · 500 · 600 · 700\n */`; }
 function bldSpecimens(rec){ return `# Foundation specimens — ${rec.name}\n\n## Color\n`+(rec.sw||[]).map((c,i)=>'- token '+(i+1)+': `'+c+'`').join('\n')+`\n\n## Type\n${rec.type||'Zen'} — display, heading, body, caption.\n\n## Space & radius\n8px base grid · 12px radius.\n`; }
 function bldSkill(rec){ return `# SKILL: ${rec.name}\n\nWhen generating for this brand, apply:\n- Palette: ${(rec.sw||[]).join(', ')}\n- Type: ${rec.type||'Zen'}\n- Voice & treatment per readme.md\n\nStudio's composer selects this as the DESIGN SYSTEM basis for every generation.\n`; }
