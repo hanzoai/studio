@@ -8,14 +8,14 @@
     "build": "node build.mjs"
   },
   "dependencies": {
-    "@hanzo/brand": "1.4.8",
-    "@hanzo/design": "0.5.24",
+    "@hanzo/brand": "^1.4.8",
+    "@hanzo/design": "^0.5.25",
     "@hanzogui/shell": "8.3.1",
     "react": "19.2.8",
     "react-dom": "19.2.8"
   },
   "devDependencies": {
-    "@hanzo/iam": "0.21.17",
+    "@hanzo/iam": "^0.21.18",
     "esbuild": "^0.28.2"
   }
 }
