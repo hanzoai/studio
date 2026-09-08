@@ -43,9 +43,9 @@ concurrency:
 jobs:
   build:
     # Must name a label a runner ACTUALLY advertises. The git-runners offer
-    # hanzo-build-linux-amd64; a label nothing offers does not fail, it queues
+    # linux-amd64; a label nothing offers does not fail, it queues
     # until the 24h timeout — silence, not an error.
-    runs-on: [hanzo-build-linux-amd64]
+    runs-on: [linux-amd64]
     steps:
       - uses: actions/checkout@v4
 
