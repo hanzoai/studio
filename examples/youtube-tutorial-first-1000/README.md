@@ -1,6 +1,6 @@
 # How to Make Your First $1,000 With Hanzo.ai App Builder
 
-A faceless YouTube tutorial, 7:10 at 1920×1080 and 30 fps, built from real Hanzo screens. The Studio graph that produces this kind of video is `user/default/workflows/youtube-tutorial-hanzo-engine.json`.
+A faceless YouTube tutorial, 6:58 at 1920×1080 and 30 fps, built from real Hanzo screens. The Studio graph that produces this kind of video is `user/default/workflows/youtube-tutorial-hanzo-engine.json`.
 
 | File | Holds |
 |---|---|
