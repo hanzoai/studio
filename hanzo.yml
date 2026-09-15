@@ -1,7 +1,7 @@
 # Canonical CI/CD config for hanzoai/studio — read by both the hanzoai/ci
-# reusable workflow (.github/workflows/cicd.yml) and platform.hanzo.ai.
-# One image, unit gates, and a main-branch rollout onto the existing
-# `studio` operator Service CR (universe: infra/k8s/operator/crs/studio.yaml).
+# reusable workflow (.hanzo/workflows/cicd.yml) and platform.hanzo.ai.
+# One image and unit gates. Production runs the image pinned by tag and digest
+# in universe charts/app/values/hanzo/studio.yaml.
 
 images:
   - name: studio
@@ -28,8 +28,8 @@ test:
         tests-unit/documents_test
 
 # KMS (kms.hanzo.ai, Universal Auth) supplies the GHCR push token and the
-# target kubeconfig at run time. Only KMS_CLIENT_ID/KMS_CLIENT_SECRET live in
-# GitHub; everything else is fetched here.
+# target kubeconfig at run time. Only KMS_CLIENT_ID/KMS_CLIENT_SECRET are CI
+# secrets; everything else is fetched here.
 kms:
   path: /deploy
   environment: prod
