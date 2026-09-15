@@ -1,0 +1,7 @@
+{
+  "scene": "02-system",
+  "duration_s": 11.5,
+  "rules": ["viewport-change", "multi-phase-camera", "stat-bars-and-fills", "kinetic-beat-slam"],
+  "exit": { "vector": "none, near 0 px/s (camera settles scale 1.0 to 1.02 over 11.1 to 11.5s, sine.out)", "still_moving": false },
+  "entry": { "vector": "up 128 px/s (stations y 16 to 0 over 0.45s power3.out); camera at rest scale 1.4", "from_rest": true }
+}

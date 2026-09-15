@@ -1,0 +1,139 @@
+<template>
+<style>
+@font-face { font-family: "Zen"; src: url('assets/fonts/zen.woff2') format('woff2'); font-weight: 100 900; font-display: block; }
+@font-face { font-family: "Zen Mono"; src: url('assets/fonts/zen-mono.woff2') format('woff2'); font-weight: 100 900; font-display: block; }
+#root { position: absolute; inset: 0; overflow: hidden; font-family: "Zen", sans-serif; color: #F6F6F3; }
+[id="13-recap-ground"] { position: absolute; inset: 0; background: #0B0B0D; }
+[id="13-recap-scene"] { position: absolute; inset: 0; overflow: hidden; }
+[id="13-recap-world"] { position: absolute; inset: 0; transform-origin: 50% 50%; will-change: transform; }
+
+[id="13-recap-win"] { position: absolute; left: 1040px; top: 170px; width: 800px; border: 1px solid rgba(246,246,243,0.14); border-radius: 14px; background: #141416; overflow: hidden; }
+[id="13-recap-bar"] { height: 44px; display: flex; align-items: center; gap: 8px; padding: 0 18px; border-bottom: 1px solid rgba(246,246,243,0.14); box-sizing: border-box; }
+[id="13-recap-bar"] i { width: 11px; height: 11px; border-radius: 50%; background: #6E6E73; opacity: 0.6; }
+[id="13-recap-win"] img { display: block; width: 800px; height: 500px; }
+
+[id="13-recap-label"] { position: absolute; left: 120px; top: 120px; font-family: "Zen Mono", monospace; font-size: 20px; font-weight: 500; letter-spacing: 0.14em; text-transform: uppercase; color: #6E6E73; line-height: 1; }
+[id="13-recap-steps"] { position: absolute; left: 120px; top: 170px; width: 840px; }
+[class~="13-recap-step"] { display: flex; align-items: baseline; gap: 28px; height: 72px; white-space: nowrap; }
+[class~="13-recap-num"] { width: 44px; font-family: "Zen Mono", monospace; font-size: 22px; font-weight: 500; color: #6E6E73; letter-spacing: 0.06em; }
+[class~="13-recap-txt"] { font-size: 46px; font-weight: 500; letter-spacing: -0.02em; line-height: 1; color: #F6F6F3; }
+
+[id="13-recap-one"] { position: absolute; left: 0; right: 0; top: 330px; text-align: center; }
+[class~="13-recap-big"] { font-size: 112px; font-weight: 500; letter-spacing: -0.03em; line-height: 1.1; color: #F6F6F3; }
+
+[id="13-recap-close"] { position: absolute; left: 0; right: 0; top: 96px; text-align: center; }
+[class~="13-recap-line"] { font-size: 112px; font-weight: 500; letter-spacing: -0.03em; line-height: 1.16; color: #F6F6F3; will-change: transform, filter; }
+[id="13-recap-c3"] { color: #37D77C; }
+[id="13-recap-brand"] { margin-top: 56px; display: flex; align-items: center; justify-content: center; gap: 24px; }
+[id="13-recap-brand"] svg { width: 64px; height: 64px; }
+[id="13-recap-brand"] path { fill: #F6F6F3; }
+[id="13-recap-url"] { font-size: 48px; font-weight: 500; letter-spacing: -0.02em; color: #F6F6F3; line-height: 1; }
+</style>
+<div id="root" data-composition-id="13-recap" data-width="1920" data-height="1080">
+  <div class="clip" id="13-recap-ground" data-start="0" data-duration="30" data-track-index="0"></div>
+  <div class="clip" id="13-recap-scene" data-start="0" data-duration="30" data-track-index="1">
+    <div id="13-recap-world">
+      <div id="13-recap-win">
+        <div id="13-recap-bar"><i></i><i></i><i></i></div>
+        <img src="assets/shots/template-saas-landing.webp" alt="">
+      </div>
+      <div id="13-recap-label">The system</div>
+      <div id="13-recap-steps"></div>
+    </div>
+
+    <div id="13-recap-one">
+      <div class="13-recap-big" id="13-recap-o1">One problem.</div>
+      <div class="13-recap-big" id="13-recap-o2">One business.</div>
+    </div>
+
+    <div id="13-recap-close">
+      <div class="13-recap-line" id="13-recap-c1">Find the problem.</div>
+      <div class="13-recap-line" id="13-recap-c2">Build the solution.</div>
+      <div class="13-recap-line" id="13-recap-c3">Get paid.</div>
+      <div class="13-recap-line" id="13-recap-c4">Repeat.</div>
+      <div id="13-recap-brand">
+        <svg viewBox="0 0 67 67" aria-label="Hanzo">
+          <path d="M22.21 67V44.6369H0V67H22.21Z"/>
+          <path d="M66.7038 22.3184H22.2534L0.0878906 44.6367H44.4634L66.7038 22.3184Z"/>
+          <path d="M22.21 0H0V22.3184H22.21V0Z"/>
+          <path d="M66.7198 0H44.5098V22.3184H66.7198V0Z"/>
+          <path d="M66.7198 67V44.6369H44.5098V67H66.7198Z"/>
+        </svg>
+        <div id="13-recap-url">hanzo.ai</div>
+      </div>
+    </div>
+  </div>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+<script>
+(() => {
+  const D = 30;
+  const EASE = "power3.out";
+  const $ = (id) => document.getElementById(id);
+  const tl = gsap.timeline({ paused: true });
+
+  // Virtual camera: one wrapper, one writer.
+  const world = $("13-recap-world");
+  const cam = { scale: 1, y: 0 };
+  const applyCamera = () => { world.style.transform = `translateY(${cam.y}px) scale(${cam.scale})`; };
+  applyCamera();
+
+  // Scene 1: the finished site sits dim behind; the label names the list.
+  const win = $("13-recap-win");
+  tl.fromTo(win, { opacity: 0, x: 40 }, { opacity: 0.45, x: 0, duration: 0.7, ease: EASE }, 0);
+  tl.fromTo($("13-recap-label"), { opacity: 0, y: 12 }, { opacity: 1, y: 0, duration: 0.45, ease: EASE }, 0.2);
+  tl.to(cam, { scale: 1.04, y: -8, duration: 13.5, ease: "sine.inOut", onUpdate: applyCamera }, 0.8);
+
+  // Scene 2: nine steps stack on their spoken words; the current step holds ink, earlier steps settle to mid.
+  const STEPS = [
+    ["Find a visible problem", 1.44],
+    ["Offer a clear result", 3.60],
+    ["Collect a deposit", 4.96],
+    ["Build the first draft in Hanzo", 6.24],
+    ["Send for specific feedback", 8.24],
+    ["Revise once", 9.92],
+    ["Test everything", 11.04],
+    ["Collect final payment", 12.00],
+    ["Offer monthly support", 13.52],
+  ];
+  const list = $("13-recap-steps");
+  const txts = STEPS.map(([label, t], i) => {
+    const row = document.createElement("div");
+    row.className = "13-recap-step";
+    row.innerHTML = '<div class="13-recap-num">0' + (i + 1) + '</div><div class="13-recap-txt">' + label + "</div>";
+    list.appendChild(row);
+    tl.fromTo(row, { opacity: 0, y: 26 }, { opacity: 1, y: 0, duration: 0.4, ease: EASE }, t - 0.12);
+    return row.lastChild;
+  });
+  txts.forEach((el, i) => {
+    if (i < txts.length - 1) tl.to(el, { color: "#A1A1AA", duration: 0.35, ease: "power2.out" }, STEPS[i + 1][1] - 0.12);
+  });
+
+  // Scene 3: "a giant agency" steps back; one problem, one business.
+  tl.to(world, { opacity: 0.06, duration: 0.6, ease: "power2.out" }, 15.0);
+  tl.fromTo($("13-recap-o1"), { opacity: 0, scale: 1.3, filter: "blur(10px)" }, { opacity: 1, scale: 1, filter: "blur(0px)", duration: 0.5, ease: "power4.out" }, 17.76);
+  tl.fromTo($("13-recap-o2"), { opacity: 0, x: -200 }, { opacity: 1, x: 0, duration: 0.45, ease: "expo.out" }, 19.52);
+
+  // Zoom-through clears everything before the close.
+  const CUT = 20.75;
+  tl.to(cam, { scale: 1.25, duration: 0.22, ease: "power3.in", onUpdate: applyCamera }, CUT - 0.22);
+  tl.to($("13-recap-one"), { scale: 1.2, duration: 0.22, ease: "power3.in" }, CUT - 0.22);
+  tl.to([world, $("13-recap-one")], { opacity: 0, filter: "blur(10px)", duration: 0.22, ease: "none" }, CUT - 0.22);
+
+  // Scene 4: the close slams in on one beat grid, each line its own entrance.
+  const PULSE = 0.6;
+  const BEATS = [CUT + 0.1, CUT + 0.1 + PULSE * 2, CUT + 0.1 + PULSE * 4, CUT + 0.1 + PULSE * 6];
+  tl.fromTo($("13-recap-c1"), { opacity: 0, scale: 1.4, filter: "blur(12px)" }, { opacity: 1, scale: 1, filter: "blur(0px)", duration: 0.5, ease: "power4.out" }, BEATS[0]);
+  tl.fromTo($("13-recap-c2"), { opacity: 0, x: -320 }, { opacity: 1, x: 0, duration: 0.45, ease: "expo.out" }, BEATS[1]);
+  tl.fromTo($("13-recap-c3"), { opacity: 0, y: 90, rotation: 4 }, { opacity: 1, y: 0, rotation: 0, duration: 0.55, ease: "circ.out" }, BEATS[2]);
+  tl.fromTo($("13-recap-c4"), { opacity: 0, scale: 0.6 }, { opacity: 1, scale: 1, duration: 0.55, ease: "back.out(1.8)" }, BEATS[3]);
+
+  // Brand lockup lands after "app builder" and everything is still from 27.0 to the end.
+  tl.fromTo($("13-recap-brand"), { opacity: 0, y: 24 }, { opacity: 1, y: 0, duration: 0.6, ease: EASE }, 25.6);
+
+  tl.set({}, {}, D);
+  window.__timelines = window.__timelines || {};
+  window.__timelines["13-recap"] = tl;
+})();
+</script>
+</template>

@@ -1,0 +1,7 @@
+{
+  "scene": "03-outcome",
+  "duration_s": 40,
+  "rules": ["kinetic-beat-slam", "discrete-text-sequence"],
+  "exit": { "vector": "scale lean-in ~0.0009/s at 40s (world scale 1 to 1.035 sine.inOut, settled)", "still_moving": false },
+  "entry": { "vector": "left 240 px/s (chat window x 60 to 0 over 1.0s power3.out); AI word scale 1.4 to 1 with blur", "from_rest": false }
+}

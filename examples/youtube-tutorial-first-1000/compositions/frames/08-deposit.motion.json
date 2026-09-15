@@ -1,0 +1,7 @@
+{
+  "scene": "08-deposit",
+  "duration_s": 15.5,
+  "rules": ["counting-dynamic-scale", "stat-bars-and-fills", "multi-phase-camera"],
+  "exit": { "vector": "none, 0 px/s (lean-in to scale 1.04 settled at 14.0s, frame holds still)", "still_moving": false },
+  "entry": { "vector": "up 144 px/s (panel y 24→0 over 0.5s power3.out)", "from_rest": false }
+}

@@ -1,0 +1,7 @@
+{
+  "scene": "13-recap",
+  "duration_s": 30,
+  "rules": ["kinetic-beat-slam", "viewport-change"],
+  "exit": { "vector": "none, 0 px/s (brand lockup settled at 26.2s; still from 26.2 to 30.0)", "still_moving": false },
+  "entry": { "vector": "left 171 px/s (template window x 40 to 0 over 0.7s power3.out)", "from_rest": false }
+}

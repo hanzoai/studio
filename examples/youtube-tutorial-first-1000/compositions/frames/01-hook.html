@@ -1,0 +1,115 @@
+<template>
+<style>
+@font-face { font-family: "Zen"; src: url('assets/fonts/zen.woff2') format('woff2'); font-weight: 100 900; font-display: block; }
+@font-face { font-family: "Zen Mono"; src: url('assets/fonts/zen-mono.woff2') format('woff2'); font-weight: 100 900; font-display: block; }
+#root { position: absolute; inset: 0; overflow: hidden; font-family: "Zen", sans-serif; color: #F6F6F3; }
+[id="01-hook-ground"] { position: absolute; inset: 0; background: #0B0B0D; }
+[id="01-hook-scene"] { position: absolute; inset: 0; overflow: hidden; }
+[id="01-hook-world"] { position: absolute; inset: 0; transform-origin: 50% 50%; will-change: transform; }
+[id="01-hook-window"] { position: absolute; left: 800px; top: 70px; width: 1200px; border: 1px solid rgba(246,246,243,0.14); border-radius: 14px; background: #141416; overflow: hidden; }
+[id="01-hook-bar"] { height: 44px; display: flex; align-items: center; gap: 8px; padding: 0 18px; border-bottom: 1px solid rgba(246,246,243,0.14); }
+[id="01-hook-bar"] i { width: 11px; height: 11px; border-radius: 50%; background: #6E6E73; opacity: 0.6; }
+[id="01-hook-addr"] { margin-left: 18px; font-family: "Zen Mono", monospace; font-size: 15px; color: #6E6E73; letter-spacing: 0.04em; }
+[id="01-hook-window"] img { display: block; width: 1200px; height: 750px; }
+[id="01-hook-copy"] { position: absolute; left: 80px; top: 250px; width: 660px; }
+[class~="01-hook-line"] { font-weight: 500; font-size: 62px; line-height: 1.06; letter-spacing: -0.02em; margin-bottom: 26px; will-change: transform, filter; }
+[id="01-hook-beats"], [id="01-hook-turn"] { position: absolute; left: 0; top: 0; width: 660px; will-change: transform, filter; }
+[id="01-hook-ticks"] { position: absolute; left: 80px; top: 180px; display: flex; gap: 12px; }
+[id="01-hook-ticks"] i { display: block; width: 24px; height: 3px; background: #6E6E73; opacity: 0.25; }
+[id="01-hook-hud"] { position: absolute; inset: 0; pointer-events: none; }
+[id="01-hook-card"] { position: absolute; left: 80px; bottom: 200px; width: 760px; padding: 30px 36px 32px; background: #141416; border: 1px solid rgba(246,246,243,0.14); border-radius: 14px; }
+[class~="01-hook-over"] { font-weight: 500; font-size: 40px; line-height: 1.15; letter-spacing: -0.02em; }
+[id="01-hook-price"] { margin-top: 18px; font-weight: 500; font-size: 92px; line-height: 0.95; letter-spacing: -0.03em; color: #37D77C; transform-origin: left center; }
+</style>
+<div id="root" data-composition-id="01-hook" data-width="1920" data-height="1080" data-duration="36">
+  <div class="clip" id="01-hook-ground" data-start="0" data-duration="36" data-track-index="0"></div>
+  <div class="clip" id="01-hook-scene" data-start="0" data-duration="36" data-track-index="1">
+    <div id="01-hook-world">
+      <div id="01-hook-window">
+        <div id="01-hook-bar"><i></i><i></i><i></i><span id="01-hook-addr">hanzo.ai</span></div>
+        <img src="assets/shots/builder.webp" alt="">
+      </div>
+      <div id="01-hook-ticks"><i></i><i></i><i></i></div>
+      <div id="01-hook-copy">
+        <div id="01-hook-beats">
+          <div class="01-hook-line" id="01-hook-b1">A fake SaaS.</div>
+          <div class="01-hook-line" id="01-hook-b2">A dashboard nobody asked for.</div>
+          <div class="01-hook-line" id="01-hook-b3">A landing page that never gets published.</div>
+        </div>
+        <div id="01-hook-turn">
+          <div class="01-hook-line" id="01-hook-t1">Find a real business.</div>
+          <div class="01-hook-line" id="01-hook-t2">Build them something useful.</div>
+          <div class="01-hook-line" id="01-hook-t3">Charge for the result.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="clip" id="01-hook-hud" data-start="0" data-duration="36" data-track-index="2">
+    <div id="01-hook-card">
+      <div class="01-hook-over" id="01-hook-o1">Stop building random AI apps.</div>
+      <div class="01-hook-over" id="01-hook-o2">Build something a business will pay for.</div>
+      <div id="01-hook-price">$1,000</div>
+    </div>
+  </div>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+<script>
+(() => {
+  const D = 35.5;
+  const $ = (id) => document.getElementById(id);
+  const tl = gsap.timeline({ paused: true });
+
+  // Virtual camera — one wrapper, one writer. viewport-change: T = -offset × S.
+  const world = $("01-hook-world");
+  const cam = { scale: 1, x: 0, y: 0 };
+  const applyCamera = () => { world.style.transform = `translate(${cam.x}px, ${cam.y}px) scale(${cam.scale})`; };
+  applyCamera();
+
+  // Builder capture dim behind from the first frame.
+  const win = $("01-hook-window");
+  tl.fromTo(win, { opacity: 0 }, { opacity: 0.35, duration: 0.6, ease: "power2.out" }, 0);
+
+  // Beat grid — three random projects, one onset array, three entrances.
+  const PULSE = 0.5;
+  const BEATS = [PULSE * 4, PULSE * 7, PULSE * 10];
+  tl.fromTo($("01-hook-b1"), { scale: 1.4, filter: "blur(10px)", opacity: 0 }, { scale: 1, filter: "blur(0px)", opacity: 1, duration: 0.5, ease: "power4.out" }, BEATS[0]);
+  tl.fromTo($("01-hook-b2"), { x: -320, opacity: 0 }, { x: 0, opacity: 1, duration: 0.45, ease: "expo.out" }, BEATS[1]);
+  tl.fromTo($("01-hook-b3"), { y: 90, rotation: 4, opacity: 0 }, { y: 0, rotation: 0, opacity: 1, duration: 0.55, ease: "circ.out" }, BEATS[2]);
+  gsap.utils.toArray($("01-hook-ticks").children).forEach((tick, i) => {
+    tl.to(tick, { opacity: 1, duration: 0.08, ease: "none" }, BEATS[i]);
+    tl.to(tick, { opacity: 0.25, duration: 0.3, ease: "none" }, BEATS[i] + 0.08);
+  });
+
+  // Wipe → the turn. Zoom-through: exit accelerates toward the viewer, hard cut at peak blur, entry settles in.
+  const beats = $("01-hook-beats"), turn = $("01-hook-turn");
+  const CUT = 7.4;
+  tl.set(turn, { opacity: 0 }, 0);
+  tl.to(beats, { scale: 1.2, filter: "blur(10px)", duration: 0.2, ease: "power3.in" }, CUT - 0.2);
+  tl.to(beats, { opacity: 0.15, duration: 0.2, ease: "none" }, CUT - 0.2);
+  tl.set(beats, { opacity: 0 }, CUT);
+  tl.set([$("01-hook-t2"), $("01-hook-t3")], { opacity: 0 }, 0);
+  tl.set(turn, { opacity: 0.15, scale: 0.75, filter: "blur(10px)" }, CUT);
+  tl.to(turn, { opacity: 1, scale: 1, filter: "blur(0px)", duration: 0.5, ease: "expo.out" }, CUT);
+  tl.fromTo($("01-hook-t2"), { y: 30, opacity: 0 }, { y: 0, opacity: 1, duration: 0.5, ease: "power3.out" }, 9.6);
+  tl.fromTo($("01-hook-t3"), { y: 30, opacity: 0 }, { y: 0, opacity: 1, duration: 0.5, ease: "power3.out" }, 11.8);
+
+  // Slow push under the held title, then the builder brightens and the camera lands on its prompt field.
+  tl.to(cam, { scale: 1.04, duration: 10, ease: "sine.inOut", onUpdate: applyCamera }, 12.5);
+  tl.to(win, { opacity: 1, duration: 1.4, ease: "power2.inOut" }, 22.4);
+  const TARGET_SCALE = 1.55, OFF_X = 440, OFF_Y = -17.5;
+  tl.to(cam, { scale: TARGET_SCALE, x: -OFF_X * TARGET_SCALE, y: -OFF_Y * TARGET_SCALE, duration: 2.0, ease: "power3.inOut", onUpdate: applyCamera }, 23.6);
+
+  // Overlay card — lands with the last sentence, holds.
+  const card = $("01-hook-card");
+  tl.set([$("01-hook-o1"), $("01-hook-o2"), $("01-hook-price")], { opacity: 0 }, 0);
+  tl.fromTo(card, { opacity: 0, y: 24 }, { opacity: 1, y: 0, duration: 0.5, ease: "power3.out" }, 26.8);
+  tl.fromTo($("01-hook-o1"), { y: 18, opacity: 0 }, { y: 0, opacity: 1, duration: 0.45, ease: "power3.out" }, 27.0);
+  tl.fromTo($("01-hook-o2"), { x: -60, opacity: 0 }, { x: 0, opacity: 1, duration: 0.45, ease: "expo.out" }, 29.2);
+  tl.fromTo($("01-hook-price"), { scale: 0.7, opacity: 0 }, { scale: 1, opacity: 1, duration: 0.6, ease: "back.out(1.7)" }, 31.0);
+
+  tl.set({}, {}, D);
+  window.__timelines = window.__timelines || {};
+  window.__timelines["01-hook"] = tl;
+})();
+</script>
+</template>

@@ -1,0 +1,7 @@
+{
+  "scene": "06-offer",
+  "duration_s": 39,
+  "rules": ["counting-dynamic-scale", "stat-bars-and-fills", "svg-path-draw", "card-morph-anchor", "multi-phase-camera"],
+  "exit": { "vector": "none, 0 px/s (world push 1.0 to 1.025 sine.inOut settles at 39.0s; hero and strike list hold)", "still_moving": false },
+  "entry": { "vector": "up 200 px/s (cards y 40 to 0 over 0.6s power3.out from 0.3s, 0.08s stagger)", "from_rest": true }
+}

@@ -1,0 +1,141 @@
+<template>
+<style>
+@font-face { font-family: "Zen"; src: url('assets/fonts/zen.woff2') format('woff2'); font-weight: 100 900; font-display: block; }
+@font-face { font-family: "Zen Mono"; src: url('assets/fonts/zen-mono.woff2') format('woff2'); font-weight: 100 900; font-display: block; }
+#root { position: absolute; inset: 0; overflow: hidden; font-family: "Zen", sans-serif; color: #F6F6F3; }
+[id="10-draft-ground"] { position: absolute; inset: 0; background: #0B0B0D; }
+[id="10-draft-scene"] { position: absolute; inset: 0; overflow: hidden; }
+[class~="10-draft-label"] { position: absolute; font-family: "Zen Mono", monospace; font-size: 20px; font-weight: 500; letter-spacing: 0.14em; text-transform: uppercase; color: #6E6E73; line-height: 1; white-space: nowrap; }
+
+[id="10-draft-not"] { position: absolute; left: 80px; top: 134px; }
+[id="10-draft-nottext"] { font-weight: 500; font-size: 46px; line-height: 1.1; letter-spacing: -0.02em; color: #A1A1AA; white-space: pre; }
+[id="10-draft-strike"] { position: absolute; left: -4px; right: -4px; top: 54%; height: 4px; background: #A1A1AA; transform-origin: left center; }
+
+[id="10-draft-card"] { position: absolute; left: 80px; top: 290px; width: 820px; height: 386px; box-sizing: border-box; background: #141416; border: 1px solid rgba(246,246,243,0.14); border-radius: 14px; }
+[id="10-draft-msg"] { position: absolute; left: 44px; top: 80px; right: 44px; font-family: "Zen Mono", monospace; font-size: 30px; line-height: 45px; color: #F6F6F3; white-space: pre-wrap; }
+[id="10-draft-caret"] { display: inline-block; width: 14px; height: 32px; margin-left: 2px; vertical-align: -5px; background: #A1A1AA; }
+
+[id="10-draft-asks"] { position: absolute; left: 80px; top: 712px; width: 820px; display: flex; flex-wrap: wrap; gap: 12px; }
+[class~="10-draft-ask"] { font-family: "Zen Mono", monospace; font-size: 18px; font-weight: 500; letter-spacing: 0.12em; text-transform: uppercase; color: #F6F6F3; background: #141416; border: 1px solid rgba(246,246,243,0.14); border-radius: 999px; padding: 12px 20px; line-height: 1; }
+
+[id="10-draft-window"] { position: absolute; left: 1040px; top: 70px; width: 800px; border: 1px solid rgba(246,246,243,0.14); border-radius: 14px; background: #141416; overflow: hidden; }
+[id="10-draft-bar"] { height: 40px; display: flex; align-items: center; gap: 8px; padding: 0 16px; border-bottom: 1px solid rgba(246,246,243,0.14); }
+[id="10-draft-bar"] i { width: 10px; height: 10px; border-radius: 50%; background: #6E6E73; opacity: 0.6; }
+[id="10-draft-addr"] { margin-left: 16px; font-family: "Zen Mono", monospace; font-size: 14px; color: #6E6E73; letter-spacing: 0.04em; }
+[id="10-draft-window"] img { display: block; width: 800px; height: 500px; }
+
+[class~="10-draft-q"] { position: absolute; left: 1040px; height: 36px; display: flex; align-items: center; gap: 18px; font-size: 28px; line-height: 1; letter-spacing: -0.01em; white-space: nowrap; transform-origin: left center; }
+[class~="10-draft-q"] b { display: block; width: 14px; height: 14px; box-sizing: border-box; border: 2px solid #A1A1AA; flex: none; }
+</style>
+
+<div id="root" data-composition-id="10-draft" data-width="1920" data-height="1080" data-duration="27.5">
+  <div class="clip" id="10-draft-ground" data-start="0" data-duration="27.5" data-track-index="0"></div>
+
+  <div class="clip" id="10-draft-scene" data-start="0" data-duration="27.5" data-track-index="1">
+    <div class="10-draft-label" id="10-draft-l0" style="left:80px;top:96px">Not this</div>
+    <div id="10-draft-not"><span id="10-draft-nottext"></span><div id="10-draft-strike"></div></div>
+
+    <div class="10-draft-label" id="10-draft-l1" style="left:80px;top:252px">Send this</div>
+    <div id="10-draft-card">
+      <div class="10-draft-label" style="left:44px;top:36px">Message</div>
+      <div id="10-draft-msg"><span id="10-draft-typed"></span><span id="10-draft-caret"></span></div>
+    </div>
+
+    <div id="10-draft-asks">
+      <div class="10-draft-ask" id="10-draft-a0">Services</div>
+      <div class="10-draft-ask" id="10-draft-a1">Photos</div>
+      <div class="10-draft-ask" id="10-draft-a2">Contact info</div>
+      <div class="10-draft-ask" id="10-draft-a3">Booking CTA</div>
+    </div>
+
+    <div id="10-draft-window">
+      <div id="10-draft-bar"><i></i><i></i><i></i><span id="10-draft-addr">First draft</span></div>
+      <img src="assets/shots/template-saas-landing.webp" alt="">
+    </div>
+
+    <div class="10-draft-label" id="10-draft-l2" style="left:1040px;top:640px">Questions</div>
+    <div class="10-draft-q" id="10-draft-q0" style="top:676px"><b></b>Is the information accurate?</div>
+    <div class="10-draft-q" id="10-draft-q1" style="top:718px"><b></b>Are the services correct?</div>
+    <div class="10-draft-q" id="10-draft-q2" style="top:760px"><b></b>Replace any photos?</div>
+    <div class="10-draft-q" id="10-draft-q3" style="top:802px"><b></b>Is the booking link right?</div>
+    <div class="10-draft-q" id="10-draft-q4" style="top:844px"><b></b>Phone number and email correct?</div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+<script>
+(() => {
+  const D = 27;
+  const $ = (id) => document.getElementById(id);
+  const EASE = "power3.out";
+  const tl = gsap.timeline({ paused: true });
+
+  // Word-synced typing: [time, chars] keyframes from the voice word timings.
+  const NOT = "Here is the final site.";
+  const NOT_KF = [[3.52,0],[3.76,4],[3.76,5],[3.92,7],[3.92,8],[4.16,11],[4.16,12],[4.4,17],[4.4,18],[4.8,23]];
+  const MSG = "I put together the first draft. The structure is in place, and now I'd love your feedback on the services, photos, contact info, and booking call-to-action before I do the final polish.";
+  const MSG_KF = [[5.2,0],[5.36,1],[5.36,2],[5.52,5],[5.52,6],[5.84,14],[5.84,15],[6.08,18],[6.08,19],[6.32,24],[6.32,25],[6.86,31],[6.96,32],[7.12,35],[7.12,36],[7.52,45],[7.52,46],[7.68,48],[7.68,49],[7.92,51],[7.92,52],[8.16,58],[8.16,59],[8.32,62],[8.32,63],[8.56,66],[8.56,67],[8.88,70],[8.88,71],[9.04,75],[9.04,76],[9.2,80],[9.2,81],[9.68,89],[9.68,90],[9.76,92],[9.76,93],[9.92,96],[9.92,97],[10.64,106],[10.64,107],[11.2,114],[11.2,115],[11.6,122],[11.6,123],[12.0,128],[12.0,129],[12.16,132],[12.16,133],[12.56,140],[12.56,141],[13.28,155],[13.28,156],[13.52,162],[13.52,163],[13.68,164],[13.68,165],[13.84,167],[13.84,168],[14.08,171],[14.08,172],[14.4,177],[14.4,178],[14.9,185]];
+
+  const wrap = (s, n) => {
+    let out = "", len = 0;
+    for (const w of s.split(" ")) {
+      if (!len) { out += w; len = w.length; }
+      else if (len + 1 + w.length > n) { out += "\n" + w; len = w.length; }
+      else { out += " " + w; len += 1 + w.length; }
+    }
+    return out;
+  };
+  const at = (kf, t) => {
+    if (t <= kf[0][0]) return 0;
+    for (let i = 1; i < kf.length; i++) {
+      const [a, na] = kf[i - 1], [b, nb] = kf[i];
+      if (t < b) return b === a ? nb : Math.floor(na + (nb - na) * (t - a) / (b - a));
+    }
+    return kf[kf.length - 1][1];
+  };
+  const MSG_W = wrap(MSG, 34);
+  const nottext = $("10-draft-nottext"), typed = $("10-draft-typed"), caret = $("10-draft-caret");
+
+  // One clock drives both typed lines, so any seek renders the same frame.
+  const clock = { t: 0 };
+  const render = () => {
+    const t = clock.t;
+    nottext.textContent = NOT.slice(0, at(NOT_KF, t));
+    typed.textContent = MSG_W.slice(0, at(MSG_KF, t));
+    const typing = t >= 5.2 && t < 14.9;
+    caret.style.opacity = (typing || Math.floor(t / 0.53) % 2 === 0) ? 1 : 0;
+  };
+  render();
+  tl.to(clock, { t: D, duration: D, ease: "none", onUpdate: render }, 0);
+
+  // The draft preview establishes and leans in slowly under the whole shot.
+  const win = $("10-draft-window");
+  tl.fromTo(win, { opacity: 0, y: 24 }, { opacity: 1, y: 0, duration: 0.5, ease: EASE }, 0);
+  tl.fromTo(win, { scale: 1 }, { scale: 1.03, duration: 24, ease: "power1.out", transformOrigin: "50% 0%", immediateRender: false }, 0.5);
+
+  // "Not this": the final-site line types, then strikes through.
+  tl.fromTo($("10-draft-l0"), { opacity: 0, y: 10 }, { opacity: 1, y: 0, duration: 0.4, ease: EASE }, 2.8);
+  tl.fromTo($("10-draft-strike"), { scaleX: 0 }, { scaleX: 1, duration: 0.35, ease: "power4.out" }, 4.85);
+  tl.to($("10-draft-nottext"), { color: "#6E6E73", duration: 0.35, ease: "power2.out" }, 4.85);
+
+  // "Send this": the message card, typed as it is read.
+  tl.fromTo($("10-draft-l1"), { opacity: 0, y: 10 }, { opacity: 1, y: 0, duration: 0.4, ease: EASE }, 4.8);
+  tl.fromTo($("10-draft-card"), { opacity: 0, y: 24 }, { opacity: 1, y: 0, duration: 0.45, ease: EASE }, 4.8);
+
+  // The four feedback asks, on their words.
+  [9.92, 10.64, 11.2, 12.16].forEach((when, i) => {
+    tl.fromTo($("10-draft-a" + i), { opacity: 0, y: 14, scale: 0.9 }, { opacity: 1, y: 0, scale: 1, duration: 0.35, ease: EASE }, when);
+  });
+
+  // Questions slam in one per spoken question.
+  tl.fromTo($("10-draft-l2"), { opacity: 0, y: 10 }, { opacity: 1, y: 0, duration: 0.4, ease: EASE }, 15.6);
+  [17.2, 18.72, 20.24, 22.08, 23.6].forEach((when, i) => {
+    tl.fromTo($("10-draft-q" + i), { opacity: 0, scale: 1.12, x: -24, filter: "blur(6px)" }, { opacity: 1, scale: 1, x: 0, filter: "blur(0px)", duration: 0.35, ease: "power4.out" }, when);
+  });
+
+  tl.set({}, {}, D);
+  window.__timelines = window.__timelines || {};
+  window.__timelines["10-draft"] = tl;
+})();
+</script>
+</template>

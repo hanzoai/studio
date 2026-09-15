@@ -1,0 +1,180 @@
+<template>
+<style>
+@font-face { font-family: "Zen"; src: url('assets/fonts/zen.woff2') format('woff2'); font-weight: 100 900; font-display: block; }
+@font-face { font-family: "Zen Mono"; src: url('assets/fonts/zen-mono.woff2') format('woff2'); font-weight: 100 900; font-display: block; }
+
+#root { position: absolute; inset: 0; overflow: hidden; font-family: "Zen", sans-serif; color: #F6F6F3; }
+[id="04-find-ground"] { position: absolute; inset: 0; background: #0B0B0D; overflow: hidden; }
+
+[class~="04-find-label"] {
+  font-family: "Zen Mono", monospace; font-size: 20px; font-weight: 500; letter-spacing: 0.14em;
+  text-transform: uppercase; color: #6E6E73; line-height: 1;
+}
+
+[id="04-find-search"] { position: absolute; left: 360px; top: 210px; width: 1200px; transform-origin: 0 0; }
+[id="04-find-field"] {
+  position: relative; margin-top: 22px; height: 132px; box-sizing: border-box;
+  background: #141416; border: 1px solid rgba(246,246,243,0.14); border-radius: 14px;
+  display: flex; align-items: center; padding: 0 48px; overflow: hidden;
+}
+[id="04-find-lens"] { position: relative; flex: 0 0 44px; width: 44px; height: 44px; margin-right: 34px; }
+[id="04-find-lens"] b { position: absolute; left: 0; top: 0; width: 26px; height: 26px; border: 4px solid #6E6E73; border-radius: 50%; }
+[id="04-find-lens"] i { position: absolute; left: 27px; top: 25px; width: 16px; height: 4px; background: #6E6E73; border-radius: 2px; transform: rotate(45deg); transform-origin: 0 50%; }
+[id="04-find-wrap"] { display: inline-flex; align-items: center; min-width: 980px; white-space: pre; font-family: "Zen Mono", monospace; font-size: 50px; line-height: 1; color: #F6F6F3; }
+[id="04-find-text"] { white-space: pre; }
+[id="04-find-caret"] { display: inline-block; width: 18px; height: 54px; margin-left: 4px; background: #F6F6F3; }
+[id="04-find-track"] { position: absolute; left: 0; right: 0; bottom: 0; height: 4px; background: #0B0B0D; }
+[id="04-find-fill"] { position: absolute; inset: 0; width: 100%; background: #A1A1AA; transform-origin: left center; }
+
+[id="04-find-history"] { margin-top: 30px; }
+[class~="04-find-past"] {
+  display: flex; align-items: center; height: 70px; border-top: 1px solid rgba(246,246,243,0.14);
+  font-family: "Zen Mono", monospace; font-size: 34px; color: #A1A1AA; white-space: pre;
+}
+[class~="04-find-past"] span { display: inline-block; width: 78px; font-size: 20px; letter-spacing: 0.14em; color: #6E6E73; }
+
+[id="04-find-gaps"] {
+  position: absolute; left: 1040px; top: 210px; width: 800px; box-sizing: border-box;
+  background: #141416; border: 1px solid rgba(246,246,243,0.14); border-radius: 14px;
+  padding: 38px 52px 40px; transform-origin: 50% 50%;
+}
+[id="04-find-rows"] { margin-top: 22px; }
+[class~="04-find-row"] {
+  display: flex; align-items: center; height: 88px; border-top: 1px solid rgba(246,246,243,0.14);
+  font-family: "Zen Mono", monospace; font-size: 40px; white-space: nowrap;
+}
+[class~="04-find-row"]:first-child { border-top: 0; }
+[class~="04-find-box"] { position: relative; flex: 0 0 40px; width: 40px; height: 40px; margin-right: 32px; box-sizing: border-box; border: 2px solid #6E6E73; border-radius: 8px; overflow: hidden; }
+[class~="04-find-dot"] { position: absolute; inset: 0; width: 100%; background: #37D77C; transform-origin: 50% 50%; }
+[class~="04-find-tick"] { position: absolute; left: 12px; top: 4px; width: 10px; height: 20px; border-right: 5px solid #0B0B0D; border-bottom: 5px solid #0B0B0D; rotate: 45deg; }
+[class~="04-find-name"] { color: #A1A1AA; }
+[id="04-find-meter"] { position: relative; margin-top: 18px; height: 10px; border-radius: 5px; background: #0B0B0D; overflow: hidden; }
+[id="04-find-meterfill"] { position: absolute; inset: 0; width: 100%; background: #F6F6F3; transform-origin: left center; }
+</style>
+
+<div id="root" data-composition-id="04-find" data-width="1920" data-height="1080" data-duration="25.5">
+  <div class="clip" id="04-find-ground" data-start="0" data-duration="25.5" data-track-index="0">
+
+    <div id="04-find-search">
+      <div class="04-find-label">Search</div>
+      <div id="04-find-field">
+        <div id="04-find-lens"><b></b><i></i></div>
+        <div id="04-find-wrap"><span id="04-find-text"></span><span id="04-find-caret"></span></div>
+        <div id="04-find-track"><div id="04-find-fill"></div></div>
+      </div>
+      <div id="04-find-history">
+        <div class="04-find-past" id="04-find-p1"><span>01</span>med spas near me</div>
+        <div class="04-find-past" id="04-find-p2"><span>02</span>contractors near me</div>
+        <div class="04-find-past" id="04-find-p3"><span>03</span>salons near me</div>
+      </div>
+    </div>
+
+    <div id="04-find-gaps">
+      <div class="04-find-label">Visible gaps</div>
+      <div id="04-find-rows">
+        <div class="04-find-row"><div class="04-find-box"><div class="04-find-dot"></div><div class="04-find-tick"></div></div><div class="04-find-name">No website</div></div>
+        <div class="04-find-row"><div class="04-find-box"><div class="04-find-dot"></div><div class="04-find-tick"></div></div><div class="04-find-name">Old website</div></div>
+        <div class="04-find-row"><div class="04-find-box"><div class="04-find-dot"></div><div class="04-find-tick"></div></div><div class="04-find-name">Bad mobile</div></div>
+        <div class="04-find-row"><div class="04-find-box"><div class="04-find-dot"></div><div class="04-find-tick"></div></div><div class="04-find-name">No booking CTA</div></div>
+        <div class="04-find-row"><div class="04-find-box"><div class="04-find-dot"></div><div class="04-find-tick"></div></div><div class="04-find-name">No lead form</div></div>
+      </div>
+      <div id="04-find-meter"><div id="04-find-meterfill"></div></div>
+    </div>
+
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+<script>
+(() => {
+  const D = 25;
+  const tl = gsap.timeline({ paused: true });
+  const $ = (id) => document.getElementById(id);
+  const EASE = "power3.out";
+
+  // ---- Scene 1: four queries type into the field, each on its spoken word (discrete-text-sequence)
+  const GAPS = [0.05, 0.08, 0.04, 0.07, 0.06, 0.09, 0.05];
+  const SEQ = [{ t: 0, text: "" }];
+  const CHANGES = [];
+  const type = (text, t0, pace) => {
+    let t = t0;
+    for (let i = 1; i <= text.length; i++) {
+      SEQ.push({ t, text: text.slice(0, i) });
+      CHANGES.push(t);
+      t += GAPS[i % GAPS.length] * pace + (text[i - 1] === " " ? 0.04 * pace : 0);
+    }
+    return t;
+  };
+  const clear = (t) => { SEQ.push({ t, text: "" }); CHANGES.push(t); };
+
+  const Q = [
+    { text: "med spas near me",      at: 4.62,  pace: 0.7, clear: 5.70 },
+    { text: "contractors near me",   at: 5.84,  pace: 0.6, clear: 6.70 },
+    { text: "salons near me",        at: 6.80,  pace: 1.0, clear: 10.10 },
+    { text: "photographers near me", at: 10.24, pace: 1.0, clear: null },
+  ];
+  Q.forEach((q) => { q.end = type(q.text, q.at, q.pace); if (q.clear) clear(q.clear); });
+
+  const textEl = $("04-find-text"), caretEl = $("04-find-caret");
+  const textAt = (time) => { for (let i = SEQ.length - 1; i >= 0; i--) if (time >= SEQ[i].t) return SEQ[i].text; return ""; };
+  const driver = { t: 0 };
+  tl.to(driver, {
+    t: D, duration: D, ease: "none",
+    onUpdate: () => {
+      const t = driver.t;
+      textEl.textContent = textAt(t);
+      const typing = CHANGES.some((c) => c <= t && t - c < 0.18);
+      caretEl.style.opacity = typing || Math.sin((t * Math.PI * 2) / 0.8) > 0 ? "1" : "0";
+    },
+  }, 0);
+
+  tl.fromTo($("04-find-search"), { opacity: 0, y: 24 }, { opacity: 1, y: 0, duration: 0.5, ease: EASE }, 0);
+
+  // a search runs under each finished query (stat-bars-and-fills, progress form)
+  const fill = $("04-find-fill");
+  tl.set(fill, { scaleX: 0 }, 0);
+  Q.forEach((q, i) => {
+    const stop = q.clear ?? 13.9;
+    tl.fromTo(fill, { scaleX: 0 }, { scaleX: 1, duration: Math.max(0.1, stop - q.end - 0.05), ease: "power2.out", immediateRender: false }, q.end);
+    if (q.clear) tl.set(fill, { scaleX: 0 }, q.clear);
+  });
+
+  // each cleared query drops into the history under the field
+  const past = [$("04-find-p1"), $("04-find-p2"), $("04-find-p3")];
+  past.forEach((el, i) => {
+    tl.fromTo(el, { opacity: 0, y: -40 }, { opacity: 1, y: 0, duration: 0.45, ease: EASE }, Q[i].clear);
+  });
+
+  // ---- Scene 2: on "Look for", the search steps aside and the gaps list arrives
+  const LOOK = 14.8;
+  tl.to($("04-find-search"), { x: -280, scale: 0.75, duration: 0.8, ease: "power3.inOut" }, LOOK - 0.2);
+  tl.fromTo($("04-find-gaps"), { opacity: 0, x: 120 }, { opacity: 1, x: 0, duration: 0.7, ease: EASE }, LOOK);
+  const rows = Array.from($("04-find-rows").children);
+  rows.forEach((row, i) => {
+    tl.fromTo(row, { opacity: 0, x: 30 }, { opacity: 1, x: 0, duration: 0.4, ease: EASE }, LOOK + 0.25 + i * 0.08);
+  });
+
+  // ---- Scene 3: each box fills as its gap is named; the meter steps with it
+  const CHECK = [16.26, 17.30, 18.58, 20.10, 21.14];
+  const meter = $("04-find-meterfill");
+  tl.set(meter, { scaleX: 0 }, 0);
+  rows.forEach((row, i) => {
+    const at = CHECK[i];
+    const dot = row.getElementsByClassName("04-find-dot")[0];
+    const tick = row.getElementsByClassName("04-find-tick")[0];
+    const name = row.getElementsByClassName("04-find-name")[0];
+    tl.fromTo(dot, { scale: 0 }, { scale: 1, duration: 0.3, ease: "back.out(2)" }, at);
+    tl.fromTo(tick, { opacity: 0, scale: 0.4 }, { opacity: 1, scale: 1, duration: 0.25, ease: EASE }, at + 0.12);
+    tl.fromTo(name, { color: "#A1A1AA" }, { color: "#F6F6F3", duration: 0.3, ease: "none" }, at);
+    tl.fromTo(meter, { scaleX: i / 5 }, { scaleX: (i + 1) / 5, duration: 0.5, ease: EASE, immediateRender: false }, at);
+  });
+
+  // "a confusing customer flow": the finished list lifts
+  tl.to($("04-find-gaps"), { y: -12, scale: 1.03, duration: 1.4, ease: "power2.out" }, 22.24);
+
+  tl.set({}, {}, D);
+  window.__timelines = window.__timelines || {};
+  window.__timelines["04-find"] = tl;
+})();
+</script>
+</template>

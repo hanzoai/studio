@@ -1,0 +1,177 @@
+<template>
+<style>
+@font-face { font-family: "Zen"; src: url('assets/fonts/zen.woff2') format('woff2'); font-weight: 100 900; font-display: block; }
+@font-face { font-family: "Zen Mono"; src: url('assets/fonts/zen-mono.woff2') format('woff2'); font-weight: 100 900; font-display: block; }
+#root { position: absolute; inset: 0; overflow: hidden; font-family: "Zen", sans-serif; color: #F6F6F3; }
+[id="06-offer-ground"] { position: absolute; inset: 0; background: #0B0B0D; }
+[id="06-offer-scene"] { position: absolute; inset: 0; overflow: hidden; }
+[id="06-offer-world"] { position: absolute; inset: 0; transform-origin: 50% 45%; }
+
+[class~="06-offer-label"] { font-family: "Zen Mono", monospace; font-size: 20px; font-weight: 500; letter-spacing: 0.14em; text-transform: uppercase; color: #6E6E73; line-height: 1; }
+[id="06-offer-title"] { position: absolute; left: 80px; top: 150px; }
+
+[class~="06-offer-card"] {
+  position: absolute; top: 260px; width: 540px; height: 420px; box-sizing: border-box;
+  padding: 36px 40px 40px; background: #141416; border: 1px solid rgba(246,246,243,0.14); border-radius: 14px;
+  transform-origin: 0 0;
+}
+[id="06-offer-c1"] { left: 80px; }
+[id="06-offer-c2"] { left: 690px; }
+[id="06-offer-c3"] { left: 1300px; }
+[class~="06-offer-name"] { margin-top: 22px; height: 110px; font-size: 44px; font-weight: 500; line-height: 1.06; letter-spacing: -0.02em; }
+[class~="06-offer-tags"] { display: flex; gap: 10px; height: 40px; }
+[class~="06-offer-tag"] { font-family: "Zen Mono", monospace; font-size: 18px; color: #A1A1AA; padding: 8px 14px; border: 1px solid rgba(246,246,243,0.14); border-radius: 999px; line-height: 1; white-space: nowrap; }
+[class~="06-offer-price"] {
+  position: absolute; left: 40px; bottom: 36px; display: inline-block;
+  font-size: 112px; font-weight: 500; line-height: 0.95; letter-spacing: -0.03em; color: #37D77C;
+  font-variant-numeric: tabular-nums; transform-origin: left bottom; white-space: nowrap;
+}
+
+[id="06-offer-hero"] {
+  position: absolute; left: 460px; top: 200px; width: 1380px; box-sizing: border-box;
+  padding: 44px 48px 44px; background: #141416; border: 1px solid rgba(246,246,243,0.14); border-radius: 14px;
+  transform-origin: 0 0;
+}
+[id="06-offer-head"] { display: flex; justify-content: space-between; align-items: flex-end; height: 114px; }
+[id="06-offer-hname"] { font-size: 52px; font-weight: 500; letter-spacing: -0.02em; line-height: 1.06; }
+[id="06-offer-hname"] [class~="06-offer-label"] { margin-bottom: 18px; }
+[id="06-offer-hprice"] { font-size: 120px; font-weight: 500; line-height: 0.95; letter-spacing: -0.03em; color: #37D77C; font-variant-numeric: tabular-nums; }
+[id="06-offer-list"] {
+  margin-top: 28px; padding-top: 30px; border-top: 1px solid rgba(246,246,243,0.14);
+  display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: repeat(3, 58px); grid-auto-flow: column; row-gap: 18px; column-gap: 48px;
+}
+[class~="06-offer-row"] { display: flex; align-items: center; gap: 22px; font-family: "Zen Mono", monospace; font-size: 30px; color: #A1A1AA; white-space: nowrap; }
+[class~="06-offer-box"] { position: relative; flex: none; width: 36px; height: 36px; border: 2px solid rgba(246,246,243,0.3); border-radius: 8px; box-sizing: border-box; overflow: hidden; }
+[class~="06-offer-boxfill"] { position: absolute; inset: 0; width: 100%; background: #37D77C; transform-origin: center center; }
+[class~="06-offer-box"] svg { position: absolute; inset: 2px; width: 28px; height: 28px; }
+
+[id="06-offer-nots"] { position: absolute; left: 460px; top: 724px; width: 1380px; }
+[id="06-offer-notrow"] { margin-top: 22px; display: flex; gap: 64px; }
+[class~="06-offer-not"] { position: relative; font-size: 40px; font-weight: 400; letter-spacing: -0.01em; line-height: 1.1; white-space: nowrap; color: #F6F6F3; }
+[class~="06-offer-strike"] { position: absolute; left: -6px; right: -6px; top: 54%; height: 3px; background: #F6F6F3; transform-origin: left center; }
+</style>
+
+<div id="root" data-composition-id="06-offer" data-width="1920" data-height="1080" data-duration="39.5">
+  <div class="clip" id="06-offer-ground" data-start="0" data-duration="39.5" data-track-index="0"></div>
+  <div class="clip" id="06-offer-scene" data-start="0" data-duration="39.5" data-track-index="1">
+    <div id="06-offer-world">
+      <div class="06-offer-label" id="06-offer-title">Offers</div>
+
+      <div class="06-offer-card" id="06-offer-c1">
+        <div class="06-offer-label">01</div>
+        <div class="06-offer-name">Landing Page</div>
+        <div class="06-offer-price" id="06-offer-p1">$500</div>
+      </div>
+      <div class="06-offer-card" id="06-offer-c2">
+        <div class="06-offer-label">02</div>
+        <div class="06-offer-name">Business Website</div>
+        <div class="06-offer-price" id="06-offer-p2">$750</div>
+      </div>
+      <div class="06-offer-card" id="06-offer-c3">
+        <div class="06-offer-label">03</div>
+        <div class="06-offer-name">App / Booking System</div>
+        <div class="06-offer-tags">
+          <div class="06-offer-tag" id="06-offer-tag1">Lead capture</div>
+          <div class="06-offer-tag" id="06-offer-tag2">Client portal</div>
+        </div>
+        <div class="06-offer-price" id="06-offer-p3">$1,000</div>
+      </div>
+
+      <div id="06-offer-hero">
+        <div id="06-offer-head">
+          <div id="06-offer-hname"><div class="06-offer-label">Includes</div>App / Booking System</div>
+          <div id="06-offer-hprice">$1,000</div>
+        </div>
+        <div id="06-offer-list">
+          <div class="06-offer-row"><div class="06-offer-box"><div class="06-offer-boxfill"></div><svg viewBox="0 0 24 24"><path pathLength="1" d="M5 12.5l4.5 4.5L19 7.5" fill="none" stroke="#0B0B0D" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg></div>Build</div>
+          <div class="06-offer-row"><div class="06-offer-box"><div class="06-offer-boxfill"></div><svg viewBox="0 0 24 24"><path pathLength="1" d="M5 12.5l4.5 4.5L19 7.5" fill="none" stroke="#0B0B0D" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg></div>Mobile-friendly design</div>
+          <div class="06-offer-row"><div class="06-offer-box"><div class="06-offer-boxfill"></div><svg viewBox="0 0 24 24"><path pathLength="1" d="M5 12.5l4.5 4.5L19 7.5" fill="none" stroke="#0B0B0D" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg></div>Contact form or booking CTA</div>
+          <div class="06-offer-row"><div class="06-offer-box"><div class="06-offer-boxfill"></div><svg viewBox="0 0 24 24"><path pathLength="1" d="M5 12.5l4.5 4.5L19 7.5" fill="none" stroke="#0B0B0D" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg></div>Client content added</div>
+          <div class="06-offer-row"><div class="06-offer-box"><div class="06-offer-boxfill"></div><svg viewBox="0 0 24 24"><path pathLength="1" d="M5 12.5l4.5 4.5L19 7.5" fill="none" stroke="#0B0B0D" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg></div>One revision round</div>
+          <div class="06-offer-row"><div class="06-offer-box"><div class="06-offer-boxfill"></div><svg viewBox="0 0 24 24"><path pathLength="1" d="M5 12.5l4.5 4.5L19 7.5" fill="none" stroke="#0B0B0D" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg></div>Launch support</div>
+        </div>
+      </div>
+
+      <div id="06-offer-nots">
+        <div class="06-offer-label" id="06-offer-notlabel">Not included</div>
+        <div id="06-offer-notrow">
+          <div class="06-offer-not" id="06-offer-n1">Unlimited changes<div class="06-offer-strike"></div></div>
+          <div class="06-offer-not" id="06-offer-n2">Months of maintenance<div class="06-offer-strike"></div></div>
+          <div class="06-offer-not" id="06-offer-n3">Complex integrations<div class="06-offer-strike"></div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+<script>
+(() => {
+  const D = 39;
+  const $ = (id) => document.getElementById(id);
+  const tl = gsap.timeline({ paused: true });
+  const EASE = "power3.out";
+
+  // count-up: value tween + transform-scale growth, same start + ease (counting-dynamic-scale)
+  const count = (el, target, at, dur) => {
+    const st = { v: 0 };
+    tl.fromTo(el, { opacity: 0 }, { opacity: 1, duration: 0.2, ease: "none" }, at);
+    tl.to(st, { v: target, duration: dur, ease: EASE, onUpdate: () => { el.textContent = "$" + Math.round(st.v).toLocaleString("en-US"); } }, at);
+    tl.fromTo(el, { scale: 0.55 }, { scale: 1, duration: dur, ease: EASE }, at);
+  };
+
+  // ---- Scene 1: the three offer cards assemble on their names; prices count on their words
+  tl.fromTo($("06-offer-title"), { opacity: 0, y: 12 }, { opacity: 1, y: 0, duration: 0.5, ease: EASE }, 0.1);
+  const cards = [$("06-offer-c1"), $("06-offer-c2"), $("06-offer-c3")];
+  const CARD_AT = [4.48, 7.44, 10.88];
+  cards.forEach((c, i) => {
+    tl.fromTo(c, { opacity: 0, y: 40 }, { opacity: 1, y: 0, duration: 0.6, ease: EASE }, 0.3 + i * 0.08);
+    tl.fromTo(c.children[1], { color: "#6E6E73" }, { color: "#F6F6F3", duration: 0.4, ease: "none" }, CARD_AT[i]);
+    tl.fromTo(c, { borderColor: "rgba(246,246,243,0.14)" }, { borderColor: "rgba(246,246,243,0.5)", duration: 0.4, ease: "power2.out" }, CARD_AT[i]);
+  });
+  count($("06-offer-p1"), 500, 5.6, 1.4);
+  count($("06-offer-p2"), 750, 8.7, 1.4);
+  tl.fromTo($("06-offer-tag1"), { opacity: 0, x: -16 }, { opacity: 1, x: 0, duration: 0.4, ease: EASE }, 12.88);
+  tl.fromTo($("06-offer-tag2"), { opacity: 0, x: -16 }, { opacity: 1, x: 0, duration: 0.4, ease: EASE }, 14.32);
+  count($("06-offer-p3"), 1000, 15.2, 1.6);
+
+  // ---- Scene 2: the $1,000 card grows into the hero; the other two shrink into the left column
+  const MORPH = 16.88, MD = 0.8;
+  tl.to($("06-offer-c1"), { x: 0, y: -60, scale: 0.55, opacity: 0.45, duration: MD, ease: "power3.inOut" }, MORPH);
+  tl.to($("06-offer-c2"), { x: -610, y: 195, scale: 0.55, opacity: 0.45, duration: MD, ease: "power3.inOut" }, MORPH);
+  tl.to($("06-offer-c3"), { x: -840, y: -60, scale: 2.556, duration: MD, ease: "power3.inOut" }, MORPH);
+  tl.to($("06-offer-c3"), { opacity: 0, duration: 0.3, ease: "none" }, MORPH);
+  tl.fromTo($("06-offer-hero"), { x: 840, y: 60, scale: 0.3913, opacity: 0 }, { x: 0, y: 0, scale: 1, opacity: 1, duration: MD, ease: "power3.inOut" }, MORPH);
+  tl.to($("06-offer-title"), { opacity: 0.6, duration: 0.4, ease: "none" }, MORPH);
+  tl.to([$("06-offer-c1"), $("06-offer-c2")], { borderColor: "rgba(246,246,243,0.14)", duration: 0.4, ease: "none" }, MORPH);
+
+  // ---- Scene 3: the six inclusions check in on their words
+  const CHECK_AT = [19.36, 20.0, 21.68, 24.4, 26.0, 27.36];
+  gsap.utils.toArray($("06-offer-list").children).forEach((row, i) => {
+    const at = CHECK_AT[i];
+    tl.fromTo(row, { opacity: 0, x: -18 }, { opacity: 1, x: 0, duration: 0.4, ease: EASE }, at - 0.15);
+    tl.fromTo(row.firstElementChild.firstElementChild, { scale: 0 }, { scale: 1, duration: 0.3, ease: "back.out(1.7)" }, at);
+    tl.fromTo(row.querySelector("path"), { strokeDasharray: 1, strokeDashoffset: 1 }, { strokeDashoffset: 0, duration: 0.35, ease: "power2.out" }, at + 0.12);
+    tl.fromTo(row, { color: "#A1A1AA" }, { color: "#F6F6F3", duration: 0.3, ease: "none" }, at);
+  });
+
+  // ---- Scene 4: the three exclusions arrive on "Do not include" and strike through on their words
+  tl.fromTo($("06-offer-notlabel"), { opacity: 0, y: 10 }, { opacity: 1, y: 0, duration: 0.4, ease: EASE }, 28.72);
+  const NOT_IN = [28.72, 31.28, 33.6];
+  const STRIKE = [29.9, 32.3, 34.9];
+  ["06-offer-n1", "06-offer-n2", "06-offer-n3"].forEach((id, i) => {
+    const el = $(id);
+    tl.fromTo(el, { opacity: 0, y: 20 }, { opacity: 1, y: 0, duration: 0.45, ease: EASE }, NOT_IN[i]);
+    tl.fromTo(el.lastElementChild, { scaleX: 0 }, { scaleX: 1, duration: 0.45, ease: "power2.inOut" }, STRIKE[i]);
+    tl.fromTo(el, { color: "#F6F6F3" }, { color: "#6E6E73", duration: 0.45, ease: "none" }, STRIKE[i] + 0.1);
+  });
+
+  // Slow push under the hero hold.
+  tl.fromTo($("06-offer-world"), { scale: 1 }, { scale: 1.025, duration: D - MORPH - MD, ease: "sine.inOut" }, MORPH + MD);
+
+  tl.set({}, {}, D);
+  window.__timelines = window.__timelines || {};
+  window.__timelines["06-offer"] = tl;
+})();
+</script>
+</template>

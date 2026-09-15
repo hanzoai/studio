@@ -1,0 +1,7 @@
+{
+  "scene": "09-build",
+  "duration_s": 61,
+  "rules": ["coordinate-target-zoom", "viewport-change", "discrete-text-sequence", "context-sensitive-cursor", "kinetic-beat-slam"],
+  "exit": { "vector": "none, ~0 px/s (draft window lean-in scale 1.0->1.035 over 25s power1.out, near settled at 57.8s)", "still_moving": false },
+  "entry": { "vector": "up 128 px/s (builder window y 20->0 over 0.45s power3.out)", "from_rest": false }
+}

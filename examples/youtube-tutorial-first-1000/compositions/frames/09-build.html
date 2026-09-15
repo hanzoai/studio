@@ -1,0 +1,197 @@
+<template>
+<style>
+@font-face { font-family: "Zen"; src: url('assets/fonts/zen.woff2') format('woff2'); font-weight: 100 900; font-display: block; }
+@font-face { font-family: "Zen Mono"; src: url('assets/fonts/zen-mono.woff2') format('woff2'); font-weight: 100 900; font-display: block; }
+#root { position: absolute; inset: 0; overflow: hidden; font-family: "Zen", sans-serif; color: #F6F6F3; }
+[id="09-build-ground"] { position: absolute; inset: 0; background: #0B0B0D; }
+[id="09-build-scene"] { position: absolute; inset: 0; overflow: hidden; }
+[id="09-build-world"] { position: absolute; inset: 0; transform-origin: 50% 50%; will-change: transform; }
+[id="09-build-window"] { position: absolute; left: 160px; top: 60px; width: 1600px; border: 1px solid rgba(246,246,243,0.14); border-radius: 14px; background: #141416; overflow: hidden; }
+[class~="09-build-bar"] { height: 44px; display: flex; align-items: center; gap: 8px; padding: 0 18px; border-bottom: 1px solid rgba(246,246,243,0.14); }
+[class~="09-build-bar"] i { width: 11px; height: 11px; border-radius: 50%; background: #6E6E73; opacity: 0.6; }
+[class~="09-build-addr"] { margin-left: 18px; font-family: "Zen Mono", monospace; font-size: 15px; color: #6E6E73; letter-spacing: 0.04em; }
+[id="09-build-window"] img { display: block; width: 1600px; height: 1000px; }
+[id="09-build-field"] { position: absolute; left: 440px; top: 532px; width: 720px; height: 74px; background: #0D0D0D; overflow: hidden; }
+[id="09-build-inner"] { position: absolute; left: 6px; top: 0; right: 6px; font-family: "Zen Mono", monospace; font-size: 16px; line-height: 22px; color: #F6F6F3; white-space: pre-wrap; }
+[id="09-build-caret"] { display: inline-block; width: 9px; height: 18px; margin-left: 1px; vertical-align: -3px; background: #A1A1AA; }
+[id="09-build-ripple"] { position: absolute; left: 1123px; top: 606px; width: 40px; height: 40px; box-sizing: border-box; border: 2px solid #F6F6F3; border-radius: 50%; opacity: 0; }
+
+[id="09-build-hud"] { position: absolute; inset: 0; }
+[id="09-build-parts"] { position: absolute; left: 692px; top: 585px; display: flex; gap: 10px; }
+[class~="09-build-part"] { font-family: "Zen Mono", monospace; font-size: 14px; font-weight: 500; letter-spacing: 0.12em; text-transform: uppercase; color: #6E6E73; background: #141416; border: 1px solid rgba(246,246,243,0.14); border-radius: 999px; padding: 11px 16px; line-height: 1; }
+
+[id="09-build-draft"] { position: absolute; left: 80px; top: 140px; width: 1060px; border: 1px solid rgba(246,246,243,0.14); border-radius: 14px; background: #141416; overflow: hidden; }
+[id="09-build-draft"] img { display: block; width: 1060px; height: 662px; }
+
+[id="09-build-composer"] { position: absolute; left: 1180px; top: 140px; width: 660px; height: 706px; box-sizing: border-box; background: #141416; border: 1px solid rgba(246,246,243,0.14); border-radius: 14px; }
+[class~="09-build-label"] { position: absolute; left: 36px; top: 32px; font-family: "Zen Mono", monospace; font-size: 20px; font-weight: 500; letter-spacing: 0.14em; text-transform: uppercase; color: #6E6E73; line-height: 1; }
+[class~="09-build-sent"] { position: absolute; left: 36px; right: 36px; height: 32px; display: flex; align-items: center; gap: 16px; font-family: "Zen Mono", monospace; font-size: 22px; color: #A1A1AA; white-space: nowrap; }
+[class~="09-build-sent"] b { display: block; width: 10px; height: 10px; background: #F6F6F3; flex: none; }
+[id="09-build-input"] { position: absolute; left: 36px; right: 36px; top: 350px; height: 64px; box-sizing: border-box; padding: 0 20px; display: flex; align-items: center; background: #0B0B0D; border: 1px solid rgba(246,246,243,0.14); border-radius: 10px; font-family: "Zen Mono", monospace; font-size: 24px; color: #F6F6F3; white-space: pre; }
+[id="09-build-icaret"] { display: inline-block; width: 12px; height: 26px; margin-left: 2px; background: #A1A1AA; }
+[id="09-build-rule"] { position: absolute; left: 36px; right: 36px; top: 452px; height: 1px; background: rgba(246,246,243,0.14); transform-origin: left center; }
+[class~="09-build-close"] { position: absolute; left: 36px; font-weight: 500; font-size: 42px; line-height: 1.1; letter-spacing: -0.02em; white-space: nowrap; }
+</style>
+
+<div id="root" data-composition-id="09-build" data-width="1920" data-height="1080" data-duration="61.5">
+  <div class="clip" id="09-build-ground" data-start="0" data-duration="61.5" data-track-index="0"></div>
+
+  <div class="clip" id="09-build-scene" data-start="0" data-duration="61.5" data-track-index="1">
+    <div id="09-build-world">
+      <div id="09-build-window">
+        <div class="09-build-bar"><i></i><i></i><i></i><span class="09-build-addr">hanzo.ai</span></div>
+        <img src="assets/shots/builder.webp" alt="">
+        <div id="09-build-field"><div id="09-build-inner"><span id="09-build-typed"></span><span id="09-build-caret"></span></div></div>
+        <div id="09-build-ripple"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="clip" id="09-build-hud" data-start="0" data-duration="61.5" data-track-index="2">
+    <div id="09-build-parts">
+      <div class="09-build-part" id="09-build-p0">Business type</div>
+      <div class="09-build-part" id="09-build-p1">Goal</div>
+      <div class="09-build-part" id="09-build-p2">Sections</div>
+      <div class="09-build-part" id="09-build-p3">Style</div>
+      <div class="09-build-part" id="09-build-p4">Action</div>
+    </div>
+
+    <div id="09-build-draft">
+      <div class="09-build-bar"><i></i><i></i><i></i><span class="09-build-addr">First draft</span></div>
+      <img src="assets/shots/template-saas-landing.webp" alt="">
+    </div>
+
+    <div id="09-build-composer">
+      <div class="09-build-label">Follow-ups</div>
+      <div class="09-build-sent" id="09-build-s0" style="top:84px"><b></b><span>Improve the headline</span></div>
+      <div class="09-build-sent" id="09-build-s1" style="top:136px"><b></b><span>Make the CTA stronger</span></div>
+      <div class="09-build-sent" id="09-build-s2" style="top:188px"><b></b><span>Rewrite the services section</span></div>
+      <div class="09-build-sent" id="09-build-s3" style="top:240px"><b></b><span>Make mobile easier to scan</span></div>
+      <div class="09-build-sent" id="09-build-s4" style="top:292px"><b></b><span>Remove anything generic</span></div>
+      <div id="09-build-input"><span id="09-build-itext"></span><span id="09-build-icaret"></span></div>
+      <div id="09-build-rule"></div>
+      <div class="09-build-close" id="09-build-c0" style="top:484px">What to ask for.</div>
+      <div class="09-build-close" id="09-build-c1" style="top:544px">What to fix.</div>
+      <div class="09-build-close" id="09-build-c2" style="top:604px">Something usable.</div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+<script>
+(() => {
+  const D = 61;
+  const $ = (id) => document.getElementById(id);
+  const EASE = "power3.out";
+  const tl = gsap.timeline({ paused: true });
+
+  // Word-synced typing: [time, chars] keyframes from the voice word timings.
+  const PROMPT = "Build a modern one-page website for a local med spa. The goal is to get more appointment bookings. Include a hero section, services, before-and-after gallery, testimonials, FAQ, and a strong booking call to action. Make the design premium, clean, trustworthy, and mobile-friendly.";
+  const PROMPT_KF = [[12.32,0],[12.72,5],[12.72,6],[12.88,7],[12.88,8],[13.28,14],[13.28,15],[13.96,23],[14.0,24],[14.4,31],[14.4,32],[14.56,35],[14.56,36],[14.72,37],[14.72,38],[15.04,43],[15.04,44],[15.28,47],[15.44,48],[15.84,52],[16.24,53],[16.48,56],[16.48,57],[16.8,61],[16.8,62],[16.96,64],[16.96,65],[17.2,67],[17.2,68],[17.44,71],[17.44,72],[17.6,76],[17.6,77],[18.16,88],[18.16,89],[18.8,98],[18.8,99],[19.2,106],[19.2,107],[19.39,108],[19.44,109],[19.84,113],[19.92,114],[20.48,122],[20.48,123],[21.12,132],[21.12,133],[22.08,149],[22.08,150],[22.72,158],[22.72,159],[23.6,172],[23.6,173],[24.0,177],[24.32,178],[24.48,181],[24.48,182],[24.56,183],[24.56,184],[24.88,190],[24.88,191],[25.36,198],[25.36,199],[25.68,203],[25.68,204],[25.92,206],[25.92,207],[26.53,214],[26.56,215],[26.88,219],[26.88,220],[27.12,223],[27.12,224],[27.66,230],[27.68,231],[28.32,239],[28.32,240],[28.8,246],[28.8,247],[29.52,259],[29.52,260],[29.76,263],[29.76,264],[30.4,280]];
+  const BAD = "Build a website.";
+  const BAD_KF = [[4.08,0],[4.4,5],[4.4,6],[4.56,7],[4.56,8],[5.24,16]];
+  const BACK_AT = 5.6, BACK_DUR = 0.4;
+  const FOLLOW = [
+    ["Improve the headline", 35.68, 36.6, 36.95],
+    ["Make the CTA stronger", 37.84, 39.3, 39.65],
+    ["Rewrite the services section", 40.4, 42.0, 42.35],
+    ["Make mobile easier to scan", 43.12, 45.0, 45.45],
+    ["Remove anything generic", 46.56, 47.9, 48.25],
+  ];
+
+  const wrap = (s, n) => {
+    let out = "", len = 0;
+    for (const w of s.split(" ")) {
+      if (!len) { out += w; len = w.length; }
+      else if (len + 1 + w.length > n) { out += "\n" + w; len = w.length; }
+      else { out += " " + w; len += 1 + w.length; }
+    }
+    return out;
+  };
+  const at = (kf, t) => {
+    if (t <= kf[0][0]) return 0;
+    for (let i = 1; i < kf.length; i++) {
+      const [a, na] = kf[i - 1], [b, nb] = kf[i];
+      if (t < b) return b === a ? nb : Math.floor(na + (nb - na) * (t - a) / (b - a));
+    }
+    return kf[kf.length - 1][1];
+  };
+  const blink = (t) => Math.floor(t / 0.53) % 2 === 0;
+
+  const PROMPT_W = wrap(PROMPT, 64);
+  const LH = 22, ROWS = 3;
+  const typed = $("09-build-typed"), caret = $("09-build-caret"), inner = $("09-build-inner");
+  const itext = $("09-build-itext"), icaret = $("09-build-icaret");
+
+  // One clock drives every typed surface, so any seek renders the same frame.
+  const clock = { t: 0 };
+  const render = () => {
+    const t = clock.t;
+    let s = "", active = false;
+    if (t < BACK_AT) { const n = at(BAD_KF, t); s = BAD.slice(0, n); active = t >= 4.08 && t < 5.24; }
+    else if (t < BACK_AT + BACK_DUR) { s = BAD.slice(0, Math.ceil(BAD.length * (1 - (t - BACK_AT) / BACK_DUR))); active = true; }
+    else if (t >= 12.32) { s = PROMPT_W.slice(0, at(PROMPT_KF, t)); active = t < 30.4; }
+    typed.textContent = s;
+    const lines = s.split("\n").length;
+    inner.style.transform = `translateY(${-Math.max(0, lines - ROWS) * LH}px)`;
+    caret.style.opacity = t >= 30.8 ? 0 : (active || blink(t)) ? 1 : 0;
+
+    let q = "", qActive = false;
+    for (const [text, a, b, send] of FOLLOW) {
+      if (t >= a && t < send) { q = text.slice(0, Math.floor(text.length * Math.min(1, (t - a) / (b - a)))); qActive = t < b; }
+    }
+    itext.textContent = q;
+    icaret.style.opacity = t < 33.2 ? 0 : (qActive || blink(t)) ? 1 : 0;
+  };
+  render();
+  tl.to(clock, { t: D, duration: D, ease: "none", onUpdate: render }, 0);
+
+  // Builder window establishes.
+  const win = $("09-build-window");
+  tl.fromTo(win, { opacity: 0, y: 20 }, { opacity: 1, y: 0, duration: 0.45, ease: EASE }, 0);
+
+  // Camera: single wrapper, translate(x,y) scale(S) around center, T = -offset x S.
+  // Prompt field center in world space: (960, 647.3); offset from frame center (0, 107.3).
+  const world = $("09-build-world");
+  const cam = { scale: 1, x: 0, y: 0 };
+  const applyCamera = () => { world.style.transform = `translate(${cam.x}px, ${cam.y}px) scale(${cam.scale})`; };
+  applyCamera();
+  const S = 1.6, OFF_X = 0, OFF_Y = 107.3;
+  tl.to(cam, { scale: S, x: -OFF_X * S, y: -OFF_Y * S, duration: 1.6, ease: "power3.inOut", onUpdate: applyCamera }, 1.6);
+
+  // The five parts of a clear prompt, named as spoken, lit as the prompt covers each.
+  const PART_IN = [6.32, 7.2, 7.76, 8.4, 9.12];
+  const PART_LIT = [15.04, 16.48, 19.44, 27.12, 24.88];
+  PART_IN.forEach((when, i) => {
+    tl.fromTo($("09-build-p" + i), { opacity: 0, y: -14, scale: 0.92 }, { opacity: 1, y: 0, scale: 1, duration: 0.4, ease: EASE }, when);
+    tl.to($("09-build-p" + i), { color: "#F6F6F3", borderColor: "rgba(246,246,243,0.6)", duration: 0.3, ease: "power2.out" }, PART_LIT[i]);
+  });
+
+  // Submit: ripple on the send arrow, then the camera pulls back and the builder recedes.
+  tl.fromTo($("09-build-ripple"), { opacity: 0.9, scale: 0.6 }, { opacity: 0, scale: 1.9, duration: 0.6, ease: "power2.out" }, 30.7);
+  tl.to(cam, { scale: 1, x: 0, y: 0, duration: 1.5, ease: "power3.inOut", onUpdate: applyCamera }, 30.96);
+  tl.to(win, { opacity: 0.05, duration: 1.2, ease: "power2.inOut" }, 31.3);
+  tl.to($("09-build-parts"), { opacity: 0, duration: 0.4, ease: "power2.in" }, 30.96);
+
+  // First draft slides in; composer follows as "direct it" lands.
+  const draft = $("09-build-draft"), comp = $("09-build-composer");
+  tl.fromTo(draft, { opacity: 0, x: 160 }, { opacity: 1, x: 0, duration: 0.8, ease: EASE }, 32.0);
+  tl.fromTo(draft, { scale: 1 }, { scale: 1.035, duration: 25, ease: "power1.out", transformOrigin: "50% 50%", immediateRender: false }, 32.8);
+  tl.fromTo(comp, { opacity: 0, y: 24 }, { opacity: 1, y: 0, duration: 0.5, ease: EASE }, 33.2);
+
+  FOLLOW.forEach(([, , , send], i) => {
+    tl.fromTo($("09-build-s" + i), { opacity: 0, y: 16 }, { opacity: 1, y: 0, duration: 0.35, ease: EASE }, send);
+  });
+
+  // Close: what the client pays for.
+  tl.fromTo($("09-build-rule"), { scaleX: 0 }, { scaleX: 1, duration: 0.5, ease: EASE }, 53.3);
+  [[53.68, 0], [54.64, 1], [57.36, 2]].forEach(([when, i]) => {
+    tl.fromTo($("09-build-c" + i), { opacity: 0, y: 26, filter: "blur(6px)" }, { opacity: 1, y: 0, filter: "blur(0px)", duration: 0.45, ease: "power4.out" }, when);
+  });
+
+  tl.set({}, {}, D);
+  window.__timelines = window.__timelines || {};
+  window.__timelines["09-build"] = tl;
+})();
+</script>
+</template>

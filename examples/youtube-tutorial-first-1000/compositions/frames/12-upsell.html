@@ -1,0 +1,182 @@
+<template>
+<style>
+@font-face { font-family: "Zen"; src: url('assets/fonts/zen.woff2') format('woff2'); font-weight: 100 900; font-display: block; }
+@font-face { font-family: "Zen Mono"; src: url('assets/fonts/zen-mono.woff2') format('woff2'); font-weight: 100 900; font-display: block; }
+#root { position: absolute; inset: 0; overflow: hidden; font-family: "Zen", sans-serif; color: #F6F6F3; }
+[id="12-upsell-ground"] { position: absolute; inset: 0; background: #0B0B0D; }
+[id="12-upsell-scene"] { position: absolute; inset: 0; overflow: hidden; }
+[id="12-upsell-world"] { position: absolute; inset: 0; transform-origin: 50% 45%; }
+
+[class~="12-upsell-label"] { font-family: "Zen Mono", monospace; font-size: 20px; font-weight: 500; letter-spacing: 0.14em; text-transform: uppercase; color: #6E6E73; line-height: 1; }
+
+[id="12-upsell-top"] { position: absolute; left: 80px; top: 96px; width: 1760px; height: 360px; }
+[id="12-upsell-hero"] { margin-top: 26px; display: flex; align-items: baseline; gap: 28px; white-space: nowrap; }
+[id="12-upsell-once"] { font-size: 120px; font-weight: 500; line-height: 0.95; letter-spacing: -0.03em; color: #37D77C; font-variant-numeric: tabular-nums; }
+[id="12-upsell-plus"] { font-size: 120px; font-weight: 500; line-height: 0.95; letter-spacing: -0.03em; color: #F6F6F3; }
+
+[id="12-upsell-chips"] { position: absolute; left: 80px; top: 300px; width: 1760px; display: flex; flex-wrap: wrap; gap: 16px; }
+[class~="12-upsell-chip"] {
+  font-family: "Zen Mono", monospace; font-size: 26px; line-height: 1; white-space: nowrap; color: #A1A1AA;
+  padding: 16px 24px; background: #141416; border: 1px solid rgba(246,246,243,0.14); border-radius: 999px;
+}
+
+[id="12-upsell-bars"] { position: absolute; left: 80px; top: 110px; width: 1760px; }
+[class~="12-upsell-brow"] { display: flex; align-items: center; gap: 40px; height: 150px; }
+[class~="12-upsell-bkey"] { flex: none; width: 460px; white-space: nowrap; font-size: 72px; font-weight: 500; letter-spacing: -0.03em; line-height: 1; font-variant-numeric: tabular-nums; }
+[class~="12-upsell-bkey"] b { font-weight: 500; color: #37D77C; }
+[class~="12-upsell-bkey"] span { color: #A1A1AA; }
+[class~="12-upsell-track"] { position: relative; flex: 1; height: 24px; border-radius: 12px; background: #141416; border: 1px solid rgba(246,246,243,0.14); overflow: hidden; }
+[class~="12-upsell-fill"] { position: absolute; inset: 0; width: 100%; transform-origin: left center; }
+[id="12-upsell-fill1"] { background: #A1A1AA; }
+[id="12-upsell-fill2"] { background: #37D77C; }
+[id="12-upsell-ticks"] { position: absolute; inset: 0; display: flex; justify-content: space-between; padding: 0 0; }
+[id="12-upsell-ticks"] i { display: block; width: 4px; height: 100%; background: #0B0B0D; }
+
+[class~="12-upsell-card"] {
+  position: absolute; top: 500px; width: 560px; height: 340px; box-sizing: border-box;
+  padding: 36px 40px 40px; background: #141416; border: 1px solid rgba(246,246,243,0.14); border-radius: 14px;
+}
+[id="12-upsell-c1"] { left: 80px; }
+[id="12-upsell-c2"] { left: 680px; }
+[id="12-upsell-c3"] { left: 1280px; }
+[class~="12-upsell-name"] { margin-top: 22px; font-size: 44px; font-weight: 500; line-height: 1.06; letter-spacing: -0.02em; white-space: nowrap; }
+[class~="12-upsell-pricewrap"] { position: absolute; left: 40px; bottom: 36px; display: flex; align-items: baseline; white-space: nowrap; }
+[class~="12-upsell-price"] {
+  display: inline-block; font-size: 112px; font-weight: 500; line-height: 0.95; letter-spacing: -0.03em; color: #37D77C;
+  font-variant-numeric: tabular-nums; transform-origin: left bottom;
+}
+[class~="12-upsell-suffix"] { margin-left: 10px; font-size: 44px; font-weight: 400; color: #A1A1AA; letter-spacing: -0.01em; }
+[id="12-upsell-site"] { position: absolute; left: 560px; top: 478px; width: 800px; border: 1px solid rgba(246,246,243,0.14); border-radius: 14px; background: #141416; overflow: hidden; }
+[id="12-upsell-sitebar"] { height: 44px; display: flex; align-items: center; gap: 8px; padding: 0 18px; border-bottom: 1px solid rgba(246,246,243,0.14); box-sizing: border-box; }
+[id="12-upsell-sitebar"] i { width: 11px; height: 11px; border-radius: 50%; background: #6E6E73; opacity: 0.6; }
+[id="12-upsell-live"] { margin-left: 18px; font-family: "Zen Mono", monospace; font-size: 15px; letter-spacing: 0.14em; text-transform: uppercase; color: #6E6E73; }
+[id="12-upsell-site"] img { display: block; width: 800px; height: 356px; object-fit: cover; object-position: top; }
+</style>
+
+<div id="root" data-composition-id="12-upsell" data-width="1920" data-height="1080" data-duration="39.5">
+  <div class="clip" id="12-upsell-ground" data-start="0" data-duration="39.5" data-track-index="0"></div>
+  <div class="clip" id="12-upsell-scene" data-start="0" data-duration="39.5" data-track-index="1">
+    <div id="12-upsell-world">
+      <div id="12-upsell-top">
+        <div class="12-upsell-label" id="12-upsell-after">After launch</div>
+        <div id="12-upsell-hero">
+          <div id="12-upsell-once">$1,000</div>
+          <div id="12-upsell-plus">+ monthly</div>
+        </div>
+      </div>
+
+      <div id="12-upsell-site">
+        <div id="12-upsell-sitebar"><i></i><i></i><i></i><span id="12-upsell-live">Live</span></div>
+        <img src="assets/shots/template-saas-landing.webp" alt="">
+      </div>
+
+      <div id="12-upsell-chips">
+        <div class="12-upsell-chip">Updates</div>
+        <div class="12-upsell-chip">SEO setup</div>
+        <div class="12-upsell-chip">Google Business Profile cleanup</div>
+        <div class="12-upsell-chip">New landing pages</div>
+        <div class="12-upsell-chip">Analytics</div>
+        <div class="12-upsell-chip">Chatbot setup</div>
+        <div class="12-upsell-chip">Lead follow-up</div>
+        <div class="12-upsell-chip">Maintenance</div>
+      </div>
+
+      <div id="12-upsell-bars">
+        <div class="12-upsell-brow" id="12-upsell-row1">
+          <div class="12-upsell-bkey"><b>$1,000</b> <span>once</span></div>
+          <div class="12-upsell-track"><div class="12-upsell-fill" id="12-upsell-fill1"></div></div>
+        </div>
+        <div class="12-upsell-brow" id="12-upsell-row2">
+          <div class="12-upsell-bkey"><b>$250</b><span>/mo</span></div>
+          <div class="12-upsell-track"><div class="12-upsell-fill" id="12-upsell-fill2"></div><div id="12-upsell-ticks"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div></div>
+        </div>
+      </div>
+
+      <div class="12-upsell-card" id="12-upsell-c1">
+        <div class="12-upsell-label">Monthly</div>
+        <div class="12-upsell-name">Basic Updates</div>
+        <div class="12-upsell-pricewrap"><div class="12-upsell-price" id="12-upsell-p1">$100</div><div class="12-upsell-suffix">/mo</div></div>
+      </div>
+      <div class="12-upsell-card" id="12-upsell-c2">
+        <div class="12-upsell-label">Monthly</div>
+        <div class="12-upsell-name">Website + SEO</div>
+        <div class="12-upsell-pricewrap"><div class="12-upsell-price" id="12-upsell-p2">$250</div><div class="12-upsell-suffix">/mo</div></div>
+      </div>
+      <div class="12-upsell-card" id="12-upsell-c3">
+        <div class="12-upsell-label">Monthly</div>
+        <div class="12-upsell-name">Growth + Automation</div>
+        <div class="12-upsell-pricewrap"><div class="12-upsell-price" id="12-upsell-p3">$500</div><div class="12-upsell-suffix">/mo</div></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+<script>
+(() => {
+  const D = 39;
+  const $ = (id) => document.getElementById(id);
+  const tl = gsap.timeline({ paused: true });
+  const EASE = "power3.out";
+
+  // count-up: value tween + transform-scale growth, same start + ease; suffix lands after the count (counting-dynamic-scale)
+  const count = (el, target, at, dur) => {
+    const st = { v: 0 };
+    tl.fromTo(el, { opacity: 0 }, { opacity: 1, duration: 0.2, ease: "none" }, at);
+    tl.to(st, { v: target, duration: dur, ease: EASE, onUpdate: () => { el.textContent = "$" + Math.round(st.v).toLocaleString("en-US"); } }, at);
+    tl.fromTo(el, { scale: 0.55 }, { scale: 1, duration: dur, ease: EASE }, at);
+    tl.fromTo(el.nextElementSibling, { opacity: 0, y: 16 }, { opacity: 1, y: 0, duration: 0.4, ease: "back.out(1.6)" }, at + dur * 0.8);
+  };
+
+  // ---- Scene 1: the one-time build, then monthly on top of it
+  tl.fromTo($("12-upsell-once"), { opacity: 0, scale: 0.7 }, { opacity: 1, scale: 1, duration: 0.6, ease: EASE, transformOrigin: "left bottom" }, 0.3);
+  tl.fromTo($("12-upsell-plus"), { opacity: 0, x: -40 }, { opacity: 1, x: 0, duration: 0.5, ease: "expo.out" }, 3.36);
+  tl.fromTo($("12-upsell-after"), { opacity: 0, y: 10 }, { opacity: 1, y: 0, duration: 0.4, ease: EASE }, 4.16);
+
+  // ---- Scene 2: each support service lands as a chip on its word
+  const chips = gsap.utils.toArray($("12-upsell-chips").children);
+  const CHIP_AT = [6.24, 7.2, 8.56, 10.64, 11.92, 12.72, 13.92, 15.12];
+  chips.forEach((c, i) => tl.fromTo(c, { opacity: 0, y: 18 }, { opacity: 1, y: 0, duration: 0.4, ease: EASE }, CHIP_AT[i]));
+
+  // ---- Scene 3: the upsell pitch lights the services it names
+  const lit = (i, at) => tl.to(chips[i], { color: "#F6F6F3", borderColor: "rgba(246,246,243,0.6)", duration: 0.35, ease: "power2.out" }, at);
+  tl.to(chips, { opacity: 0.55, duration: 0.5, ease: "power2.out" }, 17.12);
+  tl.to(chips[7], { opacity: 1, duration: 0.3, ease: "none" }, 20.64); lit(7, 20.64);
+  tl.to(chips[3], { opacity: 1, duration: 0.3, ease: "none" }, 22.08); lit(3, 22.08);
+  tl.to(chips[1], { opacity: 1, duration: 0.3, ease: "none" }, 23.44); lit(1, 23.44);
+  tl.to(chips[0], { opacity: 1, duration: 0.3, ease: "none" }, 26.0); lit(0, 26.0);
+
+  // ---- The launched site sits under the services, lights on "live", then yields to the cards
+  const site = $("12-upsell-site");
+  tl.fromTo(site, { opacity: 0, y: 40 }, { opacity: 1, y: 0, duration: 0.7, ease: EASE }, 4.56);
+  tl.to($("12-upsell-live"), { color: "#F6F6F3", duration: 0.35, ease: "power2.out" }, 19.2);
+  tl.to(site, { borderColor: "rgba(246,246,243,0.6)", duration: 0.35, ease: "power2.out" }, 19.2);
+  tl.to(site, { opacity: 0, y: 24, duration: 0.35, ease: "power2.in" }, 26.8);
+
+  // ---- Scene 4: three monthly cards assemble; each price counts on its word
+  const cards = [$("12-upsell-c1"), $("12-upsell-c2"), $("12-upsell-c3")];
+  cards.forEach((c, i) => tl.fromTo(c, { opacity: 0, y: 40 }, { opacity: 1, y: 0, duration: 0.6, ease: EASE }, 27.2 + i * 0.12));
+  count($("12-upsell-p1"), 100, 27.6, 1.2);
+  count($("12-upsell-p2"), 250, 28.5, 1.2);
+  count($("12-upsell-p3"), 500, 29.6, 1.2);
+
+  // ---- Scene 5: the top clears to the comparison; the monthly bar keeps extending past the one-time bar
+  const SWAP = 33.12;
+  tl.to([$("12-upsell-top"), $("12-upsell-chips")], { opacity: 0, filter: "blur(8px)", scale: 0.98, duration: 0.3, ease: "power2.in" }, SWAP);
+  tl.fromTo($("12-upsell-row1"), { opacity: 0, y: 24 }, { opacity: 1, y: 0, duration: 0.5, ease: EASE }, 33.84);
+  tl.fromTo($("12-upsell-fill1"), { scaleX: 0 }, { scaleX: 0.3, duration: 0.9, ease: EASE }, 33.9);
+  tl.to($("12-upsell-c2"), { borderColor: "rgba(246,246,243,0.6)", duration: 0.4, ease: "power2.out" }, 34.88);
+  tl.to([$("12-upsell-c1"), $("12-upsell-c3")], { opacity: 0.45, duration: 0.4, ease: "power2.out" }, 34.88);
+  tl.fromTo($("12-upsell-row2"), { opacity: 0, y: 24 }, { opacity: 1, y: 0, duration: 0.5, ease: EASE }, 35.28);
+  const GROW = 35.6;
+  tl.fromTo($("12-upsell-fill2"), { scaleX: 0 }, { scaleX: 1, duration: D - GROW, ease: "none" }, GROW);
+
+  // Slow push across the whole shot.
+  tl.fromTo($("12-upsell-world"), { scale: 1 }, { scale: 1.025, duration: D - 0.5, ease: "sine.inOut" }, 0.5);
+
+  tl.set({}, {}, D);
+  window.__timelines = window.__timelines || {};
+  window.__timelines["12-upsell"] = tl;
+})();
+</script>
+</template>

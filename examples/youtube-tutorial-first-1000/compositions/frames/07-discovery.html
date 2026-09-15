@@ -1,0 +1,189 @@
+<template>
+<style>
+@font-face { font-family: "Zen"; src: url('assets/fonts/zen.woff2') format('woff2'); font-weight: 100 900; font-display: block; }
+@font-face { font-family: "Zen Mono"; src: url('assets/fonts/zen-mono.woff2') format('woff2'); font-weight: 100 900; font-display: block; }
+
+#root { position: absolute; inset: 0; overflow: hidden; }
+.\30 7-discovery-ground { position: absolute; inset: 0; background: #0B0B0D; overflow: hidden; }
+
+.\30 7-discovery-sheet {
+  position: absolute; left: 360px; top: 110px; width: 1200px;
+  background: #141416; border: 1px solid rgba(246,246,243,0.14); border-radius: 14px;
+  padding: 36px 56px 24px; box-sizing: border-box;
+}
+.\30 7-discovery-label {
+  font-family: "Zen Mono", monospace; font-size: 20px; font-weight: 500; letter-spacing: 0.14em;
+  text-transform: uppercase; color: #6E6E73; line-height: 1;
+}
+.\30 7-discovery-rows { margin-top: 28px; }
+.\30 7-discovery-row {
+  display: flex; align-items: baseline; height: 76px; box-sizing: border-box;
+  border-top: 1px solid rgba(246,246,243,0.14);
+  font-family: "Zen Mono", monospace; white-space: nowrap;
+}
+.\30 7-discovery-row:first-child { border-top: 0; }
+.\30 7-discovery-key {
+  width: 300px; flex: 0 0 300px; padding-top: 26px;
+  font-size: 20px; font-weight: 500; letter-spacing: 0.14em; text-transform: uppercase; color: #6E6E73;
+}
+.\30 7-discovery-val {
+  display: inline-flex; align-items: baseline; min-width: 780px; padding-top: 20px;
+  font-size: 34px; font-weight: 400; color: #F6F6F3; line-height: 1;
+}
+.\30 7-discovery-caret { display: inline-block; width: 16px; height: 34px; margin-left: 4px; background: #F6F6F3; opacity: 0; align-self: center; }
+
+.\30 7-discovery-card {
+  position: absolute; left: 360px; top: 150px; width: 1200px;
+  background: #141416; border: 1px solid rgba(246,246,243,0.14); border-radius: 14px;
+  padding: 56px 72px 60px; box-sizing: border-box;
+}
+.\30 7-discovery-lead {
+  margin-top: 26px; font-family: "Zen", sans-serif; font-weight: 500; font-size: 66px;
+  line-height: 1.06; letter-spacing: -0.02em; color: #F6F6F3;
+}
+.\30 7-discovery-echo { margin-top: 30px; }
+.\30 7-discovery-line {
+  font-family: "Zen", sans-serif; font-weight: 400; font-size: 40px; line-height: 1.35;
+  color: #A1A1AA; letter-spacing: -0.01em;
+}
+.\30 7-discovery-price {
+  margin-top: 26px; display: inline-block;
+  font-family: "Zen", sans-serif; font-weight: 500; font-size: 150px; line-height: 0.95;
+  letter-spacing: -0.03em; color: #37D77C; font-variant-numeric: tabular-nums;
+  transform-origin: left center;
+}
+.\30 7-discovery-rule { width: 100%; height: 3px; margin-top: 18px; background: #37D77C; transform-origin: left center; }
+</style>
+
+<div id="root" data-composition-id="07-discovery" data-width="1920" data-height="1080" data-duration="44.5">
+  <div class="clip 07-discovery-ground" data-start="0" data-duration="44.5" data-track-index="0">
+
+    <div class="07-discovery-sheet" id="07-discovery-sheet" data-layout-allow-overflow>
+      <div class="07-discovery-label">Client intake</div>
+      <div class="07-discovery-rows" id="07-discovery-rows">
+        <div class="07-discovery-row"><div class="07-discovery-key">Goal</div><div class="07-discovery-val"><span class="07-discovery-text"></span><span class="07-discovery-caret"></span></div></div>
+        <div class="07-discovery-row"><div class="07-discovery-key">Customer</div><div class="07-discovery-val"><span class="07-discovery-text"></span><span class="07-discovery-caret"></span></div></div>
+        <div class="07-discovery-row"><div class="07-discovery-key">Main action</div><div class="07-discovery-val"><span class="07-discovery-text"></span><span class="07-discovery-caret"></span></div></div>
+        <div class="07-discovery-row"><div class="07-discovery-key">Pages</div><div class="07-discovery-val"><span class="07-discovery-text"></span><span class="07-discovery-caret"></span></div></div>
+        <div class="07-discovery-row"><div class="07-discovery-key">Features</div><div class="07-discovery-val"><span class="07-discovery-text"></span><span class="07-discovery-caret"></span></div></div>
+        <div class="07-discovery-row"><div class="07-discovery-key">Assets</div><div class="07-discovery-val"><span class="07-discovery-text"></span><span class="07-discovery-caret"></span></div></div>
+        <div class="07-discovery-row"><div class="07-discovery-key">Examples</div><div class="07-discovery-val"><span class="07-discovery-text"></span><span class="07-discovery-caret"></span></div></div>
+        <div class="07-discovery-row"><div class="07-discovery-key">Launch date</div><div class="07-discovery-val"><span class="07-discovery-text"></span><span class="07-discovery-caret"></span></div></div>
+      </div>
+    </div>
+
+    <div class="07-discovery-card" id="07-discovery-card">
+      <div class="07-discovery-label">Scope echo</div>
+      <div class="07-discovery-lead" id="07-discovery-lead">So what I'm hearing is…</div>
+      <div class="07-discovery-echo">
+        <div class="07-discovery-line" id="07-discovery-l1">A three-page site</div>
+        <div class="07-discovery-line" id="07-discovery-l2">Quote form + reviews</div>
+        <div class="07-discovery-line" id="07-discovery-l3">Live in two weeks</div>
+      </div>
+      <div class="07-discovery-price" id="07-discovery-price">$1,000</div>
+      <div class="07-discovery-rule" id="07-discovery-rule"></div>
+    </div>
+
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+<script>
+(() => {
+  const D = 44;
+  const tl = gsap.timeline({ paused: true });
+  const $ = (id) => document.getElementById(id);
+
+  // ---- Scene 1: intake rows type in as each question is asked (discrete-text-sequence)
+  const VALUES = [
+    "Book more clients",
+    "Local homeowners",
+    "Request a quote",
+    "Home · Services · Contact",
+    "Quote form · Reviews",
+    "Logo · 12 photos",
+    "2 sites they like",
+    "Two weeks",
+  ];
+  const STARTS = [2.0, 5.2, 8.4, 11.6, 14.8, 18.0, 21.2, 24.4];
+  const TYPO = { 1: 12 }; // row index → char index where two letters swap, then backspace
+
+  function typed(value, t0, typoAt) {
+    const sizes = [2, 3, 1, 2, 4, 2, 3], gaps = [0.09, 0.14, 0.11, 0.17, 0.08, 0.13, 0.10];
+    const seq = [{ t: t0, text: "" }];
+    let i = 0, k = 0, t = t0;
+    while (i < value.length) {
+      let next = Math.min(value.length, i + sizes[k % sizes.length]);
+      t += gaps[k % gaps.length]; k++;
+      if (typoAt != null && i < typoAt && next >= typoAt) {
+        next = typoAt;
+        seq.push({ t, text: value.slice(0, next) });
+        const wrong = value.slice(0, next) + value[next + 1] + value[next];
+        seq.push({ t: t + 0.14, text: wrong });
+        seq.push({ t: t + 0.62, text: wrong.slice(0, -1) });
+        seq.push({ t: t + 0.74, text: value.slice(0, next) });
+        t += 0.9; i = next; typoAt = null;
+        continue;
+      }
+      seq.push({ t, text: value.slice(0, next) });
+      if (value[next - 1] === " ") t += 0.22;
+      i = next;
+    }
+    return { seq, end: t };
+  }
+
+  const rows = Array.from($("07-discovery-rows").children).map((el, i) => {
+    const { seq, end } = typed(VALUES[i], STARTS[i], TYPO[i]);
+    const cls = (c) => el.getElementsByClassName(c)[0];
+    return { el, text: cls("07-discovery-text"), caret: cls("07-discovery-caret"), seq, start: STARTS[i], end };
+  });
+
+  const textAt = (seq, time) => {
+    for (let i = seq.length - 1; i >= 0; i--) if (time >= seq[i].t) return seq[i].text;
+    return "";
+  };
+
+  const driver = { t: 0 };
+  tl.to(driver, {
+    t: D, duration: D, ease: "none",
+    onUpdate: () => {
+      const t = driver.t;
+      const blink = Math.sin((t * Math.PI * 2) / 0.6) > 0 ? "1" : "0";
+      for (const r of rows) {
+        r.text.textContent = textAt(r.seq, t);
+        r.caret.style.opacity = t >= r.start - 0.05 && t < r.end + 0.6 ? blink : "0";
+      }
+    },
+  }, 0);
+
+  // sheet establishes, rows arrive on their cue
+  tl.fromTo($("07-discovery-sheet"), { opacity: 0, y: 24 }, { opacity: 1, y: 0, duration: 0.5, ease: "power3.out" }, 0);
+  rows.forEach((r) => {
+    tl.fromTo(r.el, { opacity: 0, x: -24 }, { opacity: 1, x: 0, duration: 0.4, ease: "power3.out" }, r.start - 0.3);
+  });
+
+  // ---- Scene 2: hinge — sheet rides up and out (cut-the-curve, upward), the quote card arrives on the same path
+  const CUT = 29.0;
+  tl.to($("07-discovery-sheet"), { y: -230, duration: 0.34, ease: "power4.in" }, CUT);
+  tl.to($("07-discovery-sheet"), { opacity: 0, duration: 0.3, ease: "power1.in" }, CUT);
+  tl.set($("07-discovery-card"), { y: 230, opacity: 0 }, 0);
+  tl.fromTo($("07-discovery-card"), { y: 230, opacity: 0.35 }, { y: 0, opacity: 1, duration: 0.4, ease: "power4.out", immediateRender: false }, CUT + 0.32);
+  tl.fromTo($("07-discovery-lead"), { opacity: 0, y: 18 }, { opacity: 1, y: 0, duration: 0.5, ease: "power3.out" }, CUT + 0.9);
+
+  // ---- Scene 3: the echo lands on a beat (kinetic-beat-slam — one grid, distinct entrances)
+  const PULSE = 0.4;
+  const BEATS = [CUT + PULSE * 6, CUT + PULSE * 10, CUT + PULSE * 14, CUT + PULSE * 18]; // 31.4 · 33.0 · 34.6 · 36.2
+  tl.fromTo($("07-discovery-l1"), { scale: 1.4, filter: "blur(10px)", opacity: 0 }, { scale: 1, filter: "blur(0px)", opacity: 1, duration: 0.5, ease: "power4.out", transformOrigin: "left center" }, BEATS[0]);
+  tl.fromTo($("07-discovery-l2"), { x: -220, opacity: 0 }, { x: 0, opacity: 1, duration: 0.45, ease: "expo.out" }, BEATS[1]);
+  tl.fromTo($("07-discovery-l3"), { y: 70, rotation: 4, opacity: 0 }, { y: 0, rotation: 0, opacity: 1, duration: 0.55, ease: "circ.out", transformOrigin: "left center" }, BEATS[2]);
+  tl.fromTo($("07-discovery-price"), { scale: 1.6, filter: "blur(10px)", opacity: 0 }, { scale: 1, filter: "blur(0px)", opacity: 1, duration: 0.55, ease: "power4.out" }, BEATS[3]);
+  tl.fromTo($("07-discovery-rule"), { scaleX: 0 }, { scaleX: 1, duration: 0.6, ease: "power3.out" }, BEATS[3] + 0.5);
+
+  // one slow push-in onto the artifact, settling before the voice ends
+  tl.fromTo($("07-discovery-card"), { scale: 1 }, { scale: 1.03, duration: D - 1.5 - BEATS[3], ease: "power1.out", transformOrigin: "center 60%" }, BEATS[3]);
+
+  window.__timelines = window.__timelines || {};
+  window.__timelines["07-discovery"] = tl;
+})();
+</script>
+</template>

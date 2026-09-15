@@ -1,0 +1,7 @@
+{
+  "scene": "11-qa",
+  "duration_s": 27.5,
+  "rules": ["stat-bars-and-fills", "discrete-text-sequence", "cursor-click-ripple"],
+  "exit": { "vector": "none, ~0 px/s (quote card lean-in scale 1.00 to 1.03 over 21.2-26.7s, power1.out, settled)", "still_moving": false },
+  "entry": { "vector": "up 144 px/s (list panel y 24 to 0 over 0.5s power3.out); laptop left 200 px/s", "from_rest": false }
+}

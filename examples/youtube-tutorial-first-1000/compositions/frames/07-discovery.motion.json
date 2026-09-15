@@ -1,0 +1,7 @@
+{
+  "scene": "07-discovery",
+  "duration_s": 44,
+  "rules": ["discrete-text-sequence", "kinetic-beat-slam", "3d-page-scroll", "cut-the-curve"],
+  "exit": { "vector": "none, 0 px/s (push-in settled at 42.5s, frame holds still)", "still_moving": false },
+  "entry": { "vector": "up 144 px/s (sheet y 24→0 over 0.5s power3.out)", "from_rest": false }
+}

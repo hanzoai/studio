@@ -1,0 +1,141 @@
+<template>
+<style>
+@font-face { font-family: "Zen"; src: url('assets/fonts/zen.woff2') format('woff2'); font-weight: 100 900; font-display: block; }
+@font-face { font-family: "Zen Mono"; src: url('assets/fonts/zen-mono.woff2') format('woff2'); font-weight: 100 900; font-display: block; }
+#root { position: absolute; inset: 0; overflow: hidden; font-family: "Zen", sans-serif; color: #F6F6F3; }
+[id="02-system-ground"] { position: absolute; inset: 0; background: #0B0B0D; }
+[id="02-system-scene"] { position: absolute; inset: 0; overflow: hidden; }
+[id="02-system-world"] { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; transform-origin: 0 0; will-change: transform; }
+[id="02-system-hud"] { position: absolute; inset: 0; pointer-events: none; }
+[id="02-system-title"] { position: absolute; left: 80px; top: 110px; font-family: "Zen Mono", monospace; font-size: 20px; font-weight: 500; letter-spacing: 0.14em; text-transform: uppercase; color: #6E6E73; }
+
+[id="02-system-track"] { position: absolute; left: 240px; top: 479px; width: 1440px; height: 2px; background: rgba(246,246,243,0.14); transform-origin: left center; }
+[id="02-system-fill"] { position: absolute; left: 240px; top: 479px; width: 1440px; height: 2px; background: #F6F6F3; transform-origin: left center; }
+
+[class~="02-system-station"] { position: absolute; top: 432px; width: 320px; margin-left: -160px; display: flex; flex-direction: column; align-items: center; }
+[class~="02-system-num"] { position: absolute; top: -52px; font-family: "Zen Mono", monospace; font-size: 18px; letter-spacing: 0.14em; color: #6E6E73; }
+[class~="02-system-ring"] { position: relative; width: 96px; height: 96px; background: #0B0B0D; border-radius: 50%; }
+[class~="02-system-ring"] svg { position: absolute; inset: 0; width: 96px; height: 96px; transform: rotate(-90deg); overflow: visible; }
+[class~="02-system-ring"] circle { fill: none; stroke-width: 3; }
+[class~="02-system-base"] { stroke: rgba(246,246,243,0.14); }
+[class~="02-system-arc"] { stroke: #F6F6F3; }
+[class~="02-system-dot"] { position: absolute; left: 34px; top: 34px; width: 28px; height: 28px; border-radius: 50%; background: #F6F6F3; }
+[class~="02-system-label"] { margin-top: 30px; font-family: "Zen Mono", monospace; font-size: 34px; font-weight: 500; letter-spacing: 0.02em; color: #6E6E73; white-space: nowrap; will-change: transform, filter; }
+[class~="02-system-sub"] { margin-top: 14px; font-family: "Zen Mono", monospace; font-size: 20px; letter-spacing: 0.14em; text-transform: uppercase; color: #A1A1AA; white-space: nowrap; }
+[class~="02-system-paid"] [class~="02-system-arc"] { stroke: #37D77C; }
+[class~="02-system-paid"] [class~="02-system-dot"] { background: #37D77C; }
+[id="02-system-sub5"] { color: #37D77C; font-family: "Zen", sans-serif; font-size: 44px; font-weight: 500; letter-spacing: -0.02em; text-transform: none; margin-top: 10px; }
+</style>
+
+<div id="root" data-composition-id="02-system" data-width="1920" data-height="1080" data-duration="12">
+  <div class="clip" id="02-system-ground" data-start="0" data-duration="12" data-track-index="0"></div>
+  <div class="clip" id="02-system-scene" data-start="0" data-duration="12" data-track-index="1">
+    <div id="02-system-world">
+      <div id="02-system-track"></div>
+      <div id="02-system-fill"></div>
+
+      <div class="02-system-station" id="02-system-s1" style="left:240px">
+        <div class="02-system-num">01</div>
+        <div class="02-system-ring"><svg viewBox="0 0 96 96"><circle class="02-system-base" cx="48" cy="48" r="46"/><circle class="02-system-arc" id="02-system-arc1" cx="48" cy="48" r="46"/></svg><div class="02-system-dot" id="02-system-dot1"></div></div>
+        <div class="02-system-label" id="02-system-l1">Client</div>
+        <div class="02-system-sub" id="02-system-sub1">Find · Offer</div>
+      </div>
+      <div class="02-system-station" id="02-system-s2" style="left:600px">
+        <div class="02-system-num">02</div>
+        <div class="02-system-ring"><svg viewBox="0 0 96 96"><circle class="02-system-base" cx="48" cy="48" r="46"/><circle class="02-system-arc" id="02-system-arc2" cx="48" cy="48" r="46"/></svg><div class="02-system-dot" id="02-system-dot2"></div></div>
+        <div class="02-system-label" id="02-system-l2">Build</div>
+        <div class="02-system-sub" id="02-system-sub2">In Hanzo</div>
+      </div>
+      <div class="02-system-station" id="02-system-s3" style="left:960px">
+        <div class="02-system-num">03</div>
+        <div class="02-system-ring"><svg viewBox="0 0 96 96"><circle class="02-system-base" cx="48" cy="48" r="46"/><circle class="02-system-arc" id="02-system-arc3" cx="48" cy="48" r="46"/></svg><div class="02-system-dot" id="02-system-dot3"></div></div>
+        <div class="02-system-label" id="02-system-l3">Revise</div>
+        <div class="02-system-sub" id="02-system-sub3">First draft</div>
+      </div>
+      <div class="02-system-station" id="02-system-s4" style="left:1320px">
+        <div class="02-system-num">04</div>
+        <div class="02-system-ring"><svg viewBox="0 0 96 96"><circle class="02-system-base" cx="48" cy="48" r="46"/><circle class="02-system-arc" id="02-system-arc4" cx="48" cy="48" r="46"/></svg><div class="02-system-dot" id="02-system-dot4"></div></div>
+        <div class="02-system-label" id="02-system-l4">Deliver</div>
+        <div class="02-system-sub" id="02-system-sub4">Final project</div>
+      </div>
+      <div class="02-system-station 02-system-paid" id="02-system-s5" style="left:1680px">
+        <div class="02-system-num">05</div>
+        <div class="02-system-ring"><svg viewBox="0 0 96 96"><circle class="02-system-base" cx="48" cy="48" r="46"/><circle class="02-system-arc" id="02-system-arc5" cx="48" cy="48" r="46"/></svg><div class="02-system-dot" id="02-system-dot5"></div></div>
+        <div class="02-system-label" id="02-system-l5">Get paid</div>
+        <div class="02-system-sub" id="02-system-sub5">$1,000</div>
+      </div>
+    </div>
+  </div>
+  <div class="clip" id="02-system-hud" data-start="0" data-duration="12" data-track-index="2">
+    <div id="02-system-title">The system</div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+<script>
+(() => {
+  const D = 11.5;
+  const $ = (id) => document.getElementById(id);
+  const tl = gsap.timeline({ paused: true });
+  const EASE = "power3.out";
+
+  // Virtual camera: one wrapper, one writer. Centers world point (cx, RAIL_Y) at screen (960, SCREEN_Y).
+  const world = $("02-system-world");
+  const RAIL_Y = 480, SCREEN_Y = 460;
+  const cam = { s: 1.4, cx: 520 };
+  const applyCamera = () => {
+    const x = 960 - cam.cx * cam.s, y = SCREEN_Y - RAIL_Y * cam.s;
+    world.style.transform = `translate(${x}px, ${y}px) scale(${cam.s})`;
+  };
+  applyCamera();
+
+  // Rail and stations establish; labels sit dim as the map.
+  tl.fromTo($("02-system-title"), { opacity: 0, y: 10 }, { opacity: 1, y: 0, duration: 0.5, ease: EASE }, 0.1);
+  tl.fromTo($("02-system-track"), { scaleX: 0 }, { scaleX: 1, duration: 1.2, ease: EASE }, 0);
+  [1, 2, 3, 4, 5].forEach((i) => {
+    tl.fromTo($("02-system-s" + i), { opacity: 0, y: 16 }, { opacity: 1, y: 0, duration: 0.45, ease: EASE }, 0.05 + i * 0.06);
+  });
+  gsap.set($("02-system-fill"), { scaleX: 0 });
+
+  // Station k lights: ring draws, dot pops, label brightens with its own entrance, sub-label rises, rail fill reaches it.
+  const entrances = [
+    { from: { scale: 1.35, filter: "blur(8px)" }, to: { scale: 1, filter: "blur(0px)", ease: "power4.out" } },
+    { from: { x: -60 }, to: { x: 0, ease: "expo.out" } },
+    { from: { y: 40, rotation: 5 }, to: { y: 0, rotation: 0, ease: "circ.out" } },
+    { from: { x: 60 }, to: { x: 0, ease: "expo.out" } },
+    { from: { scale: 0.6 }, to: { scale: 1, ease: "back.out(2)" } },
+  ];
+  const light = (i, at, subAt) => {
+    const arc = $("02-system-arc" + i);
+    const len = arc.getTotalLength();
+    arc.style.strokeDasharray = len;
+    tl.fromTo(arc, { strokeDashoffset: len }, { strokeDashoffset: 0, duration: 0.7, ease: "power2.out" }, at - 0.3);
+    tl.fromTo($("02-system-dot" + i), { scale: 0 }, { scale: 1, duration: 0.45, ease: "back.out(2)" }, at + 0.2);
+    const e = entrances[i - 1];
+    tl.fromTo($("02-system-l" + i), { ...e.from }, { ...e.to, duration: 0.5 }, at);
+    tl.to($("02-system-l" + i), { color: i === 5 ? "#37D77C" : "#F6F6F3", duration: 0.2, ease: "none" }, at);
+    tl.fromTo($("02-system-sub" + i), { opacity: 0, y: 14 }, { opacity: 1, y: 0, duration: 0.45, ease: EASE }, subAt);
+    tl.to($("02-system-fill"), { scaleX: (i - 1) / 4, duration: 0.6, ease: "power2.inOut" }, at - 0.4);
+  };
+  // Word cues: client 1.36 · offer 2.96 · building 3.60 · draft 4.40 · Hanzo 5.20 · delivering 6.40 · paid 8.72
+  light(1, 1.0, 2.96);
+  light(2, 3.6, 5.2);
+  light(3, 4.4, 4.7);
+  light(4, 6.4, 7.6);
+  light(5, 8.5, 8.72);
+
+  // Pan from station to station, then pull out to the full map and hold.
+  const pan = (cx, s, at, dur) => tl.to(cam, { cx, s, duration: dur, ease: "power2.inOut", onUpdate: applyCamera }, at);
+  pan(700, 1.4, 2.0, 1.4);
+  pan(900, 1.4, 3.7, 0.9);
+  pan(1240, 1.4, 5.2, 1.2);
+  pan(1400, 1.4, 7.1, 1.3);
+  pan(960, 1.0, 9.3, 1.8);
+  tl.to(cam, { s: 1.02, duration: 0.4, ease: "sine.out", onUpdate: applyCamera }, 11.1);
+
+  tl.set({}, {}, D);
+  window.__timelines = window.__timelines || {};
+  window.__timelines["02-system"] = tl;
+})();
+</script>
+</template>

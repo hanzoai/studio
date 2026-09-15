@@ -1,0 +1,121 @@
+<template>
+<style>
+@font-face { font-family: "Zen"; src: url('assets/fonts/zen.woff2') format('woff2'); font-weight: 100 900; font-display: block; }
+@font-face { font-family: "Zen Mono"; src: url('assets/fonts/zen-mono.woff2') format('woff2'); font-weight: 100 900; font-display: block; }
+
+#root { position: absolute; inset: 0; overflow: hidden; }
+.\30 8-deposit-ground { position: absolute; inset: 0; background: #0B0B0D; overflow: hidden; }
+
+.\30 8-deposit-panel {
+  position: absolute; left: 360px; top: 140px; width: 1200px;
+  background: #141416; border: 1px solid rgba(246,246,243,0.14); border-radius: 14px;
+  padding: 40px 64px 44px; box-sizing: border-box;
+}
+.\30 8-deposit-label {
+  font-family: "Zen Mono", monospace; font-size: 20px; font-weight: 500; letter-spacing: 0.14em;
+  text-transform: uppercase; color: #6E6E73; line-height: 1;
+}
+.\30 8-deposit-row {
+  display: flex; align-items: baseline; justify-content: space-between;
+  font-family: "Zen", sans-serif; white-space: nowrap;
+}
+.\30 8-deposit-total { margin-top: 28px; height: 130px; }
+.\30 8-deposit-half { height: 104px; border-top: 1px solid rgba(246,246,243,0.14); }
+.\30 8-deposit-key { font-size: 36px; font-weight: 400; color: #F6F6F3; letter-spacing: -0.01em; }
+.\30 8-deposit-half .\30 8-deposit-key { color: #A1A1AA; }
+.\30 8-deposit-amt {
+  display: inline-block; width: 480px; text-align: right;
+  font-weight: 500; color: #37D77C; letter-spacing: -0.03em; line-height: 0.95;
+  font-variant-numeric: tabular-nums; transform-origin: right center;
+}
+.\30 8-deposit-total .\30 8-deposit-amt { font-size: 120px; }
+.\30 8-deposit-half .\30 8-deposit-amt { font-size: 88px; }
+
+.\30 8-deposit-track { position: relative; height: 18px; margin: 18px 0 40px; border-radius: 9px; background: #0B0B0D; overflow: hidden; }
+.\30 8-deposit-fill { position: absolute; inset: 0; width: 100%; background: #F6F6F3; transform-origin: left center; }
+.\30 8-deposit-left { position: absolute; top: 0; bottom: 0; left: 0; width: 50%; background: #F6F6F3; }
+.\30 8-deposit-right { position: absolute; top: 0; bottom: 0; right: 0; width: 50%; background: #F6F6F3; }
+.\30 8-deposit-gap { position: absolute; top: 0; bottom: 0; left: 50%; width: 8px; margin-left: -4px; background: #0B0B0D; transform-origin: center center; }
+
+.\30 8-deposit-split { margin-top: 28px; padding-top: 24px; border-top: 1px solid rgba(246,246,243,0.14); }
+</style>
+
+<div id="root" data-composition-id="08-deposit" data-width="1920" data-height="1080" data-duration="15.9">
+  <div class="clip 08-deposit-ground" data-start="0" data-duration="15.9" data-track-index="0">
+
+    <div class="08-deposit-panel" id="08-deposit-panel">
+      <div class="08-deposit-label">Invoice</div>
+
+      <div class="08-deposit-row 08-deposit-total" id="08-deposit-row1">
+        <div class="08-deposit-key">Project total</div>
+        <div class="08-deposit-amt" id="08-deposit-amt1">$0</div>
+      </div>
+
+      <div class="08-deposit-track">
+        <div class="08-deposit-fill" id="08-deposit-fill"></div>
+        <div class="08-deposit-left" id="08-deposit-left"></div>
+        <div class="08-deposit-right" id="08-deposit-right"></div>
+        <div class="08-deposit-gap" id="08-deposit-gap"></div>
+      </div>
+
+      <div class="08-deposit-row 08-deposit-half" id="08-deposit-row2">
+        <div class="08-deposit-key">Deposit due</div>
+        <div class="08-deposit-amt" id="08-deposit-amt2">$0</div>
+      </div>
+
+      <div class="08-deposit-row 08-deposit-half" id="08-deposit-row3">
+        <div class="08-deposit-key">Final payment before handoff</div>
+        <div class="08-deposit-amt" id="08-deposit-amt3">$0</div>
+      </div>
+
+      <div class="08-deposit-label 08-deposit-split" id="08-deposit-split">50% upfront · 50% before handoff</div>
+    </div>
+
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+<script>
+(() => {
+  const D = 15.5;
+  const tl = gsap.timeline({ paused: true });
+  const $ = (id) => document.getElementById(id);
+  const EASE = "power3.out";
+
+  // count-up: value tween + transform-scale growth, same start + ease (counting-dynamic-scale)
+  const count = (el, target, at, dur) => {
+    const st = { v: 0 };
+    tl.to(st, { v: target, duration: dur, ease: EASE, onUpdate: () => { el.textContent = "$" + Math.round(st.v).toLocaleString("en-US"); } }, at);
+    tl.fromTo(el, { scale: 0.55 }, { scale: 1, duration: dur, ease: EASE }, at);
+  };
+
+  // ---- Scene 1: panel establishes; the total counts to 1,000 while the bar fills (stat-bars-and-fills)
+  tl.fromTo($("08-deposit-panel"), { opacity: 0, y: 24 }, { opacity: 1, y: 0, duration: 0.5, ease: EASE }, 0);
+  tl.fromTo($("08-deposit-row1"), { opacity: 0, x: -20 }, { opacity: 1, x: 0, duration: 0.4, ease: EASE }, 0.3);
+  count($("08-deposit-amt1"), 1000, 0.8, 1.8);
+  tl.fromTo($("08-deposit-fill"), { scaleX: 0 }, { scaleX: 1, duration: 1.8, ease: EASE }, 0.8);
+
+  // ---- Scene 2: the bar splits in two; the deposit half counts up
+  const SPLIT = 4.6;
+  tl.fromTo($("08-deposit-left"), { opacity: 0 }, { opacity: 1, duration: 0.01 }, SPLIT);
+  tl.fromTo($("08-deposit-right"), { opacity: 0 }, { opacity: 0.22, duration: 0.4, ease: "power2.out" }, SPLIT);
+  tl.to($("08-deposit-fill"), { opacity: 0, duration: 0.01 }, SPLIT);
+  tl.fromTo($("08-deposit-gap"), { scaleY: 0 }, { scaleY: 1, duration: 0.25, ease: "power4.out" }, SPLIT);
+  tl.fromTo($("08-deposit-row2"), { opacity: 0, x: -20 }, { opacity: 1, x: 0, duration: 0.4, ease: EASE }, SPLIT + 0.1);
+  count($("08-deposit-amt2"), 500, SPLIT + 0.3, 1.4);
+
+  // ---- Scene 3: the final half lights; the second 500 counts up
+  const FINAL = 8.6;
+  tl.to($("08-deposit-right"), { opacity: 1, duration: 0.5, ease: "power2.out" }, FINAL);
+  tl.fromTo($("08-deposit-row3"), { opacity: 0, x: -20 }, { opacity: 1, x: 0, duration: 0.4, ease: EASE }, FINAL);
+  count($("08-deposit-amt3"), 500, FINAL + 0.2, 1.4);
+
+  // ---- Scene 4: the split named; slow lean-in settles before the voice ends
+  tl.fromTo($("08-deposit-split"), { opacity: 0, y: 12 }, { opacity: 1, y: 0, duration: 0.5, ease: EASE }, 11.6);
+  tl.fromTo($("08-deposit-panel"), { scale: 1 }, { scale: 1.04, duration: D - 1.5 - 0.5, ease: "power1.out", transformOrigin: "center 55%" }, 0.5);
+
+  window.__timelines = window.__timelines || {};
+  window.__timelines["08-deposit"] = tl;
+})();
+</script>
+</template>

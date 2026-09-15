@@ -1,0 +1,173 @@
+<template>
+<style>
+@font-face { font-family: "Zen"; src: url('assets/fonts/zen.woff2') format('woff2'); font-weight: 100 900; font-display: block; }
+@font-face { font-family: "Zen Mono"; src: url('assets/fonts/zen-mono.woff2') format('woff2'); font-weight: 100 900; font-display: block; }
+
+#root { position: absolute; inset: 0; overflow: hidden; font-family: "Zen", sans-serif; color: #F6F6F3; }
+[id="05-outreach-ground"] { position: absolute; inset: 0; background: #0B0B0D; overflow: hidden; }
+
+[id="05-outreach-card"] {
+  position: absolute; left: 360px; top: 150px; width: 1200px; box-sizing: border-box;
+  background: #141416; border: 1px solid rgba(246,246,243,0.14); border-radius: 14px;
+  padding: 0 60px 52px; transform-origin: 0 0;
+}
+[id="05-outreach-head"] {
+  display: flex; align-items: center; justify-content: space-between; height: 84px;
+  border-bottom: 1px solid rgba(246,246,243,0.14); margin: 0 -60px 40px; padding: 0 60px;
+}
+[class~="05-outreach-label"] {
+  font-family: "Zen Mono", monospace; font-size: 20px; font-weight: 500; letter-spacing: 0.14em;
+  text-transform: uppercase; color: #6E6E73; line-height: 1;
+}
+[id="05-outreach-tag"] {
+  font-family: "Zen Mono", monospace; font-size: 20px; font-weight: 500; letter-spacing: 0.14em;
+  text-transform: uppercase; color: #F6F6F3; line-height: 1;
+  padding: 10px 16px; border: 1px solid rgba(246,246,243,0.14); border-radius: 8px;
+}
+[class~="05-outreach-para"] {
+  font-family: "Zen Mono", monospace; font-size: 38px; line-height: 1.5; color: #F6F6F3;
+  margin: 0 0 26px; white-space: pre-wrap;
+}
+[class~="05-outreach-para"]:last-child { margin-bottom: 0; }
+[class~="05-outreach-ghost"] { visibility: hidden; }
+[class~="05-outreach-hl"] {
+  background-image: linear-gradient(#37D77C, #37D77C);
+  background-repeat: no-repeat; background-position: 0 100%; background-size: 0% 4px;
+  padding-bottom: 4px;
+}
+[id="05-outreach-caret"] { display: inline-block; position: relative; width: 0; height: 1em; vertical-align: -0.15em; }
+[id="05-outreach-bar"] { position: absolute; left: 2px; top: 0; width: 16px; height: 100%; background: #F6F6F3; }
+
+[id="05-outreach-side"] { position: absolute; left: 1250px; top: 290px; width: 590px; }
+[class~="05-outreach-point"] { margin-bottom: 70px; }
+[class~="05-outreach-word"] {
+  display: inline-block; font-family: "Zen", sans-serif; font-weight: 500; font-size: 88px;
+  line-height: 1.02; letter-spacing: -0.03em; color: #F6F6F3; transform-origin: left center;
+}
+[class~="05-outreach-rule"] { width: 100%; height: 6px; margin-top: 18px; background: #37D77C; transform-origin: left center; }
+</style>
+
+<div id="root" data-composition-id="05-outreach" data-width="1920" data-height="1080" data-duration="24">
+  <div class="clip" id="05-outreach-ground" data-start="0" data-duration="24" data-track-index="0">
+
+    <div id="05-outreach-card">
+      <div id="05-outreach-head">
+        <div class="05-outreach-label">Outreach message</div>
+        <div id="05-outreach-tag">Specific</div>
+      </div>
+      <div id="05-outreach-body">
+        <p class="05-outreach-para"></p>
+        <p class="05-outreach-para"></p>
+        <p class="05-outreach-para"></p>
+      </div>
+      <span id="05-outreach-caret"><span id="05-outreach-bar"></span></span>
+    </div>
+
+    <div id="05-outreach-side">
+      <div class="05-outreach-point" id="05-outreach-pt1">
+        <div class="05-outreach-word" id="05-outreach-w1">One problem</div>
+        <div class="05-outreach-rule" id="05-outreach-r1"></div>
+      </div>
+      <div class="05-outreach-point" id="05-outreach-pt2">
+        <div class="05-outreach-word" id="05-outreach-w2">One fix</div>
+        <div class="05-outreach-rule" id="05-outreach-r2"></div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+<script>
+(() => {
+  const D = 23.5;
+  const tl = gsap.timeline({ paused: true });
+  const $ = (id) => document.getElementById(id);
+  const EASE = "power3.out";
+
+  // Each paragraph: [word, spoken start] pairs, the last word's end, and the phrase that underlines.
+  const PARAS = [
+    { words: [["Hey,", 4.00], ["I", 4.40], ["came", 4.56], ["across", 4.80], ["your", 5.20], ["business", 5.36], ["and", 5.68], ["noticed", 5.92], ["your", 6.32], ["booking", 6.48], ["flow", 6.88], ["is", 7.20], ["hard", 7.36], ["to", 7.60], ["use", 7.84], ["on", 8.08], ["mobile.", 8.32]], end: 8.80, hl: "your booking flow is hard to use on mobile" },
+    { words: [["I", 8.96], ["build", 9.20], ["simple", 9.60], ["mobile-friendly", 10.00], ["websites", 10.88], ["and", 11.36], ["booking", 11.60], ["pages", 12.08], ["for", 12.48], ["local", 12.72], ["businesses.", 13.12]], end: 13.70, hl: null },
+    { words: [["I", 14.08], ["can", 14.32], ["put", 14.48], ["together", 14.64], ["a", 15.04], ["cleaner", 15.12], ["version", 15.68], ["this", 16.00], ["week", 16.16], ["if", 16.48], ["you", 16.64], ["want", 16.80], ["to", 16.96], ["take", 17.12], ["a", 17.36], ["look.", 17.60]], end: 18.00, hl: "a cleaner version" },
+  ];
+
+  // Per-character schedule: each word types between its spoken start and the next word (typewriter synced to voice).
+  const paraEls = Array.from($("05-outreach-body").children);
+  const paras = PARAS.map((p, pi) => {
+    const text = p.words.map((w) => w[0]).join(" ");
+    const times = [];
+    p.words.forEach(([w, s], k) => {
+      const next = k + 1 < p.words.length ? p.words[k + 1][1] : p.end;
+      const n = w.length + (k + 1 < p.words.length ? 1 : 0);
+      const step = Math.min(0.055, (next - s) / (n + 1));
+      for (let j = 0; j < n; j++) times.push(s + j * step);
+    });
+    const cuts = [0, text.length];
+    let a = -1;
+    if (p.hl) { a = text.indexOf(p.hl); cuts.splice(1, 0, a, a + p.hl.length); }
+    const el = paraEls[pi];
+    const segs = [];
+    for (let i = 0; i + 1 < cuts.length; i++) {
+      const wrap = document.createElement("span");
+      if (cuts[i] === a) wrap.className = "05-outreach-hl";
+      const typed = document.createElement("span");
+      const ghost = document.createElement("span");
+      ghost.className = "05-outreach-ghost";
+      wrap.append(typed, ghost);
+      el.append(wrap);
+      segs.push({ from: cuts[i], to: cuts[i + 1], wrap, typed, ghost });
+    }
+    return { text, times, segs, start: times[0], hlEl: segs.find((s) => s.from === a)?.wrap };
+  });
+
+  const caret = $("05-outreach-caret");
+  const countAt = (times, t) => { let n = 0; while (n < times.length && times[n] <= t) n++; return n; };
+  let lastParent = null, lastBefore = null;
+
+  const render = (t) => {
+    let active = paras[0], activeN = 0, typing = false;
+    paras.forEach((p) => {
+      const n = countAt(p.times, t);
+      if (t >= p.start) { active = p; activeN = n; }
+      if (n > 0 && n < p.times.length) typing = true;
+      p.segs.forEach((s) => {
+        const cut = Math.max(s.from, Math.min(s.to, n));
+        const done = p.text.slice(s.from, cut), rest = p.text.slice(cut, s.to);
+        if (s.typed.textContent !== done) s.typed.textContent = done;
+        if (s.ghost.textContent !== rest) s.ghost.textContent = rest;
+      });
+    });
+    const seg = active.segs.find((s) => activeN < s.to) || active.segs[active.segs.length - 1];
+    const parent = seg.wrap;
+    const before = activeN >= seg.to ? null : seg.ghost;
+    if (parent !== lastParent || before !== lastBefore) { parent.insertBefore(caret, before); lastParent = parent; lastBefore = before; }
+    const on = typing || Math.sin((t * Math.PI * 2) / 0.8) > 0;
+    caret.style.opacity = t < 18.6 && on ? "1" : "0";
+  };
+  render(0);
+  const driver = { t: 0 };
+  tl.to(driver, { t: D, duration: D, ease: "none", onUpdate: () => render(driver.t) }, 0);
+
+  // ---- Scene 1: the card is there from the first frame; "specific" marks it
+  tl.fromTo($("05-outreach-card"), { opacity: 0, y: 24 }, { opacity: 1, y: 0, duration: 0.5, ease: EASE }, 0);
+  tl.fromTo($("05-outreach-tag"), { opacity: 0, scale: 0.8 }, { opacity: 1, scale: 1, duration: 0.4, ease: "back.out(2)" }, 2.0);
+
+  // ---- Scene 2: the three sentences type on the voice (driver above); a slow lean-in under them
+  tl.fromTo($("05-outreach-card"), { scale: 1 }, { scale: 1.02, duration: 13, ease: "sine.inOut", immediateRender: false }, 4.0);
+
+  // ---- Scene 3: "That works": the card steps aside, the two phrases land and underline in green
+  tl.to($("05-outreach-card"), { x: -280, y: -20, scale: 0.84, duration: 0.8, ease: "power3.inOut" }, 18.08);
+  tl.fromTo($("05-outreach-w1"), { opacity: 0, y: 50 }, { opacity: 1, y: 0, duration: 0.5, ease: "expo.out" }, 20.0);
+  tl.fromTo($("05-outreach-r1"), { scaleX: 0 }, { scaleX: 1, duration: 0.5, ease: EASE }, 20.24);
+  tl.fromTo(paras[0].hlEl, { backgroundSize: "0% 4px" }, { backgroundSize: "100% 4px", duration: 0.7, ease: "power2.out" }, 20.24);
+  tl.fromTo($("05-outreach-w2"), { opacity: 0, scale: 1.4, filter: "blur(10px)" }, { opacity: 1, scale: 1, filter: "blur(0px)", duration: 0.5, ease: "power4.out" }, 21.28);
+  tl.fromTo($("05-outreach-r2"), { scaleX: 0 }, { scaleX: 1, duration: 0.5, ease: EASE }, 21.52);
+  tl.fromTo(paras[2].hlEl, { backgroundSize: "0% 4px" }, { backgroundSize: "100% 4px", duration: 0.6, ease: "power2.out" }, 21.52);
+
+  tl.set({}, {}, D);
+  window.__timelines = window.__timelines || {};
+  window.__timelines["05-outreach"] = tl;
+})();
+</script>
+</template>
