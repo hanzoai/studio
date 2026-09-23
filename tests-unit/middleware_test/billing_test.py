@@ -13,6 +13,7 @@ import asyncio
 import base64
 import inspect
 import logging
+from urllib.parse import unquote_plus
 
 import pytest
 from aiohttp import web
@@ -83,6 +84,15 @@ def test_token_is_minted_by_client_credentials_as_the_studio_iam_app(cloud):
     assert mint["auth"] == "Basic " + base64.b64encode(b"hanzo-studio:s3cret").decode()
     assert mint["ctype"] == "application/x-www-form-urlencoded"
     assert mint["form"] == {"grant_type": "client_credentials"}  # no secret in the body
+
+
+def test_client_credential_is_form_encoded_as_iam_decodes_it(cloud, monkeypatch):
+    secret = "a+b/c=d:e%f g"
+    monkeypatch.setenv("STUDIO_IAM_CLIENT_SECRET", secret)
+    cloud.run(lambda: commerce.balance("acme"))
+    raw = base64.b64decode(cloud.mints[0]["auth"].split(" ", 1)[1]).decode()
+    cid, _, sec = raw.partition(":")
+    assert (unquote_plus(cid), unquote_plus(sec)) == ("hanzo-studio", secret)
 
 
 def test_token_is_cached_and_replaced_60s_before_expiry(cloud, monkeypatch):

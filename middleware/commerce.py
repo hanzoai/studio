@@ -22,6 +22,7 @@ Env:
 import asyncio
 import os
 import time
+from urllib.parse import quote_plus
 
 import aiohttp
 
@@ -56,7 +57,9 @@ async def token(session: aiohttp.ClientSession) -> str:
         async with session.post(
             f"{iam}/v1/iam/oauth/token",
             data={"grant_type": "client_credentials"},
-            auth=aiohttp.BasicAuth(client_id, secret),
+            # RFC 6749 §2.3.1: both halves are form-urlencoded before base64, and
+            # IAM decodes them, so a secret carrying '+' or '%' authenticates.
+            auth=aiohttp.BasicAuth(quote_plus(client_id), quote_plus(secret)),
         ) as r:
             if r.status != 200:
                 raise Error(f"IAM token {r.status}: {(await r.text())[:200]}")
