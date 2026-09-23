@@ -74,9 +74,9 @@ def enabled() -> bool:
 def artifacts(history_result: dict | None) -> list[dict]:
     """
     The media artifacts a completed render produced, as Studio's own output refs
-    ({filename, subfolder, type}). Mirrors billing_middleware.count_outputs — the
-    same shape Studio already returns to the UI, so there is no second notion of
-    "what a render produced". Previews (type != "output") are not artifacts.
+    ({filename, subfolder, type}) — the same shape Studio already returns to the
+    UI, so there is no second notion of "what a render produced". Previews
+    (type != "output") are not artifacts.
     """
     out: list[dict] = []
     for node_output in (history_result or {}).get("outputs", {}).values():

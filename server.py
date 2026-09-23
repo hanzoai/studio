@@ -1019,11 +1019,8 @@ class PromptServer():
             if args.enable_billing and args.billing_check_balance:
                 iam_user = request.get("iam_user")
                 if iam_user:
-                    user_id = iam_user.get("sub", "anonymous")
                     org_id = iam_user.get("org_id", "default")
-                    has_balance, available = await billing_middleware.check_balance(
-                        user_id, org_id
-                    )
+                    has_balance, available = await billing_middleware.check_balance(org_id)
                     if not has_balance:
                         return web.json_response(
                             {"error": "Insufficient balance", "available": available},

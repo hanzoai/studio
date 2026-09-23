@@ -134,9 +134,10 @@ EXPOSE 8188
 #   STUDIO_MULTI_TENANT=1         - Per-org storage isolation
 #   STUDIO_ORG_ID=default-org     - Default org ID
 #   STUDIO_ENABLE_BILLING=1       - Commerce billing integration
-#   STUDIO_BILLING_CHECK_BALANCE=1 - Check balance before prompts
-#   STUDIO_COMMERCE_URL=http://commerce.hanzo.svc:8001
-#   STUDIO_COMMERCE_TOKEN=...     - Commerce API token
+#   STUDIO_BILLING_CHECK_BALANCE=1 - Check the org balance before prompts
+#   STUDIO_COMMERCE_URL=http://cloud.hanzo.svc:8000 - commerce API base
+#   STUDIO_IAM_CLIENT_ID / STUDIO_IAM_CLIENT_SECRET - the IAM app; billing calls
+#                                   use its client_credentials token
 #   STUDIO_ENABLE_METRICS=1       - /metrics endpoint for VictoriaMetrics
 #   STUDIO_RATE_LIMIT_RPM=60      - Prompts per minute per org
 CMD ["python", "main.py", "--listen", "0.0.0.0", "--port", "8188", "--cpu"]

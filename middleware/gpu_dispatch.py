@@ -134,19 +134,14 @@ def _has_online_gpu(tok: str) -> bool:
     return bool(_online_gpu_nodes(tok))
 
 
-# Server credentials that read the WHOLE fleet, not just the caller-org's slice like
-# a user token. KMS-sourced (the SAME envs worker/commerce already use); consulted
-# ONLY by the advisory capacity gate below — never by a render decision.
-_SERVICE_TOKEN_ENVS = ("STUDIO_WORKER_TOKEN", "STUDIO_COMMERCE_TOKEN")
-
-
 def _service_token() -> str:
-    """A service bearer for a fleet read, or "" if none is configured."""
-    for env in _SERVICE_TOKEN_ENVS:
-        v = os.environ.get(env, "").strip()
-        if v:
-            return v if v.lower().startswith("bearer ") else f"Bearer {v}"
-    return ""
+    """A server credential that reads the WHOLE fleet, not just the caller-org's slice
+    like a user token: STUDIO_WORKER_TOKEN (KMS-sourced), as a bearer, or "" if unset.
+    Consulted ONLY by the advisory capacity gate below — never by a render decision."""
+    v = os.environ.get("STUDIO_WORKER_TOKEN", "").strip()
+    if not v:
+        return ""
+    return v if v.lower().startswith("bearer ") else f"Bearer {v}"
 
 
 def has_online_gpu_advisory(user_tok: str) -> bool:

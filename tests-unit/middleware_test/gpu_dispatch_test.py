@@ -117,13 +117,13 @@ def test_no_token_is_not_a_local_render_claim(monkeypatch):
 
 # ── The capacity gate is advisory + service-identity ─────────────────────────────
 
-def test_service_token_prefers_worker_then_commerce(monkeypatch):
+def test_service_token_is_the_worker_token_only(monkeypatch):
     monkeypatch.setenv("STUDIO_WORKER_TOKEN", "w")
-    monkeypatch.setenv("STUDIO_COMMERCE_TOKEN", "c")
+    assert g._service_token() == "Bearer w"
+    monkeypatch.setenv("STUDIO_WORKER_TOKEN", "Bearer w")
     assert g._service_token() == "Bearer w"
     monkeypatch.delenv("STUDIO_WORKER_TOKEN")
-    assert g._service_token() == "Bearer c"
-    monkeypatch.delenv("STUDIO_COMMERCE_TOKEN")
+    monkeypatch.setenv("STUDIO_COMMERCE_TOKEN", "c")    # the old shared token is not read
     assert g._service_token() == ""
 
 
@@ -138,14 +138,12 @@ def test_advisory_gate_reads_fleet_with_service_identity(monkeypatch):
 
     monkeypatch.setattr(g, "_fleet_machines", fleet)
     monkeypatch.setenv("STUDIO_WORKER_TOKEN", "svc")
-    monkeypatch.delenv("STUDIO_COMMERCE_TOKEN", raising=False)
     assert g.has_online_gpu_advisory("Bearer karma") is True
     assert seen[0] == "Bearer svc"           # service identity consulted FIRST
 
 
 def test_advisory_gate_falls_back_to_user_token(monkeypatch):
     monkeypatch.delenv("STUDIO_WORKER_TOKEN", raising=False)
-    monkeypatch.delenv("STUDIO_COMMERCE_TOKEN", raising=False)
     monkeypatch.setattr(g, "_fleet_machines",
                         lambda tok: [{"name": "spark", "status": "online", "gpu": True}]
                         if tok == "Bearer user" else [])
@@ -154,7 +152,6 @@ def test_advisory_gate_falls_back_to_user_token(monkeypatch):
 
 def test_advisory_gate_false_when_nothing_online(monkeypatch):
     monkeypatch.delenv("STUDIO_WORKER_TOKEN", raising=False)
-    monkeypatch.delenv("STUDIO_COMMERCE_TOKEN", raising=False)
     monkeypatch.setattr(g, "_fleet_machines", lambda tok: [])
     assert g.has_online_gpu_advisory("Bearer user") is False
 

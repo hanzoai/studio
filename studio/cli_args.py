@@ -232,8 +232,8 @@ parser.add_argument("--org-id", type=str, default=os.environ.get("STUDIO_ORG_ID"
 parser.add_argument("--multi-tenant", action="store_true", help="Enable multi-tenant mode with per-org storage isolation.")
 
 # --- Billing ---
-parser.add_argument("--enable-billing", action="store_true", help="Enable Commerce billing integration (usage recording and balance checks).")
-parser.add_argument("--billing-check-balance", action="store_true", help="Check user balance before accepting prompts (requires --enable-billing).")
+parser.add_argument("--enable-billing", action="store_true", help="Enable Commerce billing integration (the pre-prompt balance check).")
+parser.add_argument("--billing-check-balance", action="store_true", help="Check the org balance before accepting prompts (requires --enable-billing).")
 
 # --- Rate Limiting ---
 parser.add_argument("--rate-limit-rpm", type=int, default=int(os.environ.get("STUDIO_RATE_LIMIT_RPM", "60")), help="Max prompt submissions per minute per org. 0 = unlimited. (default: 60)")

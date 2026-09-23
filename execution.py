@@ -1256,7 +1256,7 @@ class Renderer:
         return True
 
     def _render(self, item):
-        from middleware import billing_middleware, content_publish, metrics_middleware
+        from middleware import content_publish, metrics_middleware
         prompt_id, prompt, extra_data, outputs, sensitive = item
         started = time.perf_counter()
         self.server.last_prompt_id = prompt_id
@@ -1288,20 +1288,6 @@ class Renderer:
         took = time.perf_counter() - started
         if getattr(args, "enable_metrics", False):
             metrics_middleware.record_prompt_end(took, self.executor.success)
-
-        # Billing: ONE metered usage event per completed render (fire-and-forget).
-        # org_id is the IAM tenant; prompt_id is the idempotency key; quantity is
-        # the number of artifacts produced. Never blocks or fails a render; no-op
-        # unless STUDIO_BILLING_* is set.
-        if getattr(args, "enable_billing", False) and self.executor.success:
-            asyncio.run_coroutine_threadsafe(
-                billing_middleware.record_render(
-                    org_id=extra_data.get("org_id") or "default",
-                    prompt_id=prompt_id,
-                    n_outputs=billing_middleware.count_outputs(self.executor.history_result),
-                ),
-                self.server.loop,
-            )
 
         # Content: record each output artifact as a draft Asset in the content lane
         # (clients/content, module "marketing") — the SAME DocType that lane writes
