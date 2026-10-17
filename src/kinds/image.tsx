@@ -4,7 +4,9 @@
  * Two lanes, chosen per request: the gateway's image models (api.hanzo.ai,
  * billed to the org) and Zen Image on the org's own GPU (Z-Image-Turbo through
  * the engine), which is offered only while a GPU advertises `image.zen`. Auto
- * takes the GPU when one can run it, else the gateway.
+ * takes the GPU when one can run it, else the gateway. An edit is the same
+ * choice: Qwen Edit on a GPU that advertises `edit.qwen` (the engine's fix
+ * lane, from the picture staged on the engine), else a gateway model.
  */
 import { SizableText, XStack, YStack } from '@hanzo/gui'
 import { Image as Picture } from '@hanzogui/lucide-icons-2'
@@ -13,7 +15,7 @@ import { useState, useSyncExternalStore } from 'react'
 import { render } from '../gpu.ts'
 import { current, filename, type Made, type Stored } from '../made.ts'
 import { useUrl } from '../use.ts'
-import { draw, read, Refusal, type Fleet, type Wire } from '../wire.ts'
+import { draw, read, Refusal, stage, type Fleet, type Wire } from '../wire.ts'
 import { lit, num, str, type Kind, type ViewProps, type Work } from './kind.ts'
 
 /** The gateway's image models, best first. */
@@ -48,6 +50,14 @@ const ext = (mime: string) => (mime === 'image/jpeg' ? 'jpg' : mime === 'image/w
 export function lane(model: string, fleet: Fleet | null): string {
   if (model === ZEN || MODELS.some((m) => m.id === model)) return model
   return lit(fleet, 'image.zen') ? ZEN : MODELS[0].id
+}
+
+/** Which lane an edit takes: the one asked for, else Qwen Edit on a GPU that can run it, else the gateway. */
+export function editing(model: string, fleet: Fleet | null): string {
+  if (MODELS.some((m) => m.id === model)) return model
+  if (lit(fleet, 'edit.qwen')) return ZEN
+  if (model === ZEN) throw new Error('Editing on your GPU needs one that runs Qwen Edit; connect it with hanzo link, or edit with a gateway model.')
+  return MODELS[0].id
 }
 
 async function size(blob: Blob): Promise<{ width?: number; height?: number }> {
@@ -86,10 +96,18 @@ export function useImageLane(): { model: string; reason: string } | null {
 
 /** Make pictures from words (and, for an edit, the pictures they start from), and keep them. */
 export async function picture(w: Work, o: { prompt: string; aspect: string; model: string; from?: Stored[]; count?: number }): Promise<{ files: Stored[]; by: string }> {
-  const use = lane(o.model, w.fleet)
+  const use = o.from?.length ? editing(o.model, w.fleet) : lane(o.model, w.fleet)
   const files: Stored[] = []
+  if (use === ZEN && o.from?.length) {
+    for (const f of o.from) {
+      w.doing('Sending the picture to your GPU')
+      const upload = await stage(w.wire, await read(w.wire, f.key), f.name)
+      const got = await render(w.wire, 'fix', { upload, instruction: o.prompt.slice(0, 500) }, w.doing, w.signal)
+      for (const g of got) files.push(await w.keep(`edit-${files.length + 1}.png`, g.blob, await size(g.blob)))
+    }
+    return { files, by: 'Qwen Edit (your GPU)' }
+  }
   if (use === ZEN) {
-    if (o.from?.length) throw new Error('Zen Image draws from words only; edit with a gateway model.')
     const [width, height] = PIXELS[o.aspect] ?? PIXELS['1:1']!
     for (let i = 0; i < (o.count ?? 1); i++) {
       const got = await render(w.wire, 'image', { prompt: o.prompt, width, height }, w.doing, w.signal)
