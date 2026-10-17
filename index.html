@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+  <head>
+    <meta charset="utf-8" />
+    <base href="/" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="color-scheme" content="dark light" />
+    <title>Hanzo Studio</title>
+    <meta name="description" content="Make images, posters, documents, slides, type systems, 3D, video and sound in one conversation." />
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 67 67'%3E%3Cpath fill='%23fff' d='M22.2 0H0v22.2h22.2V0Zm22.3 0v22.2h22.2V0H44.5ZM0 44.5v22.2h22.2V44.5H0Zm44.5 0v22.2h22.2V44.5H44.5ZM22.2 22.2h22.3v22.3H22.2V22.2Z'/%3E%3C/svg%3E" />
+    <style>
+      /* How tall the app is, and that its one child is a flex item: the two
+         things only the host document can answer. */
+      #root { display: flex; height: 100dvh; }
+    </style>
+    <script>
+      /* gui's theme class follows next-themes' (see @hanzo/build index.html). */
+      ;(function () {
+        var e = document.documentElement, was
+        function s() {
+          var l = e.classList.contains('light')
+          if (l === was) return
+          was = l
+          e.classList.toggle('t_light', l)
+          e.classList.toggle('t_dark', !l)
+        }
+        s()
+        new MutationObserver(s).observe(e, { attributes: true, attributeFilter: ['class'] })
+      })()
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/app/main.tsx"></script>
+  </body>
+</html>

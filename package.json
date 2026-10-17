@@ -1,0 +1,80 @@
+{
+  "name": "@hanzo/studio",
+  "version": "0.1.0",
+  "type": "module",
+  "license": "BSD-3-Clause",
+  "description": "Hanzo Studio: a chat that makes images, posters, documents, slides, type systems, 3D, video and sound, with every result open in a tab beside it. Mounted by the Hanzo app at hanzo.ai/studio and served whole at studio.hanzo.ai.",
+  "homepage": "https://studio.hanzo.ai",
+  "packageManager": "pnpm@11.24.0",
+  "engines": {
+    "node": ">=22.18"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "build:lib": "rm -rf lib && tsc -p tsconfig.lib.json",
+    "typecheck": "tsc --noEmit",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "e2e": "playwright test",
+    "prepack": "pnpm run build:lib"
+  },
+  "dependencies": {
+    "three": "catalog:"
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "catalog:",
+    "@hanzo/build": "catalog:",
+    "@hanzo/composer": "catalog:",
+    "@hanzo/font": "catalog:",
+    "@hanzo/gui": "catalog:",
+    "@hanzo/ui": "catalog:",
+    "@hanzo/vite": "catalog:",
+    "@hanzo/voice": "catalog:",
+    "@hanzogui/lucide-icons-2": "catalog:",
+    "@hanzogui/next-theme": "catalog:",
+    "@playwright/test": "catalog:",
+    "@types/node": "catalog:",
+    "@types/react": "catalog:",
+    "@types/react-dom": "catalog:",
+    "@types/three": "catalog:",
+    "@vitejs/plugin-react": "catalog:",
+    "next-themes": "catalog:",
+    "react": "catalog:",
+    "react-dom": "catalog:",
+    "react-native-web": "catalog:",
+    "typescript": "catalog:",
+    "vite": "catalog:",
+    "vitest": "catalog:"
+  },
+  "exports": {
+    ".": {
+      "types": "./lib/index.d.ts",
+      "import": "./lib/index.js",
+      "default": "./lib/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib",
+    "LICENSE",
+    "NOTICE"
+  ],
+  "sideEffects": false,
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/hanzoai/studio.git"
+  },
+  "peerDependencies": {
+    "@hanzo/build": ">=0.2.56",
+    "@hanzo/composer": ">=0.2.0",
+    "@hanzo/gui": ">=8.3.5",
+    "@hanzo/ui": ">=8.27.77",
+    "@hanzo/voice": ">=0.1.16",
+    "@hanzogui/lucide-icons-2": ">=8.3.5",
+    "react": ">=19.2.8"
+  }
+}

@@ -1,0 +1,21 @@
+name: CI/CD
+
+# The caller, and nothing else: triggers plus the import. All real config is
+# the repo-root hanzo.yml. `.github/workflows`, because this repository lives
+# on github.com; a queued job reaches the GitHub App, which runs it on the
+# platform's own fleet (`linux-amd64`).
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: cicd-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  cicd:
+    uses: hanzoai/ci/.github/workflows/build.yml@v2
+    secrets: inherit

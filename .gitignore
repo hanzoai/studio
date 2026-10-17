@@ -1,0 +1,17 @@
+node_modules/
+dist/
+lib/
+*.tsbuildinfo
+coverage/
+test-results/
+playwright-report/
+.DS_Store
+*.log
+.env
+.env.*
+
+# Agent memory symlinks to LLM.md (never tracked)
+AGENTS.md
+CLAUDE.md
+GEMINI.md
+QWEN.md

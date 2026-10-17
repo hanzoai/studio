@@ -1,0 +1,54 @@
+# What may run its own install script. Vite's bundler is the only one, and a
+# placeholder here is an install that stops to ask.
+allowBuilds:
+  esbuild: true
+
+# One version of a package in the tree, whatever asked for it. Two copies of a
+# React runtime are two contexts, and a component then looks for the one it was
+# not rendered under. These are the versions the Hanzo app (hanzo-inc/app)
+# resolves, so the studio the app mounts is the studio tested here.
+overrides:
+  '@hanzo/gui': 8.3.5
+  '@hanzo/ui': 8.27.91
+  '@hanzo/iam': 0.21.31
+  '@hanzogui/animations-css': 8.3.5
+  '@hanzogui/config': 8.3.5
+  '@hanzogui/core': 8.3.5
+  '@hanzogui/lucide-icons-2': 8.3.5
+  '@hanzogui/next-theme': 8.3.5
+  '@hanzogui/telemetry': 8.3.5
+  '@hanzogui/toast': 8.3.5
+  '@hanzogui/web': 8.3.5
+  '@react-native/normalize-colors': 0.87.1
+  # 15.16 reaches react-native's TurboModuleRegistry from its web build, which
+  # react-native-web does not export; 15.15.5 is what @hanzo/build resolves.
+  react-native-svg: 15.15.5
+  react-is: 19.2.8
+
+minimumReleaseAge: 0
+
+catalog:
+  '@axe-core/playwright': 4.14.0
+  '@hanzo/build': 0.2.56
+  '@hanzo/composer': 0.2.0
+  '@hanzo/font': 1.9.3
+  '@hanzo/gui': 8.3.5
+  '@hanzo/ui': 8.27.91
+  '@hanzo/vite': 0.1.4
+  '@hanzo/voice': 0.1.18
+  '@hanzogui/lucide-icons-2': 8.3.5
+  '@hanzogui/next-theme': 8.3.5
+  '@playwright/test': 1.63.0
+  '@types/node': 26.5.0
+  '@types/react': 19.2.18
+  '@types/react-dom': 19.2.7
+  '@types/three': 0.186.0
+  '@vitejs/plugin-react': ^6.1.1
+  next-themes: ^0.4.6
+  react: 19.2.8
+  react-dom: 19.2.8
+  react-native-web: ^0.21.2
+  three: 0.186.1
+  typescript: 7.0.2
+  vite: ^8.2.2
+  vitest: ^4.1.11

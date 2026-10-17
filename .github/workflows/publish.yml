@@ -1,0 +1,101 @@
+# Publishes @hanzo/studio to npm when package.json names a version npm does not
+# serve yet. Studio is one component with two hosts — studio.hanzo.ai, and
+# the Hanzo app at hanzo.ai/studio — and the app takes it from npm.
+#
+# The question is asked of the registry, not of the diff: a version strictly
+# greater than npm's `latest` is a release, anything else is not, so re-running
+# is idempotent. The token is read from KMS at run time (NPM_TOKEN at the org
+# root, env prod), the same machine identity every other workflow here uses.
+name: Publish
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: publish
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: [linux-amd64]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Is this version ahead of npm?
+        id: ahead
+        run: |
+          set -euo pipefail
+          NAME=$(jq -r .name package.json)
+          NEW=$(jq -r .version package.json)
+          # The version itself first: the full packument lags a fresh publish by
+          # minutes (it 404s), and reading that as "never published" re-publishes
+          # into a 403. The abbreviated document is what installs read.
+          if curl -sf -o /dev/null "https://registry.npmjs.org/${NAME}/${NEW}"; then
+            echo "release=false" >> "$GITHUB_OUTPUT"
+            echo "$NAME $NEW is already on npm; nothing to publish"
+            exit 0
+          fi
+          OLD=$(curl -sf -H 'Accept: application/vnd.npm.install-v1+json' "https://registry.npmjs.org/${NAME}" | jq -r '."dist-tags".latest // "0.0.0"' || echo 0.0.0)
+          TOP=$(printf '%s\n%s\n' "$OLD" "$NEW" | sort -V | tail -1)
+          if [ "$OLD" != "$NEW" ] && [ "$TOP" = "$NEW" ]; then
+            echo "release=true" >> "$GITHUB_OUTPUT"
+            echo "$NAME $OLD -> $NEW"
+          else
+            echo "release=false" >> "$GITHUB_OUTPUT"
+            echo "$NAME $NEW is not ahead of npm ($OLD); nothing to publish"
+          fi
+
+      - uses: pnpm/action-setup@v4
+        if: steps.ahead.outputs.release == 'true'
+
+      - uses: actions/setup-node@v4
+        if: steps.ahead.outputs.release == 'true'
+        with:
+          node-version: 24
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Test and build the library
+        if: steps.ahead.outputs.release == 'true'
+        run: |
+          set -euo pipefail
+          pnpm install --frozen-lockfile
+          pnpm typecheck
+          pnpm test
+          pnpm build:lib
+          test -s lib/index.js
+          test -s lib/index.d.ts
+
+      - name: Read the npm token from KMS
+        if: steps.ahead.outputs.release == 'true'
+        id: npm
+        env:
+          KMS_CLIENT_ID: ${{ secrets.KMS_CLIENT_ID }}
+          KMS_CLIENT_SECRET: ${{ secrets.KMS_CLIENT_SECRET }}
+          KMS_ENDPOINT: ${{ vars.KMS_ENDPOINT || 'https://kms.hanzo.ai' }}
+          KMS_SECRET_ENV: ${{ vars.KMS_SECRET_ENV || 'prod' }}
+        run: |
+          set -uo pipefail
+          body="{\"clientId\":\"${KMS_CLIENT_ID}\",\"clientSecret\":\"${KMS_CLIENT_SECRET}\"}"
+          out=$(curl -sS -w '\n%{http_code}' "${KMS_ENDPOINT}/v1/kms/auth/login" -H 'Content-Type: application/json' --data-binary "$body")
+          code=${out##*$'\n'}; resp=${out%$'\n'*}
+          [ "$code" = "200" ] || { echo "::error::KMS login answered HTTP $code"; exit 1; }
+          token=$(printf '%s' "$resp" | jq -r '.accessToken // empty')
+          [ -n "$token" ] || { echo "::error::KMS login carried no accessToken"; exit 1; }
+          for attempt in 1 2 3 4 5; do
+            out=$(curl -sS -w '\n%{http_code}' "${KMS_ENDPOINT}/v1/kms/secrets/NPM_TOKEN?env=${KMS_SECRET_ENV}" -H "Authorization: Bearer ${token}")
+            code=${out##*$'\n'}; resp=${out%$'\n'*}
+            case "$code" in 200) break ;; 5*) sleep 15 ;; *) break ;; esac
+          done
+          [ "$code" = "200" ] || { echo "::error::KMS secret read answered HTTP $code"; exit 1; }
+          npm_token=$(printf '%s' "$resp" | jq -r '.value // empty')
+          [ -n "$npm_token" ] || { echo "::error::No NPM_TOKEN in KMS"; exit 1; }
+          echo "::add-mask::${npm_token}"
+          echo "token=${npm_token}" >> "$GITHUB_OUTPUT"
+
+      - name: Publish
+        if: steps.ahead.outputs.release == 'true'
+        env:
+          NODE_AUTH_TOKEN: ${{ steps.npm.outputs.token }}
+        run: pnpm publish --access public --no-git-checks

@@ -1,0 +1,28 @@
+# Hanzo CI/CD for @hanzo/studio. All config is here; .github/workflows/cicd.yml
+# is triggers and an import of hanzoai/ci.
+#
+# Two things ship from this repository, neither an image:
+#   - the package @hanzo/studio on npm (.github/workflows/publish.yml), which
+#     the Hanzo app mounts at hanzo.ai/studio;
+#   - studio.hanzo.ai, the same component mounted whole, as the static site
+#     `hanzo-studio` (s3://hanzo-sites/hanzo/hanzo-studio). The universe route
+#     serves it and sends the engine's own paths to the studio Service.
+
+test:
+  # Frozen, so the gate resolves the tree the lockfile names.
+  - name: unit
+    run: |
+      set -e
+      corepack enable
+      pnpm install --frozen-lockfile
+      pnpm typecheck
+      pnpm test
+      pnpm build:lib
+      test -s lib/index.js
+      test -s lib/index.d.ts
+
+site:
+  slug: hanzo-studio
+  dir: dist
+  on: [main]
+  build: corepack enable && pnpm install --frozen-lockfile && pnpm build && test -s dist/index.html && test -s dist/404.html
