@@ -104,6 +104,14 @@ bearer and `X-Org-Id`, never a cookie.
     pnpm typecheck && pnpm test      # vitest: routes, type systems, PDF, ZIP, keys
     pnpm build && pnpm preview       # the site on :3000 (the IAM client's dev callback)
     pnpm build:lib                   # lib/, what npm ships
+    IAM_USER=… IAM_PASS=… COOKIE=hz_studio=v2 pnpm e2e   # the live gate (e2e/live.spec.ts)
+
+The live gate drives studio.hanzo.ai (BASE) in Chromium as a throwaway account:
+it follows Studio's redirect to hanzo.ai/login, signs the account in with the
+same request that page answers (POST /v1/iam/login for Studio's own PKCE code),
+returns the code to /auth/callback, then checks the starters, makes a type
+system, a poster, a document, slides and a voice (each a tab, then in Recent and
+the Library), the 390-wide layout and axe (nothing serious or critical).
 
 `vite dev` cannot optimize react-native-svg's web build under Vite 8; use
 `build` + `preview`. react-native-svg is held at 15.15.5 (pnpm-workspace.yaml):
