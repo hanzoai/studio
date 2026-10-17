@@ -2,8 +2,8 @@ import { defineConfig } from '@playwright/test'
 
 /**
  * The live gate: studio.hanzo.ai driven in Chromium as a signed-in person.
- * BASE names the host (default https://studio.hanzo.ai); IAM_USER/IAM_PASS name
- * the account, a throwaway one made for the run.
+ * BASE names the host (default https://studio.hanzo.ai); IAM_ORG/IAM_USER/IAM_PASS
+ * name the account, a throwaway one made for the run.
  */
 export default defineConfig({
   testDir: 'e2e',

@@ -187,7 +187,6 @@ export function Explore() {
                   <YStack
                     key={s.id}
                     render="button"
-                    aria-label={`${s.title}${why ? `, ${why}` : ''}`}
                     aria-disabled={why ? true : undefined}
                     onPress={() => {
                       if (why) return

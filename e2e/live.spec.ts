@@ -13,9 +13,10 @@ import { expect, test, type Page } from '@playwright/test'
 
 const USER = process.env.IAM_USER ?? ''
 const PASS = process.env.IAM_PASS ?? ''
+const ORG = process.env.IAM_ORG ?? ''
 const API = 'https://api.hanzo.ai'
 
-test.skip(!USER || !PASS, 'IAM_USER and IAM_PASS name the account the gate signs in as')
+test.skip(!USER || !PASS || !ORG, 'IAM_ORG, IAM_USER and IAM_PASS name the account the gate signs in as')
 
 async function signIn(page: Page): Promise<void> {
   const base = new URL(test.info().project.use.baseURL!)
@@ -31,6 +32,7 @@ async function signIn(page: Page): Promise<void> {
       type: 'code',
       clientId: asked.get('client_id'),
       application: asked.get('client_id'),
+      organization: ORG,
       username: USER,
       password: PASS,
       redirectUri: asked.get('redirect_uri'),
@@ -55,10 +57,18 @@ async function ours(page: Page): Promise<string[]> {
   )
 }
 
+/*
+ * Navigation stays inside the app: the bearer is held in memory, so loading a
+ * page again signs the person out to hanzo.ai, as it should.
+ */
+async function home(page: Page): Promise<void> {
+  await page.getByRole('button', { name: 'New creation' }).first().click()
+  await expect(page.getByRole('heading', { name: 'What should we create?' })).toBeVisible()
+}
+
 /** Start from a starter and wait for its tab. */
 async function make(page: Page, category: string, card: RegExp, tab: RegExp): Promise<void> {
-  await page.getByRole('button', { name: 'New creation' }).first().click().catch(() => undefined)
-  await page.goto('/')
+  await home(page)
   await page.getByRole('button', { name: category, exact: true }).click()
   await page.getByRole('button', { name: card }).click()
   await expect(page.getByRole('tab', { name: tab })).toBeVisible({ timeout: 4 * 60_000 })
@@ -78,10 +88,10 @@ test('makes a type system, a poster, a document, slides and a voice, each a tab,
   await make(page, 'Documents', /Project proposal/, /./)
   await make(page, 'Slides', /Quarterly review/, /./)
   await make(page, 'Audio', /Podcast intro/, /./)
-  await page.goto('/')
+  await home(page)
   const recent = page.getByRole('list', { name: 'Recent conversations' }).getByRole('listitem')
   expect(await recent.count()).toBeGreaterThanOrEqual(5)
-  await page.goto('/library')
+  await page.getByRole('button', { name: 'Library', exact: true }).first().click()
   const made = page.getByRole('list', { name: 'Made' }).getByRole('listitem')
   await expect(made.first()).toBeVisible()
   expect(await made.count()).toBeGreaterThanOrEqual(5)

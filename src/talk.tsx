@@ -13,7 +13,7 @@ import { SizableText, useMedia, XStack, YStack } from '@hanzo/gui'
 import { Check, ChevronDown, Ellipsis, Image as ImageIcon, LoaderCircle, Palette, Sparkles, X } from '@hanzogui/lucide-icons-2'
 import { DropdownMenu } from '@hanzo/ui'
 import { Chat as Thread, Failure, type Turn as Said } from '@hanzo/ui/chat'
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ComponentProps, type ReactNode } from 'react'
 
 import { edit as editInPlace, turn, type Asked } from './chat/turn.ts'
 import { keep, listed, open } from './chat/store.ts'
@@ -549,9 +549,10 @@ function Opening() {
 }
 
 /** A composer chip: what it sets, and its value. */
-function Pillish({ label, icon, value }: { label: string; icon: ReactNode; value: string }) {
+/** A menu's trigger: the menu hands it its state and handlers, and they land on the button itself. */
+function Pillish({ label, icon, value, ...trigger }: { label: string; icon: ReactNode; value: string } & ComponentProps<typeof XStack>) {
   return (
-    <XStack render="button" aria-label={`${label}: ${value}`} items="center" gap="$1.5" height={32} px="$2.5" rounded={999} borderWidth={1} borderColor="$borderColor" cursor="pointer" hoverStyle={{ bg: '$hover' }}>
+    <XStack {...trigger} render="button" aria-label={`${label}: ${value}`} items="center" gap="$1.5" height={32} px="$2.5" rounded={999} borderWidth={1} borderColor="$borderColor" cursor="pointer" hoverStyle={{ bg: '$hover' }}>
       {icon}
       <SizableText size="$2" numberOfLines={1} maxW={120}>
         {value}

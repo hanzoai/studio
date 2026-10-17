@@ -52,19 +52,7 @@ function Card({ s, i, onPress }: { s: Starter; i: number; onPress: () => void })
   use(look.display)
   return (
     <YStack role="listitem" width="calc(50% - 6px)" $sm={{ width: 'calc(25% - 9px)' }} gap="$1.5">
-      <YStack
-        render="button"
-        aria-label={`${s.title}: ${s.subtitle}`}
-        onPress={onPress}
-        position="relative"
-        width="100%"
-        rounded={16}
-        overflow="hidden"
-        cursor="pointer"
-        hoverStyle={{ opacity: 0.92 }}
-        focusVisibleStyle={{ outlineWidth: 2, outlineStyle: 'solid', outlineColor: '$outlineColor' }}
-        style={{ aspectRatio: '4 / 5' }}
-      >
+      <YStack position="relative" width="100%" rounded={16} overflow="hidden" style={{ aspectRatio: '4 / 5' }}>
         {s.thumb ? (
           <img src={s.thumb} alt="" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
         ) : (
@@ -73,7 +61,7 @@ function Card({ s, i, onPress }: { s: Starter; i: number; onPress: () => void })
             <div style={{ fontFamily: stack(look.display), fontWeight: look.weights.display, fontSize: 'clamp(18px, 2.4vw, 30px)', lineHeight: look.leading.display, letterSpacing: `${look.tracking.display}em` }}>{s.title}</div>
           </div>
         )}
-        <XStack position="absolute" t={8} l={8} r={8} justify="space-between" items="center">
+        <XStack aria-hidden position="absolute" t={8} l={8} r={8} justify="space-between" items="center">
           <XStack width={26} height={26} rounded={99} bg="rgba(0,0,0,0.55)" items="center" justify="center">
             <Icon size={13} />
           </XStack>
@@ -83,6 +71,21 @@ function Card({ s, i, onPress }: { s: Starter; i: number; onPress: () => void })
             </SizableText>
           </XStack>
         </XStack>
+        {/* The card's one control, over the preview and holding none of it, so its name is its label alone. */}
+        <YStack
+          render="button"
+          aria-label={`${s.title}: ${s.subtitle}`}
+          onPress={onPress}
+          position="absolute"
+          t={0}
+          l={0}
+          r={0}
+          b={0}
+          rounded={16}
+          cursor="pointer"
+          hoverStyle={{ bg: 'rgba(255,255,255,0.08)' }}
+          focusVisibleStyle={{ outlineWidth: 2, outlineStyle: 'solid', outlineColor: '$outlineColor' }}
+        />
       </YStack>
       <SizableText size="$2" fontWeight="600" numberOfLines={1}>
         {s.title}

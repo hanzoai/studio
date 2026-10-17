@@ -1,6 +1,6 @@
 {
   "name": "@hanzo/studio",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "type": "module",
   "license": "BSD-3-Clause",
   "description": "Hanzo Studio: a chat that makes images, posters, documents, slides, type systems, 3D, video and sound, with every result open in a tab beside it. Mounted by the Hanzo app at hanzo.ai/studio and served whole at studio.hanzo.ai.",

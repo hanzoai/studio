@@ -70,7 +70,7 @@ export function Desk({ made, wire, others, onPick, onEdit, busy, failed }: DeskP
         </XStack>
         <DropdownMenu
           trigger={
-            <XStack render="button" aria-label="Versions" items="center" gap="$1" height={30} px="$2.5" rounded="$3" cursor="pointer" hoverStyle={{ bg: '$hover' }}>
+            <XStack render="button" aria-label={`v${made.at + 1} of ${made.versions.length}, versions`} items="center" gap="$1" height={30} px="$2.5" rounded="$3" cursor="pointer" hoverStyle={{ bg: '$hover' }}>
               <SizableText size="$2">{`v${made.at + 1} of ${made.versions.length}`}</SizableText>
               <ChevronDown size={13} />
             </XStack>
