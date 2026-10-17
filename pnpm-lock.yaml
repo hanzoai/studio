@@ -10,8 +10,8 @@ catalogs:
       specifier: 4.14.0
       version: 4.14.0
     '@hanzo/build':
-      specifier: 0.2.56
-      version: 0.2.56
+      specifier: 0.2.60
+      version: 0.2.60
     '@hanzo/composer':
       specifier: 0.2.0
       version: 0.2.0
@@ -96,7 +96,7 @@ importers:
         version: 4.14.0(playwright-core@1.63.0)
       '@hanzo/build':
         specifier: 'catalog:'
-        version: 0.2.56(e6a462909b465119c16d2f3ca7308059)
+        version: 0.2.60(e6a462909b465119c16d2f3ca7308059)
       '@hanzo/composer':
         specifier: 'catalog:'
         version: 0.2.0(@hanzo/gui@8.3.5(react-dom@19.2.8(react@19.2.8))(react-native@0.88.0(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.88.0(@babel/core@7.29.7(supports-color@8.1.1))(supports-color@8.1.1))(@types/react@19.2.18)(react@19.2.8)(supports-color@8.1.1))(react@19.2.8))(react@19.2.8)
@@ -559,8 +559,8 @@ packages:
       react:
         optional: true
 
-  '@hanzo/build@0.2.56':
-    resolution: {integrity: sha512-K+eqMg4TIf2lSWDXMpwe0hhseAOST/CpP10vNeRgCJ1q0FRkQBNMmEchwPVmUvhT1U89JdpyiMA5oefzXZ3riQ==}
+  '@hanzo/build@0.2.60':
+    resolution: {integrity: sha512-0qVlSQCO8pVYDr0z4s2tEJgG64Z2cEn4+/dBfwG7bZYWK+2rW/F4Iatz/F5cOJf0rHocp2SA0AgjCxjD3VkA8Q==}
     engines: {node: '>=22.18'}
     peerDependencies:
       '@hanzo/composer': '>=0.2.0'
@@ -3708,7 +3708,7 @@ snapshots:
     optionalDependencies:
       react: 19.2.8
 
-  '@hanzo/build@0.2.56(e6a462909b465119c16d2f3ca7308059)':
+  '@hanzo/build@0.2.60(e6a462909b465119c16d2f3ca7308059)':
     dependencies:
       '@hanzo/composer': 0.2.0(@hanzo/gui@8.3.5(react-dom@19.2.8(react@19.2.8))(react-native@0.88.0(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.88.0(@babel/core@7.29.7(supports-color@8.1.1))(supports-color@8.1.1))(@types/react@19.2.18)(react@19.2.8)(supports-color@8.1.1))(react@19.2.8))(react@19.2.8)
       '@hanzo/gui': 8.3.5(react-dom@19.2.8(react@19.2.8))(react-native@0.88.0(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.88.0(@babel/core@7.29.7(supports-color@8.1.1))(supports-color@8.1.1))(@types/react@19.2.18)(react@19.2.8)(supports-color@8.1.1))(react@19.2.8)

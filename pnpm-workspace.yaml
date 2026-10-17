@@ -29,7 +29,7 @@ minimumReleaseAge: 0
 
 catalog:
   '@axe-core/playwright': 4.14.0
-  '@hanzo/build': 0.2.56
+  '@hanzo/build': 0.2.60
   '@hanzo/composer': 0.2.0
   '@hanzo/font': 1.9.3
   '@hanzo/gui': 8.3.5
