@@ -24,7 +24,7 @@ export async function render(w: Wire, lane: Lane, body: object, doing: (line: st
   let row: Row | undefined
   for (;;) {
     if (signal.aborted) throw new DOMException('aborted', 'AbortError')
-    row = (await worklog(w, signal)).find((r) => r.prompt_id === id || r.id === id || (r as { pid?: string }).pid === id)
+    row = (await worklog(w, signal)).find((r) => r.prompt_id === id || r.id === id)
     const status = row?.status ?? 'queued'
     if (status === 'done') break
     if (status === 'failed' || status === 'cancelled') throw new Refusal(502, row?.error || `The render ${status}.`)

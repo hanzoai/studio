@@ -86,6 +86,8 @@ export interface Ask {
   type?: string
   signal?: AbortSignal
   head?: Record<string, string>
+  /** Reads the headers of an answer that succeeded. */
+  heard?: (h: Headers) => void
 }
 
 /** One request. JSON in, JSON out, unless the answer is not JSON. */
@@ -108,6 +110,7 @@ export async function ask<T>(w: Wire, base: Base, path: string, o: Ask = {}): Pr
     const [msg, code] = await reason(res)
     throw new Refusal(res.status, msg || `${path.split('?')[0]} answered ${res.status}`, code)
   }
+  o.heard?.(res.headers)
   if (res.status === 204) return undefined as T
   const type = res.headers.get('content-type') ?? ''
   if (type.includes('json')) return envelope(await res.json()) as T
@@ -276,6 +279,7 @@ export function bytes(url: string): Picture {
  * message (`images`) or among its content parts.
  */
 export async function draw(w: Wire, model: string, prompt: string, o: { from?: string[]; aspect?: string; signal?: AbortSignal } = {}): Promise<Picture[]> {
+  let held: Headers | undefined
   const content: Part[] = [{ type: 'text', text: prompt }, ...(o.from ?? []).map((url) => ({ type: 'image_url' as const, image_url: { url } }))]
   const out = await ask<{
     choices?: { message?: { content?: string | { type: string; image_url?: { url?: string } }[]; images?: { image_url?: { url?: string } }[] } }[]
@@ -287,14 +291,36 @@ export async function draw(w: Wire, model: string, prompt: string, o: { from?: s
       ...(o.aspect ? { image_config: { aspect_ratio: o.aspect } } : {}),
     },
     signal: o.signal,
+    heard: (h) => (held = h),
   })
   const m = out.choices?.[0]?.message
   const urls = [
     ...(m?.images ?? []).map((i) => i.image_url?.url ?? ''),
     ...(Array.isArray(m?.content) ? m.content.map((p) => (p.type === 'image_url' ? (p.image_url?.url ?? '') : '')) : []),
   ].filter((u) => u.startsWith('data:image/'))
-  if (!urls.length) throw new Refusal(502, `${model} answered with no picture.`)
+  if (!urls.length) throw withheld(model, held)
   return urls.map(bytes)
+}
+
+/*
+ * The gateway answers a request it will not serve with a model it will, in
+ * words: X-Hanzo-Usage-Reason says why and X-Hanzo-Upgrade-Url or
+ * X-Hanzo-Topup-Url what lifts it. A picture request answered that way is a
+ * refusal of the lane, said in the gateway's own reason.
+ */
+const WITHHELD: Record<string, string> = {
+  paid_plan_required: 'Pictures from this model need a paid plan',
+  plan_allowance_used: "This plan's pictures are used for now",
+  usage_cap_exceeded: "This org's usage cap is reached",
+  free_plan_cap: 'The free plan has no more pictures today',
+  model_cap: "This model's share is used for now",
+}
+
+function withheld(model: string, h?: Headers): Refusal {
+  const why = h?.get('X-Hanzo-Usage-Reason') ?? ''
+  if (!why) return new Refusal(502, `${model} answered with no picture.`)
+  const fix = h?.get('X-Hanzo-Upgrade-Url') || h?.get('X-Hanzo-Topup-Url') || ''
+  return new Refusal(402, `${WITHHELD[why] ?? `Pictures are withheld (${why})`}${fix ? `: ${fix}` : '.'}`, why)
 }
 
 /** Speech from words: the platform's voice. */
