@@ -13,21 +13,7 @@
          things only the host document can answer. */
       #root { display: flex; height: 100dvh; }
     </style>
-    <script>
-      /* gui's theme class follows next-themes' (see @hanzo/build index.html). */
-      ;(function () {
-        var e = document.documentElement, was
-        function s() {
-          var l = e.classList.contains('light')
-          if (l === was) return
-          was = l
-          e.classList.toggle('t_light', l)
-          e.classList.toggle('t_dark', !l)
-        }
-        s()
-        new MutationObserver(s).observe(e, { attributes: true, attributeFilter: ['class'] })
-      })()
-    </script>
+    <script src="/theme.js"></script>
   </head>
   <body>
     <div id="root"></div>
