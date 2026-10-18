@@ -331,16 +331,19 @@ export async function speak(w: Wire, input: string, voice: string, model: string
 /* ------------------------------------------------------------------- store */
 
 /*
- * WHERE WHAT IS MADE IS KEPT. A person's Studio work is theirs alone until they
- * share it, so it is never written where the rest of the org can list it (an
- * org bucket is readable by every member through /v1/s3).
+ * WHERE WHAT IS MADE IS KEPT. Everything a version makes (files/…) is kept in
+ * the person's Library, api.hanzo.ai/v1/library: theirs alone until they share
+ * it, filed with `source: studio`, `ref` the conversation, `origin`
+ * /studio/c/<conversation>, and the file's key as the save's idempotency key,
+ * so a save sent twice is one item. An org bucket is never written: every
+ * member of the org can list one through /v1/s3.
  *
- * Today it is kept in this browser, in IndexedDB, in a database per person and
- * org, under the same keys it will have in the Library. When the Library
- * (api.hanzo.ai/v1/library, private per person) answers, each file is also
- * saved there as an item with `source: studio`, `ref` the conversation and
- * `origin` /studio/c/<conversation>, and anything kept only here is carried up
- * (`sync`). Until then the page says "Saving to Library when it's available".
+ * This browser holds, in a database per person and org, an index from each key
+ * to its Library item (no bytes), and the conversations themselves (chats/…)
+ * until /v1/studio keeps them. Bytes stay here only while the Library cannot
+ * take them: a save it refused for now, or a file over its 10 MiB browser
+ * limit. Files a browser kept before the Library answered are carried up on
+ * the next visit, and then dropped here (`sync`).
  *
  *   chats/<id>.json, chats/index.json        conversations and their list
  *   files/<kind>/<chat>/<made>/<version>/<n>  every file a version made
@@ -348,11 +351,14 @@ export async function speak(w: Wire, input: string, voice: string, model: string
 
 interface Record_ {
   key: string
-  blob: Blob
+  /** The bytes, while this browser is where they are kept. */
+  blob?: Blob
   mime: string
+  /** Bytes; absent on a record written before the Library answered (its blob says). */
+  size?: number
   /** Unix ms. */
   modified: number
-  /** Its Library item, once it is saved there. */
+  /** Its Library item. */
   lib?: string
 }
 
@@ -399,6 +405,8 @@ function tx<T>(d: IDBDatabase, mode: IDBTransactionMode, run: (s: IDBObjectStore
 }
 
 const get = async (w: Wire, key: string) => (await tx<Record_ | undefined>(await db(w), 'readonly', (s) => s.get(key))) ?? null
+const keep = async (w: Wire, r: Record_) => void (await tx(await db(w), 'readwrite', (s) => s.put(r)))
+const all = async (w: Wire) => tx<Record_[]>(await db(w), 'readonly', (s) => s.getAll())
 
 /* The Library: answered or not, asked once per page. */
 
@@ -416,7 +424,13 @@ export function libraryLive(w: Wire): Promise<boolean> {
   return library.catch(() => false)
 }
 
+/** The most a browser may send the Library in one save (its inline limit). */
+const INLINE = 10 * 1024 * 1024
+
 const KINDS_LIB: Record<string, string> = { image: 'image', poster: 'image', ad: 'image', video: 'video', voice: 'audio', music: 'audio', document: 'document', slides: 'slides', type: 'type', mesh: 'model' }
+
+/** Whether a key and its bytes belong in the Library: a made file the Library can take from a browser. */
+const shelvable = (key: string, blob: Blob) => key.startsWith('files/') && key.split('/').length > 3 && blob.size <= INLINE
 
 const base64 = async (b: Blob) => {
   const buf = new Uint8Array(await b.arrayBuffer())
@@ -425,43 +439,51 @@ const base64 = async (b: Blob) => {
   return btoa(bin)
 }
 
-/** Save one kept file to the Library, idempotently (its key is the idempotency key). */
-async function shelve(w: Wire, r: Record_): Promise<string | undefined> {
-  const [, kind, chat] = r.key.split('/')
-  if (!r.key.startsWith('files/') || !kind || !chat || r.blob.size > 10 * 1024 * 1024) return undefined
+/** Save one made file to the Library. Answers its item; the key makes a repeat the same item. */
+async function shelve(w: Wire, key: string, blob: Blob): Promise<string> {
+  const [, kind, chat] = key.split('/')
   const item = await ask<{ id?: string }>(w, 'api', '/v1/library', {
     body: {
-      name: r.key.split('/').pop(),
-      mime: r.mime,
-      data: await base64(r.blob),
+      name: key.split('/').pop(),
+      mime: blob.type || 'application/octet-stream',
+      data: await base64(blob),
       source: 'studio',
-      kind: KINDS_LIB[kind] ?? 'file',
+      kind: KINDS_LIB[kind!] ?? 'file',
       ref: chat,
       origin: `/studio/c/${chat}`,
-      key: r.key,
+      key,
     },
   })
+  if (!item.id) throw new Refusal(502, 'The Library took the file and named no item.')
   return item.id
 }
 
-/** Keep bytes at a key. Answers the key. */
+/** What this page made or read, held for its life: a file is never fetched twice. */
+const held = new Map<string, Blob>()
+
+/** Keep bytes at a key: a made file in the Library, anything else in this browser. Answers the key. */
 export async function put(w: Wire, key: string, blob: Blob): Promise<string> {
-  const r: Record_ = { key, blob, mime: blob.type || 'application/octet-stream', modified: Date.now() }
-  if (key.startsWith('files/') && (await libraryLive(w))) r.lib = await shelve(w, r).catch(() => undefined)
-  await tx(await db(w), 'readwrite', (s) => s.put(r))
-  shown.delete(key)
+  const r: Record_ = { key, mime: blob.type || 'application/octet-stream', size: blob.size, modified: Date.now() }
+  const lib = shelvable(key, blob) && (await libraryLive(w)) ? await shelve(w, key, blob).catch(() => undefined) : undefined
+  await keep(w, lib ? { ...r, lib } : { ...r, blob })
+  held.set(key, blob)
+  forget(key)
   return key
 }
 
-/** Carry up to the Library whatever is kept only here. Answers how many went. */
+/**
+ * Carry up to the Library every made file this browser still holds the bytes
+ * of, and drop them here once the Library has them. Answers how many went.
+ */
 export async function sync(w: Wire): Promise<number> {
   if (!(await libraryLive(w))) return 0
-  const all = await tx<Record_[]>(await db(w), 'readonly', (s) => s.getAll())
   let n = 0
-  for (const r of all.filter((x) => x.key.startsWith('files/') && !x.lib)) {
-    const lib = await shelve(w, r).catch(() => undefined)
+  for (const r of await all(w)) {
+    if (!r.blob || !shelvable(r.key, r.blob)) continue
+    const lib = r.lib ?? (await shelve(w, r.key, r.blob).catch(() => undefined))
     if (!lib) continue
-    await tx(await db(w), 'readwrite', (s) => s.put({ ...r, lib }))
+    const { blob, ...rest } = r
+    await keep(w, { ...rest, size: blob.size, lib })
     n++
   }
   return n
@@ -470,29 +492,42 @@ export async function sync(w: Wire): Promise<number> {
 /** Addresses handed out, kept while they work: an object URL for the page's life, a Library URL until it expires. */
 const shown = new Map<string, { url: string; until: number }>()
 
+function forget(key: string) {
+  const hit = shown.get(key)
+  if (hit?.url.startsWith('blob:')) URL.revokeObjectURL(hit.url)
+  shown.delete(key)
+}
+
 /** An address a page can draw a kept file at. */
 export async function url(w: Wire, key: string): Promise<string> {
   const hit = shown.get(key)
   if (hit && hit.until > Date.now()) return hit.url
-  const r = await get(w, key)
-  if (!r) throw new Refusal(404, 'This file is not kept in this browser.')
-  if (r.lib) {
-    const item = await ask<{ url?: string; expires?: string }>(w, 'api', `/v1/library/${enc(r.lib)}`).catch(() => null)
-    if (item?.url) {
-      shown.set(key, { url: item.url, until: item.expires ? Date.parse(item.expires) - 60_000 : Date.now() + 240_000 })
-      return item.url
-    }
+  const local = held.get(key) ?? (await get(w, key))?.blob
+  if (local) {
+    const made = URL.createObjectURL(local)
+    shown.set(key, { url: made, until: Number.POSITIVE_INFINITY })
+    return made
   }
-  const made = URL.createObjectURL(r.blob)
-  shown.set(key, { url: made, until: Number.POSITIVE_INFINITY })
-  return made
+  const r = await get(w, key)
+  if (!r?.lib) throw new Refusal(404, 'This file is not in your Library.')
+  const item = await ask<{ url?: string; expires?: string }>(w, 'api', `/v1/library/${enc(r.lib)}`)
+  if (!item.url) throw new Refusal(502, 'The Library named no address for the file.')
+  shown.set(key, { url: item.url, until: item.expires ? Date.parse(item.expires) - 60_000 : Date.now() + 240_000 })
+  return item.url
 }
 
-/** A kept file's bytes. */
+/** A kept file's bytes: from this page, this browser, or the Library. */
 export async function read(w: Wire, key: string): Promise<Blob> {
+  const hit = held.get(key)
+  if (hit) return hit
   const r = await get(w, key)
-  if (!r) throw new Refusal(404, 'This file is not kept in this browser.')
-  return r.blob
+  if (!r) throw new Refusal(404, 'This file is not in your Library.')
+  if (r.blob) return r.blob
+  const res = await fetch(await url(w, key), { cache: 'no-store', credentials: 'omit' })
+  if (!res.ok) throw new Refusal(res.status, 'The Library would not hand the file back.')
+  const b = await res.blob()
+  held.set(key, b)
+  return b
 }
 
 export interface Entry {
@@ -501,30 +536,35 @@ export interface Entry {
   size: number
   /** Unix milliseconds. */
   modified: number
-  /** Whether it is saved in the Library too. */
-  shelved: boolean
 }
 
 /** What is kept under a prefix (one that ends in '/'), keys relative to it. */
 export async function list(w: Wire, prefix: string): Promise<Entry[]> {
   const range = IDBKeyRange.bound(prefix, `${prefix}￿`)
-  const all = await tx<Record_[]>(await db(w), 'readonly', (s) => s.getAll(range))
-  return all.map((r) => ({ key: r.key.slice(prefix.length), size: r.blob.size, modified: r.modified, shelved: Boolean(r.lib) }))
+  const rows = await tx<Record_[]>(await db(w), 'readonly', (s) => s.getAll(range))
+  return rows.map((r) => ({ key: r.key.slice(prefix.length), size: r.size ?? r.blob?.size ?? 0, modified: r.modified }))
 }
 
+/** Delete a kept file: its Library item and bytes first, then this browser's record. */
 export async function remove(w: Wire, key: string): Promise<void> {
   const r = await get(w, key)
-  if (r?.lib) await ask(w, 'api', `/v1/library/${enc(r.lib)}`, { method: 'DELETE' }).catch(() => undefined)
+  if (r?.lib) await unshelve(w, r.lib)
   await tx(await db(w), 'readwrite', (s) => s.delete(key))
-  const hit = shown.get(key)
-  if (hit?.url.startsWith('blob:')) URL.revokeObjectURL(hit.url)
-  shown.delete(key)
+  held.delete(key)
+  forget(key)
+}
+
+/** Delete one Library item. One already gone is gone. */
+async function unshelve(w: Wire, id: string): Promise<void> {
+  await ask(w, 'api', `/v1/library/${enc(id)}`, { method: 'DELETE' }).catch((e: unknown) => {
+    if (!(e instanceof Refusal && e.status === 404)) throw e
+  })
 }
 
 /** A kept JSON document, or null when there is none. */
 export async function load<T>(w: Wire, key: string): Promise<T | null> {
   const r = await get(w, key)
-  if (!r) return null
+  if (!r?.blob) return null
   try {
     return JSON.parse(await r.blob.text()) as T
   } catch {
@@ -534,6 +574,41 @@ export async function load<T>(w: Wire, key: string): Promise<T | null> {
 
 export const save = (w: Wire, key: string, value: unknown): Promise<string> =>
   put(w, key, new Blob([JSON.stringify(value)], { type: 'application/json' }))
+
+/* The Library as the person reads it: every Studio item they made, newest first. */
+
+export interface Shelf {
+  id: string
+  kind: string
+  name: string
+  mime: string
+  bytes: number
+  ref: string
+  origin: string
+  url: string
+  download: string
+  preview: string
+  created: string
+  shared: boolean
+}
+
+/** Every Studio item in the person's Library, read a page at a time. */
+export async function shelf(w: Wire, signal?: AbortSignal): Promise<Shelf[]> {
+  const out: Shelf[] = []
+  let cursor = ''
+  do {
+    const page = await ask<{ data?: Shelf[]; next?: string }>(w, 'api', `/v1/library${query({ source: 'studio', scope: 'mine', limit: 200, cursor })}`, { signal })
+    out.push(...(page.data ?? []))
+    cursor = page.next ?? ''
+  } while (cursor)
+  return out
+}
+
+/** Delete one item from the Library, and this browser's record of it. */
+export async function discard(w: Wire, id: string): Promise<void> {
+  await unshelve(w, id)
+  for (const r of await all(w)) if (r.lib === id) await tx(await db(w), 'readwrite', (s) => s.delete(r.key))
+}
 
 /* ------------------------------------------------------------------ engine */
 

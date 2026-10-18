@@ -124,15 +124,12 @@ export function useChats(w: Wire): { rows: Listed[]; error: string } {
   return { rows, error: rowsError }
 }
 
-/** The words that say where work is kept, while the Library does not answer. */
-export const KEPT = 'Kept in this browser · Saving to Library when it’s available'
-
 let shelf: boolean | null = null
 const shelfListeners = new Set<() => void>()
 
 /**
  * Whether the person's Library answers: asked once, and on the first yes
- * whatever was kept only in this browser is carried up to it.
+ * every made file this browser still holds is carried up to it and dropped here.
  */
 export function useLibrary(w: Wire): boolean | null {
   const [, bump] = useState(0)

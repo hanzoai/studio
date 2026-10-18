@@ -15,8 +15,6 @@ import { fresh } from './route.ts'
 
 export type KindId = 'image' | 'poster' | 'document' | 'slides' | 'type' | 'mesh' | 'video' | 'voice' | 'music' | 'ad'
 
-export const KINDS: readonly KindId[] = ['image', 'poster', 'document', 'slides', 'type', 'mesh', 'video', 'voice', 'music', 'ad']
-
 export interface Stored {
   /** The full key in the bucket. */
   key: string
@@ -94,21 +92,3 @@ export function filename(title: string, ext: string): string {
   return `${base || 'untitled'}.${ext}`
 }
 
-/** A library entry, read from a key under files/. */
-export interface Shelved {
-  kind: KindId
-  chat: string
-  made: string
-  version: string
-  name: string
-  key: string
-  modified: number
-  size: number
-}
-
-export function shelved(key: string, modified: number, size: number): Shelved | null {
-  const [kind, chat, made, version, ...rest] = key.split('/')
-  const name = rest.join('/')
-  if (!kind || !chat || !made || !version || !name || !(KINDS as readonly string[]).includes(kind)) return null
-  return { kind: kind as KindId, chat, made, version, name, key: `files/${key}`, modified, size }
-}

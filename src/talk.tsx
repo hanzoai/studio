@@ -24,7 +24,7 @@ import { MODELS, useImageLane, ZEN } from './kinds/image.tsx'
 import { ALL, kind } from './kinds/index.ts'
 import { lit } from './kinds/kind.ts'
 import { PRESETS } from './kinds/type/system.ts'
-import { BRAIN, KEPT, touch, useAvailable, useLibrary, useWire, WRITER } from './live.ts'
+import { BRAIN, touch, useAvailable, useLibrary, useWire, WRITER } from './live.ts'
 import { blank, current, type Chat, type KindId, type Made, type Stored } from './made.ts'
 import { take } from './places.tsx'
 import { path } from './route.ts'
@@ -122,7 +122,7 @@ function Conversation({ start, host, wire, available }: { start: Chat; host: Hos
   const [editing, setEditing] = useState<Record<string, boolean>>({})
   const [editFailed, setEditFailed] = useState<Record<string, string>>({})
   const wide = useMedia().md
-  const shelf = useLibrary(wire)
+  useLibrary(wire)
   const imaging = useImageLane()
   const [desk, setDesk] = usePanel('studio', true, wide)
   useKey(() => setDesk(!desk))
@@ -467,7 +467,7 @@ function Conversation({ start, host, wire, available }: { start: Chat; host: Hos
     tools,
     mind: null,
     narrow: !wide,
-    note: imaging ? `Image models are not answering (${imaging.reason}). Posters and ads are set in type until they are back.` : shelf === false ? KEPT : undefined,
+    note: imaging ? `Image models are not answering (${imaging.reason}). Posters and ads are set in type until they are back.` : undefined,
   })
 
   const deskPane = (sheet: boolean) => (
