@@ -137,7 +137,7 @@ export const poster: Kind = {
     const got = await art(w, s, num(args.image_tab, 0))
     s.picture = got.key
     const files = await draw(w, s)
-    const note = got.why ? `Set in type alone: the picture could not be drawn (${got.why})` : s.headline
+    const note = got.why ? `Set in type alone. ${got.why}` : s.headline
     return { title: str(args.title, s.headline), draft: { spec: s, files, note, by: 'Studio layout' } }
   },
   revise: async (w, made, change) => {
@@ -173,7 +173,7 @@ export const poster: Kind = {
       }
     }
     const files = await draw(w, next)
-    return { spec: next, files, note: why ? `${change.instruction} (the picture is unchanged: ${why})` : (change.instruction ?? 'Edited'), by: 'Studio layout' }
+    return { spec: next, files, note: why ? `${change.instruction}. The picture is unchanged: ${why}` : (change.instruction ?? 'Edited'), by: 'Studio layout' }
   },
   View: Sheet,
   exports: [

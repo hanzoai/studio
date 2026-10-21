@@ -10,7 +10,7 @@
  */
 import { SizableText, XStack, YStack } from '@hanzo/gui'
 import { Image as Picture } from '@hanzogui/lucide-icons-2'
-import { useState, useSyncExternalStore } from 'react'
+import { useState } from 'react'
 
 import { render } from '../gpu.ts'
 import { current, filename, type Made, type Stored } from '../made.ts'
@@ -71,28 +71,8 @@ async function size(blob: Blob): Promise<{ width?: number; height?: number }> {
   }
 }
 
-/*
- * Whether the gateway's image lane is answering, as the last call found it: a lane
- * that refused at the source says why, in the composer, until a call succeeds.
- */
-let down: { model: string; reason: string } | null = null
-const watchers = new Set<() => void>()
-const note = (next: typeof down) => {
-  down = next
-  watchers.forEach((w) => w())
-}
-
-/** Why the gateway's image models are not answering now, or null. */
-export function useImageLane(): { model: string; reason: string } | null {
-  return useSyncExternalStore(
-    (l) => {
-      watchers.add(l)
-      return () => watchers.delete(l)
-    },
-    () => down,
-    () => down,
-  )
-}
+/** What a person reads when the gateway draws no picture: never a model, a provider or the plumbing between. */
+export const UNDRAWN = "Couldn't draw the picture this time."
 
 /** Make pictures from words (and, for an edit, the pictures they start from), and keep them. */
 export async function picture(w: Work, o: { prompt: string; aspect: string; model: string; from?: Stored[]; count?: number }): Promise<{ files: Stored[]; by: string }> {
@@ -123,10 +103,11 @@ export async function picture(w: Work, o: { prompt: string; aspect: string; mode
     try {
       got = await draw(w.wire, use, ask, { from, aspect: o.aspect, signal: w.signal })
     } catch (e) {
-      if (e instanceof Refusal && (e.status >= 500 || e.status === 402)) note({ model: use, reason: e.message })
-      throw e
+      // A plan's refusal says what lifts it; anything else is the one plain sentence, and the turn offers to try again.
+      if ((e instanceof Refusal && e.status === 402) || w.signal.aborted) throw e
+      w.missed()
+      throw new Error(UNDRAWN, { cause: e })
     }
-    note(null)
     for (const g of got) files.push(await w.keep(`image-${files.length + 1}.${ext(g.mime)}`, g.blob, await size(g.blob)))
   }
   return { files, by: MODELS.find((m) => m.id === use)?.label ?? use }

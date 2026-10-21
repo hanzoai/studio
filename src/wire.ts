@@ -320,7 +320,7 @@ function withheld(model: string, h?: Headers): Refusal {
   const why = h?.get('X-Hanzo-Usage-Reason') ?? ''
   if (!why) return new Refusal(502, `${model} answered with no picture.`)
   const fix = h?.get('X-Hanzo-Upgrade-Url') || h?.get('X-Hanzo-Topup-Url') || ''
-  return new Refusal(402, `${WITHHELD[why] ?? `Pictures are withheld (${why})`}${fix ? `: ${fix}` : '.'}`, why)
+  return new Refusal(402, `${WITHHELD[why] ?? 'Pictures are not available on this plan'}${fix ? `: ${fix}` : '.'}`, why)
 }
 
 /** Speech from words: the platform's voice. */

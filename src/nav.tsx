@@ -10,9 +10,9 @@ import type { RailLink } from '@hanzo/ui/chat'
 
 import { path, route } from './route.ts'
 
-/** A run of places under one quiet label. */
+/** Studio's places, as one run: a host draws no heading over its first group. */
 export interface Group {
-  id: 'make' | 'made' | 'run'
+  id: 'make'
   label: string
   links: RailLink[]
 }
@@ -30,17 +30,9 @@ export function nav(host: Host, go: (path: string) => void): Group[] {
       links: [
         { id: NEW, label: 'New creation', icon: <SquarePen size={16} />, onPress: to(''), active: r.kind === 'new' },
         { id: 'explore', label: 'Explore', icon: <LayoutTemplate size={16} />, onPress: to(path({ kind: 'explore' })), active: r.kind === 'explore' },
+        { id: 'library', label: 'Library', icon: <Library size={16} />, onPress: to(path({ kind: 'library' })), active: r.kind === 'library' },
+        { id: 'activity', label: 'Activity', icon: <Activity size={16} />, onPress: to(path({ kind: 'activity' })), active: r.kind === 'activity' },
       ],
-    },
-    {
-      id: 'made',
-      label: 'Made',
-      links: [{ id: 'library', label: 'Library', icon: <Library size={16} />, onPress: to(path({ kind: 'library' })), active: r.kind === 'library' }],
-    },
-    {
-      id: 'run',
-      label: 'Run',
-      links: [{ id: 'activity', label: 'Activity', icon: <Activity size={16} />, onPress: to(path({ kind: 'activity' })), active: r.kind === 'activity' }],
     },
   ]
 }

@@ -9,8 +9,8 @@ allowBuilds:
 # resolves, so the studio the app mounts is the studio tested here.
 overrides:
   '@hanzo/gui': 8.3.5
-  '@hanzo/ui': 8.27.91
-  '@hanzo/iam': 0.21.31
+  '@hanzo/ui': 8.29.5
+  '@hanzo/iam': 0.21.33
   '@hanzogui/animations-css': 8.3.5
   '@hanzogui/config': 8.3.5
   '@hanzogui/core': 8.3.5
@@ -29,13 +29,13 @@ minimumReleaseAge: 0
 
 catalog:
   '@axe-core/playwright': 4.14.0
-  '@hanzo/build': 0.2.60
+  '@hanzo/build': 0.2.77
   '@hanzo/composer': 0.2.0
   '@hanzo/font': 1.9.3
   '@hanzo/gui': 8.3.5
-  '@hanzo/ui': 8.27.91
+  '@hanzo/ui': 8.29.5
   '@hanzo/vite': 0.1.4
-  '@hanzo/voice': 0.1.18
+  '@hanzo/voice': 0.1.19
   '@hanzogui/lucide-icons-2': 8.3.5
   '@hanzogui/next-theme': 8.3.5
   '@playwright/test': 1.63.0

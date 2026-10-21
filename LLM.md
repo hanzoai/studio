@@ -20,7 +20,9 @@ history was not carried over.
 
     src/index.ts        Studio, nav, NEW, route/path: the package's whole surface
     src/studio.tsx      the panes by address, and Studio's own rail (rail=true)
-    src/talk.tsx        a conversation: @hanzo/ui `Chat` + @hanzo/build `Panel`/`useDeck`
+    src/talk.tsx        a conversation: @hanzo/ui `Chat` + @hanzo/build `Panel`/`useDeck`, in
+                        build's `useSplit` column with its `Gutter` (Chat's and Dev's: drag,
+                        widen over the chat, full screen)
     src/desk.tsx        one tab: versions, compare (wipe for pictures), export
     src/home.tsx        under an empty composer: category pills, starters, Recent
     src/places.tsx      Library, Explore, Activity
@@ -65,7 +67,10 @@ Measured 2026-10-16: zen5 calls tools in ~3 s, zen5-flash answers a schema in ~2
 zen5 spent 30 s reasoning over a schema and zen5-flash answered tools in prose.
 That day most premium models (enso, gemini/gpt image, claude) answered 503
 `providers_exhausted` (the upstream was out of credit), which is why the image
-lane falls back to type-only posters with the reason said in the turn.
+lane falls back to type-only posters. A person never reads a model id or the
+gateway's plumbing: a picture not drawn is "Couldn't draw the picture this time.
+Try again?" on the turn, with Retry (`UNDRAWN`, `Work.missed`); a plan's refusal
+(402) says what lifts it. No standing banner.
 
 ## Storage (behind wire.ts)
 

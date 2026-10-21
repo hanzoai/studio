@@ -111,7 +111,7 @@ export const ad: Kind = {
       }
     }
     const files = await draw(w, s)
-    return { title: str(args.title, s.headline), draft: { spec: s, files, note: why ? `Set in type alone: ${why}` : s.headline, by: 'Studio layout' } }
+    return { title: str(args.title, s.headline), draft: { spec: s, files, note: why ? `Set in type alone. ${why}` : s.headline, by: 'Studio layout' } }
   },
   revise: async (w, made, change) => {
     const s = spec({ ...current(made).spec, ...(change.patch ?? {}), system: w.brand ?? current(made).spec.system })

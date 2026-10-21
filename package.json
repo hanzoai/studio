@@ -1,6 +1,6 @@
 {
   "name": "@hanzo/studio",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "type": "module",
   "license": "BSD-3-Clause",
   "description": "Hanzo Studio: a chat that makes images, posters, documents, slides, type systems, 3D, video and sound, with every result open in a tab beside it. Mounted by the Hanzo app at hanzo.ai/studio and served whole at studio.hanzo.ai.",
@@ -72,8 +72,8 @@
     "@hanzo/build": ">=0.2.60",
     "@hanzo/composer": ">=0.2.0",
     "@hanzo/gui": ">=8.3.5",
-    "@hanzo/ui": ">=8.27.77",
-    "@hanzo/voice": ">=0.1.16",
+    "@hanzo/ui": ">=8.29.0",
+    "@hanzo/voice": ">=0.1.19",
     "@hanzogui/lucide-icons-2": ">=8.3.5",
     "react": ">=19.2.8"
   }

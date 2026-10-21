@@ -8,7 +8,7 @@
  * A new conversation has no id in the address until its first message is sent;
  * then the address names it, and the conversation in hand is the one shown.
  */
-import { Grip, Panel, PanelToggle, prompt, Reply, useDeck, useKey, usePanel, type Host, type Kind as Tab } from '@hanzo/build'
+import { Gutter, Panel, PanelToggle, prompt, Reply, SideProvider, useDeck, useKey, usePanel, useSplit, type Host, type Kind as Tab } from '@hanzo/build'
 import { SizableText, useMedia, XStack, YStack } from '@hanzo/gui'
 import { Check, ChevronDown, Ellipsis, Image as ImageIcon, LoaderCircle, Palette, Sparkles, X } from '@hanzogui/lucide-icons-2'
 import { DropdownMenu } from '@hanzo/ui'
@@ -20,7 +20,7 @@ import { keep, listed, open } from './chat/store.ts'
 import { Desk } from './desk.tsx'
 import { Home } from './home.tsx'
 import { useHost } from './host.tsx'
-import { MODELS, useImageLane, ZEN } from './kinds/image.tsx'
+import { MODELS, ZEN } from './kinds/image.tsx'
 import { ALL, kind } from './kinds/index.ts'
 import { lit } from './kinds/kind.ts'
 import { PRESETS } from './kinds/type/system.ts'
@@ -44,10 +44,6 @@ const pane = {
   boxShadow: 'var(--shadow-sheet-2)',
 } as const
 const gap = 'var(--pane-gap, var(--space-2))'
-
-const DESK = 560
-const DESK_FLOOR = 320
-const TALK_FLOOR = 320
 
 interface Options {
   model: string
@@ -123,14 +119,13 @@ function Conversation({ start, host, wire, available }: { start: Chat; host: Hos
   const [editFailed, setEditFailed] = useState<Record<string, string>>({})
   const wide = useMedia().md
   useLibrary(wire)
-  const imaging = useImageLane()
   const [desk, setDesk] = usePanel('studio', true, wide)
   useKey(() => setDesk(!desk))
+  // The tabs' column, as Chat's and a Dev run's: the person's width, the chat hidden behind it, full screen.
+  const split = useSplit(desk && wide && chat.made.length > 0, 'chat', () => setDesk(false))
   const deck = useDeck(`studio.${chat.id}`, { tabs: chat.made.map((m) => ({ id: m.id, kind: m.id, title: m.title })), at: chat.made.at(-1)?.id ?? null })
   const order = useRef<string[]>([])
   order.current = [...deck.tabs.map((t) => t.kind).filter((k) => chat.made.some((m) => m.id === k)), ...chat.made.map((m) => m.id).filter((m) => !deck.tabs.some((t) => t.kind === m))]
-  const [span, setSpan] = useState(DESK)
-  const deskBox = useRef<HTMLElement | null>(null)
 
   // Saved after every change, at most once a second and a half; at once when a turn ends.
   const saving = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -395,7 +390,7 @@ function Conversation({ start, host, wire, available }: { start: Chat; host: Hos
     { type: 'label' as const, key: 'm', label: 'Image model' },
     { key: 'auto', label: `${options.model === 'auto' ? '✓ ' : ''}Auto`, description: zen ? 'Zen Image on your GPU' : MODELS[0].label, onSelect: () => setOptions({ ...options, model: 'auto' }) },
     ...(zen ? [{ key: ZEN, label: `${options.model === ZEN ? '✓ ' : ''}Zen Image`, description: 'On your GPU', onSelect: () => setOptions({ ...options, model: ZEN }) }] : []),
-    ...MODELS.map((m) => ({ key: m.id, label: `${options.model === m.id ? '✓ ' : ''}${m.label}`, description: m.id, onSelect: () => setOptions({ ...options, model: m.id }) })),
+    ...MODELS.map((m) => ({ key: m.id, label: `${options.model === m.id ? '✓ ' : ''}${m.label}`, onSelect: () => setOptions({ ...options, model: m.id }) })),
     { type: 'separator' as const, key: 's' },
     { type: 'label' as const, key: 'a', label: 'Aspect' },
     ...['', '1:1', '4:5', '9:16', '16:9', '3:2'].map((a) => ({ key: `a${a}`, label: `${options.aspect === a ? '✓ ' : ''}${a || 'As asked'}`, onSelect: () => setOptions({ ...options, aspect: a }) })),
@@ -463,11 +458,10 @@ function Conversation({ start, host, wire, available }: { start: Chat; host: Hos
     placeholder: empty ? 'What should we create?' : 'Ask for a change, or something new',
     label: 'What should we create?',
     head,
-    onAttach: attach,
-    tools,
+    plus: { upload: attach },
+    where: tools,
     mind: null,
     narrow: !wide,
-    note: imaging ? `Image models are not answering (${imaging.reason}). Posters and ads are set in type until they are back.` : undefined,
   })
 
   const deskPane = (sheet: boolean) => (
@@ -476,7 +470,7 @@ function Conversation({ start, host, wire, available }: { start: Chat; host: Hos
 
   return (
     <XStack data-slot="studio-split" flex={1} minH={0} minW={0} width="100%">
-      <YStack data-slot="studio-talk" {...pane} flex={1} minH={0} minW={0} width="100%" overflow="hidden">
+      <YStack data-slot="studio-talk" ref={split.main} style={split.mainStyle} {...pane} flex={1} minH={0} minW={0} width="100%" overflow="hidden">
         <XStack px="$4" pt="$3" pb="$2" gap="$2" items="center" minH={44}>
           <SizableText render="h1" size="$5" color="$ink" numberOfLines={1} flex={1} minW={0}>
             {empty ? 'Studio' : chat.title}
@@ -497,33 +491,12 @@ function Conversation({ start, host, wire, available }: { start: Chat; host: Hos
       </YStack>
       {desk && chat.made.length && !wide ? deskPane(true) : null}
       {desk && chat.made.length && wide ? (
-        <YStack
-          data-slot="studio-desk"
-          ref={(el: unknown) => {
-            deskBox.current = el instanceof HTMLElement ? el : null
-          }}
-          {...pane}
-          ml={gap}
-          position="relative"
-          shrink={0}
-          minH={0}
-          overflow="hidden"
-          style={{ width: span, maxWidth: `calc(100% - ${TALK_FLOOR}px)`, minWidth: DESK_FLOOR }}
-        >
-          <Grip
-            side="right"
-            span={span}
-            floor={DESK_FLOOR}
-            ceil={1400}
-            reset={DESK}
-            onSpan={(n) => deskBox.current?.style.setProperty('width', `${n}px`)}
-            onKeep={setSpan}
-            onShut={() => setDesk(false)}
-            label="Resize the tabs"
-            l={`calc(-1 * ${gap} - 1px)`}
-            width={gap}
-          />
-          {deskPane(false)}
+        <YStack data-slot="studio-desk" ref={split.aside} {...pane} ml={gap} position="relative" shrink={0} minH={0} style={split.asideStyle}>
+          {split.grip ? (
+            // In the gutter between the two panes, measured inside the pane's edge.
+            <Gutter {...split.grip} label="Resize the tabs" inset={pane.borderWidth} />
+          ) : null}
+          <SideProvider value={split.side}>{deskPane(false)}</SideProvider>
         </YStack>
       ) : null}
     </XStack>

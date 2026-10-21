@@ -31,6 +31,8 @@ export interface Work {
   signal: AbortSignal
   /** Say what is happening now: drawn under the turn while it works. */
   doing: (line: string) => void
+  /** A picture could not be drawn: the turn ends offering to try again. */
+  missed: () => void
   /** Keep bytes as one of this version's files. */
   keep: (name: string, blob: Blob, extra?: { width?: number; height?: number }) => Promise<Stored>
   /** A stored picture as a data: URL, for a model to start from. */

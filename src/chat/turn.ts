@@ -15,6 +15,7 @@
  */
 import { complete, put, read, type Message, type Tool as Wired, type Wire } from '../wire.ts'
 import { ALL, called, kind } from '../kinds/index.ts'
+import { UNDRAWN } from '../kinds/image.tsx'
 import type { Available, Draft, Kind, Work } from '../kinds/kind.ts'
 import { settle, type TypeSystem } from '../kinds/type/system.ts'
 import { current, dir, type Chat, type KindId, type Made, type Stored, type Turn, type Version } from '../made.ts'
@@ -156,6 +157,8 @@ export async function turn(start: Chat, asked: Asked, ctx: Context): Promise<Cha
     put_({ ...chat, turns: chat.turns.map((t) => (t.id === you.id ? { ...t, ...patch } : t)) })
   }
   const mine = () => chat.turns.find((t) => t.id === you.id)!
+  // A picture the gateway did not draw: the turn ends on one plain sentence and a retry.
+  let missed = false
 
   const open = ALL.filter((k) => !k.needs(ctx))
   const closed = ALL.filter((k) => k.needs(ctx))
@@ -191,7 +194,7 @@ export async function turn(start: Chat, asked: Asked, ctx: Context): Promise<Cha
         messages.push({ role: 'tool', tool_call_id: c.id, content: JSON.stringify(answer) })
       }
     }
-    set({ doing: undefined })
+    set({ doing: undefined, ...(missed ? { failed: `${UNDRAWN} Try again?` } : {}) })
   } catch (e) {
     if ((e as Error)?.name === 'AbortError') set({ doing: undefined, failed: 'Stopped.' })
     else set({ doing: undefined, failed: words(e) })
@@ -260,6 +263,9 @@ export async function turn(start: Chat, asked: Asked, ctx: Context): Promise<Cha
       wire: ctx.wire,
       signal: ctx.signal,
       doing: (line) => set({ doing: line }),
+      missed: () => {
+        missed = true
+      },
       keep: async (name, blob, extra) => {
         const key = await put(ctx.wire, `${dir(chat.id, m, vid)}/${name}`, blob)
         return { key, mime: blob.type || 'application/octet-stream', name, ...extra }
@@ -286,6 +292,7 @@ export async function edit(start: Chat, m: Made, patch: Record<string, unknown>,
     wire: ctx.wire,
     signal: ctx.signal,
     doing: () => undefined,
+    missed: () => undefined,
     keep: async (name, blob, extra) => ({ key: await put(ctx.wire, `${dir(start.id, m, vid)}/${name}`, blob), mime: blob.type || 'application/octet-stream', name, ...extra }),
     picture: async (f) => data(await read(ctx.wire, f.key)),
     find: (ref) => start.made.find((x) => x.id === (typeof ref === 'number' ? ctx.order()[ref - 1] : ref)) ?? null,
