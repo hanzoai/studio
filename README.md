@@ -15,8 +15,8 @@
 [![][github-downloads-shield]][github-downloads-link]
 [![][github-downloads-latest-shield]][github-downloads-link]
 
-[website-shield]: https://img.shields.io/badge/HanzoAI-4285F4?style=flat
-[website-url]: https://www.hanzo.ai/
+[website-shield]: https://img.shields.io/badge/studio.hanzo.ai-0A0A0A?style=flat
+[website-url]: https://studio.hanzo.ai/
 <!-- Workaround to display total user from https://github.com/badges/shields/issues/4500#issuecomment-2060079995 -->
 [discord-shield]: https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fdiscord.com%2Fapi%2Finvites%2Fhanzoai%3Fwith_counts%3Dtrue&query=%24.approximate_member_count&logo=discord&logoColor=white&label=Discord&color=green&suffix=%20total
 [discord-url]: https://discord.gg/CJCyAsm9Vr
@@ -33,7 +33,12 @@
 ![Hanzo Studio Screenshot](https://github.com/user-attachments/assets/7ccaf2c1-9b72-41ae-9a89-5688c94b7abe)
 </div>
 
-Hanzo Studio lets you design and execute advanced stable diffusion pipelines using a graph/nodes/flowchart based interface. Available on Windows, Linux, and macOS.
+**`hanzoai/studio`** is the open-source **Hanzo Studio** visual AI execution and node workflow framework (Python diffusion, video, audio, custom nodes, and API runtime) for building generative pipelines and extensions on top of Hanzo Studio.
+
+- **Hosted Creative Suite (Design, Director & Workflows):** [**studio.hanzo.ai**](https://studio.hanzo.ai)
+- **Native Desktop Downloads (macOS `.dmg`, Windows `.exe`, Linux `.AppImage` / `.deb`):** [**github.com/hanzoai/studio/releases**](https://github.com/hanzoai/studio/releases)
+
+Hanzo Studio lets you design and execute advanced multimodal diffusion and video pipelines using a graph/nodes/flowchart runtime on Windows, Linux, and macOS.
 
 ## Upstream & License
 

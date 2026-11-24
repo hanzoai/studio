@@ -1,0 +1,393 @@
+# Builds native Hanzo Studio desktop bundles (macOS universal .dmg, Windows x64
+# NSIS .exe, Linux amd64/arm64 .AppImage & .deb) in ephemeral $RUNNER_TEMP via
+# KMS and publishes them to https://github.com/hanzoai/studio/releases.
+name: Release Desktop
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Studio semver version (e.g. 0.1.25)"
+        required: true
+        type: string
+      app_ref:
+        description: "Source git ref in hanzo-inc/studio"
+        required: false
+        default: "main"
+        type: string
+
+permissions:
+  contents: write
+  id-token: write
+
+concurrency:
+  group: release-desktop-${{ inputs.version }}
+  cancel-in-progress: false
+
+env:
+  KMS_CLIENT_ID: ${{ secrets.KMS_CLIENT_ID }}
+  KMS_CLIENT_SECRET: ${{ secrets.KMS_CLIENT_SECRET }}
+  FALLBACK_PAT: ${{ secrets.GH_PAT }}
+
+jobs:
+  build-macos:
+    name: Build macOS Universal (.dmg)
+    runs-on: macos-15
+    timeout-minutes: 60
+    env:
+      V: ${{ inputs.version }}
+      APP_REF: ${{ inputs.app_ref || 'main' }}
+      APPLE_SIGNING_IDENTITY: "-"
+    steps:
+      - name: Validate version and clone build tree into $RUNNER_TEMP
+        shell: bash
+        run: |
+          set -euo pipefail
+          V="${V#v}"
+          echo "$V" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$' || { echo "::error::invalid semver: $V"; exit 1; }
+          endpoint="${KMS_ENDPOINT:-https://kms.hanzo.ai}"
+          kms_tok=""
+          if [ -n "${KMS_CLIENT_ID:-}" ] && [ -n "${KMS_CLIENT_SECRET:-}" ]; then
+            kms_tok=$(curl -fsS --retry 3 "$endpoint/v1/kms/auth/login" -H 'Content-Type: application/json' \
+              -d "$(jq -nc --arg i "$KMS_CLIENT_ID" --arg s "$KMS_CLIENT_SECRET" '{clientId: $i, clientSecret: $s}')" \
+              | jq -r '.accessToken // empty' || true)
+          fi
+          if [ -z "$kms_tok" ] && [ -n "${ACTIONS_ID_TOKEN_REQUEST_URL:-}" ]; then
+            id_tok=$(curl -fsS "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https://hanzo.id" \
+              -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN:-}" | jq -r '.value // empty' || true)
+            [ -z "$id_tok" ] || echo "::add-mask::$id_tok"
+            if [ -n "$id_tok" ]; then
+              kms_tok=$(curl -fsS "$endpoint/v1/iam/oauth/token" \
+                --data-urlencode 'grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer' \
+                --data-urlencode "assertion=${id_tok}" | jq -r '.access_token // empty' || true)
+            fi
+          fi
+          [ -z "$kms_tok" ] || echo "::add-mask::$kms_tok"
+          clone_tok=""
+          if [ -n "$kms_tok" ]; then
+            clone_tok=$(curl -fsS --retry 3 -H "Authorization: Bearer $kms_tok" \
+              "$endpoint/v1/kms/secrets/deploy/GITHUB_TOKEN?env=prod" | jq -r '.value // empty' || true)
+          fi
+          [ -z "$clone_tok" ] || echo "::add-mask::$clone_tok"
+          [ -n "$clone_tok" ] || clone_tok="${FALLBACK_PAT:-}"
+          [ -n "$clone_tok" ] || { echo "::error::no deploy token available"; exit 1; }
+
+          rm -rf "$RUNNER_TEMP/studio-src" "$RUNNER_TEMP/dist-release"
+          GIT_CONFIG_COUNT=1 \
+          GIT_CONFIG_KEY_0="url.https://x-access-token:${clone_tok}@github.com/.insteadOf" \
+          GIT_CONFIG_VALUE_0="https://github.com/" \
+            git clone --depth 1 --branch "$APP_REF" https://github.com/hanzo-inc/studio.git "$RUNNER_TEMP/studio-src"
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+
+      - name: Build frontend & universal macOS DMG
+        shell: bash
+        run: |
+          set -euo pipefail
+          V="${V#v}"
+          cd "$RUNNER_TEMP/studio-src"
+          corepack enable
+          pnpm install --frozen-lockfile
+          pnpm build
+
+          cd src-tauri
+          CFG=$(jq -cn --arg v "$V" '{version: $v, build: {beforeBuildCommand: ""}}')
+          npx --yes @tauri-apps/cli@2 build --target universal-apple-darwin --bundles app,dmg --config "$CFG" || \
+            npx --yes @tauri-apps/cli@2 build --target universal-apple-darwin --bundles app --config "$CFG"
+
+          APP_PATH="target/universal-apple-darwin/release/bundle/macos/Hanzo Studio.app"
+          codesign --force --deep --sign - "$APP_PATH"
+
+          mkdir -p "$RUNNER_TEMP/dist-release"
+          DMG_FOUND=$(find target/universal-apple-darwin/release/bundle/dmg -maxdepth 1 -name "*.dmg" | head -n 1 || true)
+          if [ -n "$DMG_FOUND" ] && [ -f "$DMG_FOUND" ]; then
+            cp "$DMG_FOUND" "$RUNNER_TEMP/dist-release/Hanzo_Studio_${V}_universal.dmg"
+          else
+            STAGE_DIR=$(mktemp -d)
+            cp -R "$APP_PATH" "$STAGE_DIR/"
+            ln -s /Applications "$STAGE_DIR/Applications"
+            hdiutil create -volname "Hanzo Studio" -srcfolder "$STAGE_DIR" -ov -format UDZO "$RUNNER_TEMP/dist-release/Hanzo_Studio_${V}_universal.dmg"
+            rm -rf "$STAGE_DIR"
+          fi
+          cp "$RUNNER_TEMP/dist-release/Hanzo_Studio_${V}_universal.dmg" "$RUNNER_TEMP/dist-release/hanzo-studio-macos.dmg"
+          ls -lh "$RUNNER_TEMP/dist-release/"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: desktop-macos
+          path: ${{ runner.temp }}/dist-release/*
+          if-no-files-found: error
+
+      - name: Clean temporary build tree
+        if: always()
+        shell: bash
+        run: rm -rf "$RUNNER_TEMP/studio-src" "$RUNNER_TEMP/dist-release"
+
+  build-windows:
+    name: Build Windows x64 (.exe)
+    runs-on: windows-latest
+    timeout-minutes: 60
+    env:
+      V: ${{ inputs.version }}
+      APP_REF: ${{ inputs.app_ref || 'main' }}
+    steps:
+      - name: Validate version and clone build tree into $RUNNER_TEMP
+        shell: bash
+        run: |
+          set -euo pipefail
+          V="${V#v}"
+          echo "$V" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$' || { echo "::error::invalid semver: $V"; exit 1; }
+          endpoint="${KMS_ENDPOINT:-https://kms.hanzo.ai}"
+          kms_tok=""
+          if [ -n "${KMS_CLIENT_ID:-}" ] && [ -n "${KMS_CLIENT_SECRET:-}" ]; then
+            kms_tok=$(curl -fsS --retry 3 "$endpoint/v1/kms/auth/login" -H 'Content-Type: application/json' \
+              -d "$(jq -nc --arg i "$KMS_CLIENT_ID" --arg s "$KMS_CLIENT_SECRET" '{clientId: $i, clientSecret: $s}')" \
+              | jq -r '.accessToken // empty' || true)
+          fi
+          if [ -z "$kms_tok" ] && [ -n "${ACTIONS_ID_TOKEN_REQUEST_URL:-}" ]; then
+            id_tok=$(curl -fsS "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https://hanzo.id" \
+              -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN:-}" | jq -r '.value // empty' || true)
+            [ -z "$id_tok" ] || echo "::add-mask::$id_tok"
+            if [ -n "$id_tok" ]; then
+              kms_tok=$(curl -fsS "$endpoint/v1/iam/oauth/token" \
+                --data-urlencode 'grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer' \
+                --data-urlencode "assertion=${id_tok}" | jq -r '.access_token // empty' || true)
+            fi
+          fi
+          [ -z "$kms_tok" ] || echo "::add-mask::$kms_tok"
+          clone_tok=""
+          if [ -n "$kms_tok" ]; then
+            clone_tok=$(curl -fsS --retry 3 -H "Authorization: Bearer $kms_tok" \
+              "$endpoint/v1/kms/secrets/deploy/GITHUB_TOKEN?env=prod" | jq -r '.value // empty' || true)
+          fi
+          [ -z "$clone_tok" ] || echo "::add-mask::$clone_tok"
+          [ -n "$clone_tok" ] || clone_tok="${FALLBACK_PAT:-}"
+          [ -n "$clone_tok" ] || { echo "::error::no deploy token available"; exit 1; }
+
+          rm -rf "$RUNNER_TEMP/studio-src" "$RUNNER_TEMP/dist-release"
+          GIT_CONFIG_COUNT=1 \
+          GIT_CONFIG_KEY_0="url.https://x-access-token:${clone_tok}@github.com/.insteadOf" \
+          GIT_CONFIG_VALUE_0="https://github.com/" \
+            git clone --depth 1 --branch "$APP_REF" https://github.com/hanzo-inc/studio.git "$RUNNER_TEMP/studio-src"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - name: Build Windows NSIS installer
+        shell: bash
+        run: |
+          set -euo pipefail
+          V="${V#v}"
+          cd "$RUNNER_TEMP/studio-src"
+          corepack enable
+          pnpm install --frozen-lockfile
+          pnpm build
+
+          cd src-tauri
+          CFG=$(jq -cn --arg v "$V" '{version: $v, build: {beforeBuildCommand: ""}}')
+          npx --yes @tauri-apps/cli@2 build --bundles nsis --config "$CFG"
+
+          mkdir -p "$RUNNER_TEMP/dist-release"
+          EXE_FOUND=$(find target/release/bundle/nsis -maxdepth 1 -name "*-setup.exe" | head -n 1)
+          cp "$EXE_FOUND" "$RUNNER_TEMP/dist-release/Hanzo_Studio_${V}_x64-setup.exe"
+          cp "$EXE_FOUND" "$RUNNER_TEMP/dist-release/hanzo-studio-windows-x64-setup.exe"
+          ls -lh "$RUNNER_TEMP/dist-release/"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: desktop-windows
+          path: ${{ runner.temp }}/dist-release/*
+          if-no-files-found: error
+
+      - name: Clean temporary build tree
+        if: always()
+        shell: bash
+        run: rm -rf "$RUNNER_TEMP/studio-src" "$RUNNER_TEMP/dist-release"
+
+  build-linux:
+    name: Build Linux (${{ matrix.arch_label }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            arch_label: amd64
+            appimage_arch: x86_64
+          - runner: ubuntu-24.04-arm
+            arch_label: arm64
+            appimage_arch: aarch64
+    env:
+      V: ${{ inputs.version }}
+      APP_REF: ${{ inputs.app_ref || 'main' }}
+      ARCH_LABEL: ${{ matrix.arch_label }}
+      APPIMAGE_ARCH: ${{ matrix.appimage_arch }}
+    steps:
+      - name: Validate version and clone build tree into $RUNNER_TEMP
+        shell: bash
+        run: |
+          set -euo pipefail
+          V="${V#v}"
+          echo "$V" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$' || { echo "::error::invalid semver: $V"; exit 1; }
+          endpoint="${KMS_ENDPOINT:-https://kms.hanzo.ai}"
+          kms_tok=""
+          if [ -n "${KMS_CLIENT_ID:-}" ] && [ -n "${KMS_CLIENT_SECRET:-}" ]; then
+            kms_tok=$(curl -fsS --retry 3 "$endpoint/v1/kms/auth/login" -H 'Content-Type: application/json' \
+              -d "$(jq -nc --arg i "$KMS_CLIENT_ID" --arg s "$KMS_CLIENT_SECRET" '{clientId: $i, clientSecret: $s}')" \
+              | jq -r '.accessToken // empty' || true)
+          fi
+          if [ -z "$kms_tok" ] && [ -n "${ACTIONS_ID_TOKEN_REQUEST_URL:-}" ]; then
+            id_tok=$(curl -fsS "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https://hanzo.id" \
+              -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN:-}" | jq -r '.value // empty' || true)
+            [ -z "$id_tok" ] || echo "::add-mask::$id_tok"
+            if [ -n "$id_tok" ]; then
+              kms_tok=$(curl -fsS "$endpoint/v1/iam/oauth/token" \
+                --data-urlencode 'grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer' \
+                --data-urlencode "assertion=${id_tok}" | jq -r '.access_token // empty' || true)
+            fi
+          fi
+          [ -z "$kms_tok" ] || echo "::add-mask::$kms_tok"
+          clone_tok=""
+          if [ -n "$kms_tok" ]; then
+            clone_tok=$(curl -fsS --retry 3 -H "Authorization: Bearer $kms_tok" \
+              "$endpoint/v1/kms/secrets/deploy/GITHUB_TOKEN?env=prod" | jq -r '.value // empty' || true)
+          fi
+          [ -z "$clone_tok" ] || echo "::add-mask::$clone_tok"
+          [ -n "$clone_tok" ] || clone_tok="${FALLBACK_PAT:-}"
+          [ -n "$clone_tok" ] || { echo "::error::no deploy token available"; exit 1; }
+
+          rm -rf "$RUNNER_TEMP/studio-src" "$RUNNER_TEMP/dist-release"
+          GIT_CONFIG_COUNT=1 \
+          GIT_CONFIG_KEY_0="url.https://x-access-token:${clone_tok}@github.com/.insteadOf" \
+          GIT_CONFIG_VALUE_0="https://github.com/" \
+            git clone --depth 1 --branch "$APP_REF" https://github.com/hanzo-inc/studio.git "$RUNNER_TEMP/studio-src"
+
+      - name: Install Linux system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            build-essential \
+            curl \
+            wget \
+            file \
+            libxdo-dev \
+            libssl-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            squashfs-tools \
+            libfuse2t64 || sudo apt-get install -y libfuse2
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Build Linux deb & AppImage
+        env:
+          APPIMAGE_EXTRACT_AND_RUN: "1"
+          NO_STRIP: "true"
+        run: |
+          set -euo pipefail
+          V="${V#v}"
+          cd "$RUNNER_TEMP/studio-src"
+          corepack enable
+          pnpm install --frozen-lockfile
+          pnpm build
+
+          cd src-tauri
+          CFG=$(jq -cn --arg v "$V" '{version: $v, build: {beforeBuildCommand: ""}}')
+          npx --yes @tauri-apps/cli@2 build --bundles deb --config "$CFG"
+          npx --yes @tauri-apps/cli@2 build --bundles appimage --config "$CFG" || true
+
+          mkdir -p "$RUNNER_TEMP/dist-release"
+          DEB_FOUND=$(find target/release/bundle/deb -maxdepth 1 -name "*.deb" | head -n 1)
+          cp "$DEB_FOUND" "$RUNNER_TEMP/dist-release/Hanzo_Studio_${V}_${ARCH_LABEL}.deb"
+          cp "$DEB_FOUND" "$RUNNER_TEMP/dist-release/hanzo-studio-linux-${ARCH_LABEL}.deb"
+
+          APPIMG_FOUND=$(find target/release/bundle/appimage -maxdepth 1 -name "*.AppImage" | head -n 1 || true)
+          if [ -z "$APPIMG_FOUND" ] || [ ! -f "$APPIMG_FOUND" ]; then
+            APPDIR=$(mktemp -d)/HanzoStudio.AppDir
+            mkdir -p "$APPDIR"
+            dpkg-deb -x "$DEB_FOUND" "$APPDIR"
+            cat > "$APPDIR/AppRun" <<'APPRUN'
+          #!/bin/sh
+          HERE="$(dirname "$(readlink -f "$0")")"
+          export PATH="$HERE/usr/bin:$PATH"
+          export LD_LIBRARY_PATH="$HERE/usr/lib:$HERE/usr/lib/x86_64-linux-gnu:$HERE/usr/lib/aarch64-linux-gnu:${LD_LIBRARY_PATH:-}"
+          exec "$HERE/usr/bin/hanzo-studio" "$@"
+          APPRUN
+            sed -i 's/^          //' "$APPDIR/AppRun"
+            chmod +x "$APPDIR/AppRun"
+            DESKTOP_FILE=$(find "$APPDIR/usr/share/applications" -name "*.desktop" | head -n 1)
+            cp "$DESKTOP_FILE" "$APPDIR/"
+            cp icons/icon.png "$APPDIR/hanzo-studio.png"
+            cp icons/icon.png "$APPDIR/.DirIcon"
+            curl -fsSL -o /tmp/appimagetool "https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-${APPIMAGE_ARCH}.AppImage"
+            chmod +x /tmp/appimagetool
+            ARCH="$APPIMAGE_ARCH" APPIMAGE_EXTRACT_AND_RUN=1 /tmp/appimagetool "$APPDIR" "$RUNNER_TEMP/dist-release/Hanzo_Studio_${V}_${ARCH_LABEL}.AppImage"
+          else
+            cp "$APPIMG_FOUND" "$RUNNER_TEMP/dist-release/Hanzo_Studio_${V}_${ARCH_LABEL}.AppImage"
+          fi
+          chmod +x "$RUNNER_TEMP/dist-release/Hanzo_Studio_${V}_${ARCH_LABEL}.AppImage"
+          cp "$RUNNER_TEMP/dist-release/Hanzo_Studio_${V}_${ARCH_LABEL}.AppImage" "$RUNNER_TEMP/dist-release/hanzo-studio-linux-${ARCH_LABEL}.AppImage"
+          ls -lh "$RUNNER_TEMP/dist-release/"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: desktop-linux-${{ matrix.arch_label }}
+          path: ${{ runner.temp }}/dist-release/*
+          if-no-files-found: error
+
+      - name: Clean temporary build tree
+        if: always()
+        shell: bash
+        run: rm -rf "$RUNNER_TEMP/studio-src" "$RUNNER_TEMP/dist-release"
+
+  publish-release:
+    name: Publish GitHub Release
+    needs: [build-macos, build-windows, build-linux]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Compute SHA256SUMS and publish release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          RAW_V: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          V="${RAW_V#v}"
+          TAG="v${V}"
+          cd artifacts
+          sha256sum * | LC_ALL=C sort -k2 > SHA256SUMS
+          ls -lh
+          NOTES="Hanzo Studio ${TAG} — Creative AI Design, Director, and Flow workflow editor native desktop release for macOS (Universal Apple Silicon + Intel .dmg), Windows x64 (NSIS .exe), and Linux amd64/arm64 (.AppImage & .deb) with canonical 836/1024 Apple-HIG 4-point star Obsidian squircle Dock icon."
+          if gh release view "$TAG" -R "$REPO" >/dev/null 2>&1; then
+            gh release upload "$TAG" * --clobber -R "$REPO"
+            gh release edit "$TAG" --title "Hanzo Studio ${TAG}" --notes "$NOTES" --latest -R "$REPO"
+          else
+            gh release create "$TAG" * --title "Hanzo Studio ${TAG}" --notes "$NOTES" --latest -R "$REPO"
+          fi
