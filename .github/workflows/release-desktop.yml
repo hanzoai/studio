@@ -78,10 +78,6 @@ jobs:
           GIT_CONFIG_VALUE_0="https://github.com/" \
             git clone --depth 1 --branch "$APP_REF" https://github.com/hanzo-inc/studio.git "$RUNNER_TEMP/studio-src"
 
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 10
-
       - uses: actions/setup-node@v4
         with:
           node-version: 24
@@ -95,8 +91,10 @@ jobs:
         run: |
           set -euo pipefail
           V="${V#v}"
+          mkdir -p "$RUNNER_TEMP/bin"
+          corepack enable --install-directory "$RUNNER_TEMP/bin"
+          export PATH="$RUNNER_TEMP/bin:$PATH"
           cd "$RUNNER_TEMP/studio-src"
-          corepack enable
           pnpm install --frozen-lockfile
           pnpm build
 
@@ -193,8 +191,10 @@ jobs:
         run: |
           set -euo pipefail
           V="${V#v}"
+          mkdir -p "$RUNNER_TEMP/bin"
+          corepack enable --install-directory "$RUNNER_TEMP/bin"
+          export PATH="$RUNNER_TEMP/bin:$PATH"
           cd "$RUNNER_TEMP/studio-src"
-          corepack enable
           pnpm install --frozen-lockfile
           pnpm build
 
@@ -308,8 +308,10 @@ jobs:
         run: |
           set -euo pipefail
           V="${V#v}"
+          mkdir -p "$RUNNER_TEMP/bin"
+          corepack enable --install-directory "$RUNNER_TEMP/bin"
+          export PATH="$RUNNER_TEMP/bin:$PATH"
           cd "$RUNNER_TEMP/studio-src"
-          corepack enable
           pnpm install --frozen-lockfile
           pnpm build
 
