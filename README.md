@@ -51,6 +51,12 @@ See [`LICENSE`](LICENSE) for the full license text and [`NOTICE`](NOTICE) for th
 #### [Manual Install](#manual-install-windows-linux)
 Supports all operating systems and GPU types (NVIDIA, AMD, Intel, Apple Silicon, Ascend).
 
+#### Local Test & Verification
+Run the automated node graph pipeline, DAG topology, and health check test suite:
+`ash
+pytest tests-unit/test_hanzo_studio_smoke.py
+`
+
 #### Docker (Recommended for servers)
 ```bash
 docker pull ghcr.io/hanzoai/studio:latest
